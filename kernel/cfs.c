@@ -38,7 +38,6 @@ MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 struct cfs_info {
 	struct lcfs_context_s *lcfs_ctx;
 
-	struct cred *owner_cred;
 	struct vfsmount *root_mnt;
 
 	char *descriptor_path;
@@ -459,16 +458,11 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	struct path rootpath = {};
 	struct file *base = NULL;
 	struct inode *inode;
-	struct cred *cred;
 	void *ctx;
 	int ret;
 
 	if (sb->s_root)
 		return -EINVAL;
-
-	cred = prepare_creds();
-	if (!cred)
-		return -ENOMEM;
 
 	ret = kern_path("/", LOOKUP_DIRECTORY, &rootpath);
 	if (ret) {
@@ -528,7 +522,6 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 #endif
 
 	fsi->root_mnt = root_mnt;
-	fsi->owner_cred = cred;
 	fsi->base = base;
 	return 0;
 fail:
@@ -536,8 +529,6 @@ fail:
 		fput(base);
 	if (root_mnt)
 		kern_unmount(root_mnt);
-	if (cred)
-		put_cred(cred);
 	if (fsi->lcfs_ctx) {
 		lcfs_destroy_ctx(fsi->lcfs_ctx);
 		fsi->lcfs_ctx = NULL;
@@ -559,7 +550,6 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 {
 	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 	struct lcfs_inode_s *cfs_ino = inode->i_private;
-	const struct cred *old_cred;
 	struct file *real_file;
 	const char *real_path;
 
@@ -580,9 +570,8 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	if (IS_ERR(real_path))
 		return PTR_ERR(real_path);
 
-	/* FIXME: loops opening files to happen.  */
+	/* FIXME: prevent loops opening files.  */
 
-	old_cred = override_creds(fsi->owner_cred);
 	if (fsi->base == NULL || real_path[0] == '/') {
 		real_file = file_open_root_mnt(fsi->root_mnt, real_path,
 					       file->f_flags, 0);
@@ -590,7 +579,6 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 		real_file = file_open_root(&(fsi->base->f_path), real_path,
 					   file->f_flags, 0);
 	}
-	revert_creds(old_cred);
 	if (IS_ERR(real_file)) {
 		return PTR_ERR(real_file);
 	}
@@ -619,9 +607,7 @@ static int cfs_release_file(struct inode *inode, struct file *file)
 
 static int cfs_mmap(struct file *file, struct vm_area_struct *vma)
 {
-	struct cfs_info *fsi = file->f_inode->i_sb->s_fs_info;
 	struct file *realfile = file->private_data;
-	const struct cred *old_cred;
 	int ret;
 
 	if (!realfile->f_op->mmap)
@@ -632,9 +618,7 @@ static int cfs_mmap(struct file *file, struct vm_area_struct *vma)
 
 	vma_set_file(vma, realfile);
 
-	old_cred = override_creds(fsi->owner_cred);
 	ret = call_mmap(vma->vm_file, vma);
-	revert_creds(old_cred);
 
 	return ret;
 }
@@ -642,35 +626,24 @@ static int cfs_mmap(struct file *file, struct vm_area_struct *vma)
 static ssize_t cfs_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 {
 	struct file *file = iocb->ki_filp;
-	struct cfs_info *fsi = file->f_inode->i_sb->s_fs_info;
 	struct file *realfile = file->private_data;
-	const struct cred *old_cred;
 	int ret;
 
 	if (!realfile->f_op->read_iter)
 		return -ENODEV;
 
-	old_cred = override_creds(fsi->owner_cred);
 	iocb->ki_filp = realfile;
 	ret = call_read_iter(realfile, iocb, iter);
 	iocb->ki_filp = file;
-	revert_creds(old_cred);
 
 	return ret;
 }
 
 static int cfs_fadvise(struct file *file, loff_t offset, loff_t len, int advice)
 {
-	struct cfs_info *fsi = file->f_inode->i_sb->s_fs_info;
 	struct file *realfile = file->private_data;
-	const struct cred *old_cred;
-	int ret;
 
-	old_cred = override_creds(fsi->owner_cred);
-	ret = vfs_fadvise(realfile, offset, len, advice);
-	revert_creds(old_cred);
-
-	return ret;
+	return vfs_fadvise(realfile, offset, len, advice);
 }
 
 static int cfs_encode_fh(struct inode *inode, u32 *fh, int *max_len,
@@ -921,8 +894,6 @@ static void cfs_kill_sb(struct super_block *sb)
 		kern_unmount(fsi->root_mnt);
 	if (fsi->lcfs_ctx)
 		lcfs_destroy_ctx(fsi->lcfs_ctx);
-	if (fsi->owner_cred)
-		put_cred(fsi->owner_cred);
 	if (fsi->descriptor_path)
 		kfree(fsi->descriptor_path);
 	if (fsi->base)
