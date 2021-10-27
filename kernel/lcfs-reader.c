@@ -13,6 +13,7 @@
 #include <linux/kernel_read_file.h>
 #include <linux/vmalloc.h>
 #include <linux/slab.h>
+#include <linux/bsearch.h>
 
 /* just an arbitrary limit.  */
 #define MAX_FILE_LENGTH (20 * 1024 * 1024)
@@ -308,4 +309,54 @@ int lcfs_iterate_dir(struct lcfs_context_s *ctx, loff_t first, struct lcfs_inode
 			break;
 	}
 	return 0;
+}
+
+struct bsearch_key_s {
+	const char *name;
+	struct lcfs_context_s *ctx;
+	int err;
+};
+
+/* The first argument is the KEY, so take advantage to pass additional data.  */
+static int compare_names(const void *a, const void *b)
+{
+	struct bsearch_key_s *key = (struct bsearch_key_s *)a;
+	const struct lcfs_dentry_s *dentry = b;
+	const char *name;
+
+	name = lcfs_c_string(key->ctx, dentry->name, NULL, NAME_MAX);
+	if (IS_ERR(name)) {
+		key->err = PTR_ERR(name);
+		return 0;
+	}
+	return strcmp(key->name, name);
+}
+
+int lcfs_lookup(struct lcfs_context_s *ctx, struct lcfs_inode_s *dir, const char *name, lcfs_off_t *index)
+{
+	struct lcfs_dentry_s *dir_content, *end;
+	struct lcfs_dentry_s *found;
+	struct bsearch_key_s key = {
+		.name = name,
+		.ctx = ctx,
+		.err = 0,
+	};
+
+	dir_content = lcfs_get_dentry(ctx, dir->u.dir.off);
+	if (IS_ERR(dir_content))
+		return 0;
+
+	/* Check that the last index is valid as well.  */
+	end = lcfs_get_dentry(ctx, dir->u.dir.off + dir->u.dir.len);
+	if (end == NULL)
+		return 0;
+
+	found = bsearch(&key, dir_content,
+			dir->u.dir.len / sizeof(struct lcfs_dentry_s),
+			sizeof(struct lcfs_dentry_s), compare_names);
+	if (found == NULL || key.err)
+		return 0;
+
+	*index = lcfs_get_dentry_index(ctx, found);
+	return 1;
 }

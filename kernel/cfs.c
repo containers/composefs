@@ -26,7 +26,6 @@
 #include <linux/namei.h>
 #include <linux/mount.h>
 #include <linux/exportfs.h>
-#include <linux/bsearch.h>
 
 #include "lcfs-reader.h"
 
@@ -277,41 +276,14 @@ static loff_t cfs_dir_llseek(struct file *file, loff_t offset, int origin)
 	return offset;
 }
 
-struct bsearch_key_s {
-	const char *name;
-	struct cfs_info *fsi;
-	int err;
-};
-
-/* The first argument is the KEY, so take advantage to pass additional data.  */
-static int compare_names(const void *a, const void *b)
-{
-	struct bsearch_key_s *key = (struct bsearch_key_s *)a;
-	const struct lcfs_dentry_s *dentry = b;
-	const char *name;
-
-	name = lcfs_c_string(key->fsi->lcfs_ctx, dentry->name, NULL, NAME_MAX);
-	if (IS_ERR(name)) {
-		key->err = PTR_ERR(name);
-		return 0;
-	}
-	return strcmp(key->name, name);
-}
-
 struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 			  unsigned int flags)
 {
-	struct lcfs_dentry_s *dir_content_end, *dir_content;
 	struct lcfs_inode_s *cfs_ino = dir->i_private;
 	struct cfs_info *fsi = dir->i_sb->s_fs_info;
-	struct lcfs_dentry_s *found;
 	struct inode *inode;
-	struct bsearch_key_s key = {
-		.name = dentry->d_name.name,
-		.fsi = fsi,
-		.err = 0,
-	};
 	lcfs_off_t index;
+	int ret;
 
 	if (dentry->d_name.len > NAME_MAX)
 		return ERR_PTR(-ENAMETOOLONG);
@@ -319,23 +291,9 @@ struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 	if (!dentry->d_sb->s_d_op)
 		d_set_d_op(dentry, &simple_dentry_operations);
 
-	dir_content = lcfs_get_dentry(fsi->lcfs_ctx, cfs_ino->u.dir.off);
-	if (IS_ERR(dir_content))
+	ret = lcfs_lookup(fsi->lcfs_ctx, cfs_ino, dentry->d_name.name, &index);
+	if (ret == 0)
 		goto return_negative;
-
-	/* Check that the last index is valid as well.  */
-	dir_content_end = lcfs_get_dentry(
-		fsi->lcfs_ctx, cfs_ino->u.dir.off + cfs_ino->u.dir.len);
-	if (dir_content_end == NULL)
-		goto return_negative;
-
-	found = bsearch(&key, dir_content,
-			cfs_ino->u.dir.len / sizeof(struct lcfs_dentry_s),
-			sizeof(struct lcfs_dentry_s), compare_names);
-	if (found == NULL || key.err)
-		goto return_negative;
-
-	index = lcfs_get_dentry_index(fsi->lcfs_ctx, found);
 
 	inode = cfs_get_inode(dir->i_sb, index, dir);
 	if (IS_ERR(inode)) {

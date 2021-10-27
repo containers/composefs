@@ -46,4 +46,6 @@ typedef bool (*lcfs_dir_iter_cb)(void *private, const char *name, int namelen, u
 
 int lcfs_iterate_dir(struct lcfs_context_s *ctx, loff_t first, struct lcfs_inode_s *dir_ino, lcfs_dir_iter_cb cb, void *private);
 
+int lcfs_lookup(struct lcfs_context_s *ctx, struct lcfs_inode_s *dir, const char *name, lcfs_off_t *index);
+
 #endif
