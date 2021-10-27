@@ -231,53 +231,29 @@ static int cfs_dir_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static bool cfs_iterate_cb(void *private, const char *name, int name_len, u64 ino, unsigned int dtype)
+{
+	struct dir_context *ctx = private;
+	bool ret;
+
+	ret = dir_emit(ctx, name, name_len, ino, dtype);
+	if (ret == false)
+		return ret;
+
+	ctx->pos++;
+	return ret;
+}
+
 static int cfs_iterate(struct file *file, struct dir_context *ctx)
 {
-	struct lcfs_inode_s *cfs_dir_ino = file->f_inode->i_private;
 	struct cfs_info *fsi = file->f_inode->i_sb->s_fs_info;
-	struct lcfs_dentry_s *dentry;
-	size_t entries;
+	struct lcfs_inode_s *ino = file->f_inode->i_private;
 
 	if (!dir_emit_dots(file, ctx))
 		return 0;
 
-	entries = cfs_dir_ino->u.dir.len / sizeof(struct lcfs_dentry_s);
-
-	while (ctx->pos < entries + 2) {
-		struct lcfs_inode_data_s *cfs_ino_data;
-		struct lcfs_inode_s *cfs_ino;
-		size_t name_len = 0;
-		const char *name;
-		size_t index;
-
-		index = cfs_dir_ino->u.dir.off +
-			(ctx->pos - 2) * sizeof(struct lcfs_dentry_s);
-
-		dentry = lcfs_get_dentry(fsi->lcfs_ctx, index);
-		if (IS_ERR(dentry))
-			return PTR_ERR(dentry);
-
-		name = lcfs_c_string(fsi->lcfs_ctx, dentry->name, &name_len,
-				     NAME_MAX);
-		if (IS_ERR(name))
-			return PTR_ERR(name);
-
-		cfs_ino = lcfs_dentry_inode(fsi->lcfs_ctx, dentry);
-		if (IS_ERR(cfs_ino))
-			return PTR_ERR(cfs_ino);
-
-		cfs_ino_data = lcfs_inode_data(fsi->lcfs_ctx, cfs_ino);
-		if (IS_ERR(cfs_ino_data))
-			return PTR_ERR(cfs_ino_data);
-
-		if (!dir_emit(ctx, name, name_len, lcfs_dentry_ino(dentry),
-			      cfs_ino_data->st_mode & S_IFMT))
-			break;
-
-		ctx->pos++;
-	}
-
-	return 0;
+	return lcfs_iterate_dir(fsi->lcfs_ctx, ctx->pos - 2, ino,
+				cfs_iterate_cb, ctx);
 }
 
 static loff_t cfs_dir_llseek(struct file *file, loff_t offset, int origin)

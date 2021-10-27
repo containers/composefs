@@ -270,3 +270,42 @@ int lcfs_get_xattr(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, const c
 
 	return -ENODATA;
 }
+
+int lcfs_iterate_dir(struct lcfs_context_s *ctx, loff_t first, struct lcfs_inode_s *dir_ino, lcfs_dir_iter_cb cb, void *private)
+{
+	size_t i, entries;
+
+	entries = dir_ino->u.dir.len / sizeof(struct lcfs_dentry_s);
+
+	for (i = first; i < entries; i++) {
+		struct lcfs_inode_data_s *ino_data;
+		struct lcfs_dentry_s *dentry;
+		struct lcfs_inode_s *ino;
+		size_t name_len = 0;
+		const char *name;
+		size_t nd;
+
+		nd = i * sizeof(struct lcfs_dentry_s);
+
+		dentry = lcfs_get_dentry(ctx, dir_ino->u.dir.off + nd);
+		if (IS_ERR(dentry))
+			return PTR_ERR(dentry);
+
+		name = lcfs_c_string(ctx, dentry->name, &name_len, NAME_MAX);
+		if (IS_ERR(name))
+			return PTR_ERR(name);
+
+		ino = lcfs_dentry_inode(ctx, dentry);
+		if (IS_ERR(ino))
+			return PTR_ERR(ino);
+
+		ino_data = lcfs_inode_data(ctx, ino);
+		if (IS_ERR(ino_data))
+			return PTR_ERR(ino_data);
+
+		if (!cb(private, name, name_len, lcfs_dentry_ino(dentry),
+			      ino_data->st_mode & S_IFMT))
+			break;
+	}
+	return 0;
+}
