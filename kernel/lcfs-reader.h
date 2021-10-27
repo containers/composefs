@@ -1,11 +1,20 @@
-#ifndef _LCFS__READER_H
+#ifndef _LCFS_READER_H
 #define _LCFS_READER_H
 
 #include "lcfs.h"
 
+#ifdef FUZZING
+# define ERR_CAST(x)((void *)x)
+# define ERR_PTR(x)((void *)((long)x))
+# define PTR_ERR(x)((long)x)
+# define IS_ERR(x) ((unsigned long)(void *)(x) >= (unsigned long)-4096)
+#endif
+
 struct lcfs_context_s;
 
 struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path);
+
+struct lcfs_context_s *lcfs_create_ctx_from_memory(char *blob, size_t size);
 
 void lcfs_destroy_ctx(struct lcfs_context_s *ctx);
 

@@ -9,6 +9,18 @@
 #ifndef _LCFS_H
 #define _LCFS_H
 
+#ifdef FUZZING
+# include <stdio.h>
+# include <sys/types.h>
+# include <stdint.h>
+# include <stdbool.h>
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+#endif
+
+#include <linux/types.h>
 #include <linux/fs.h>
 #include <linux/stat.h>
 

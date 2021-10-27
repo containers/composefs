@@ -9,11 +9,38 @@
 #include "lcfs.h"
 #include "lcfs-reader.h"
 
-#include <linux/string.h>
-#include <linux/kernel_read_file.h>
-#include <linux/vmalloc.h>
-#include <linux/slab.h>
-#include <linux/bsearch.h>
+#ifdef FUZZING
+# define GFP_KERNEL 0
+# include <stdio.h>
+# include <errno.h>
+# include <stdlib.h>
+# include <string.h>
+# include <fcntl.h>
+# define kfree free
+# define vfree free
+
+enum kernel_read_file_id {
+	READING_UNKNOWN,
+};
+
+void *kzalloc(size_t len, int ignored)
+{
+	return malloc(len);
+}
+
+int kernel_read_file_from_path(const char *path, loff_t offset, void **buf,
+			       size_t buf_size, size_t *file_size,
+			       enum kernel_read_file_id id)
+{
+	return -ENOENT;
+}
+#else
+# include <linux/string.h>
+# include <linux/kernel_read_file.h>
+# include <linux/vmalloc.h>
+# include <linux/slab.h>
+# include <linux/bsearch.h>
+#endif
 
 /* just an arbitrary limit.  */
 #define MAX_FILE_LENGTH (20 * 1024 * 1024)
@@ -26,26 +53,14 @@ struct lcfs_context_s {
 	size_t vdata_off;
 };
 
-struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
+struct lcfs_context_s *lcfs_create_ctx_from_memory(char *blob, size_t size)
 {
 	struct lcfs_context_s *ctx;
 	struct lcfs_header_s *h;
-	void *blob = NULL;
 	size_t vdata_off;
-	size_t file_size;
 	int ret;
 
-	if (descriptor_path == NULL)
-		return ERR_PTR(-EINVAL);
-
-	/* FIXME: mmap the file and do not use any limit.  */
-	ret = kernel_read_file_from_path(descriptor_path, 0, &blob,
-					 MAX_FILE_LENGTH, &file_size,
-					 READING_UNKNOWN);
-	if (ret < 0)
-		goto fail;
-
-	if (ret < sizeof(struct lcfs_header_s) + sizeof(struct lcfs_inode_s))
+	if (size < sizeof(struct lcfs_header_s) + sizeof(struct lcfs_inode_s))
 		goto fail_einval;
 
 	h = (struct lcfs_header_s *)blob;
@@ -62,16 +77,39 @@ struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
 		goto fail;
 
 	ctx->descriptor = blob;
-	ctx->descriptor_len = file_size;
+	ctx->descriptor_len = size;
 	ctx->vdata_off = vdata_off;
 
 	return ctx;
 fail_einval:
 	ret = -EINVAL;
 fail:
-	if (blob)
-		vfree(blob);
 	return ERR_PTR(ret);
+}
+
+struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
+{
+	struct lcfs_context_s *ctx;
+	void *blob = NULL;
+	size_t file_size;
+	int ret;
+
+	if (descriptor_path == NULL)
+		return ERR_PTR(-EINVAL);
+
+	/* FIXME: mmap the file and do not use any limit.  */
+	ret = kernel_read_file_from_path(descriptor_path, 0, &blob,
+					 MAX_FILE_LENGTH, &file_size,
+					 READING_UNKNOWN);
+	if (ret < 0)
+		return ERR_PTR(ret);
+
+	ctx = lcfs_create_ctx_from_memory(blob, file_size);
+	if (IS_ERR (ctx)) {
+		vfree(blob);
+		return ctx;
+	}
+	return ctx;
 }
 
 void lcfs_destroy_ctx(struct lcfs_context_s *ctx)
