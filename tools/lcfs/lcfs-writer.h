@@ -50,6 +50,11 @@ struct lcfs_node_s {
 	struct lcfs_inode_data_s inode_data;
 };
 
+enum {
+	BUILD_SKIP_XATTRS = (1 << 0),
+	BUILD_USE_EPOCH = (1 << 1),
+};
+
 bool lcfs_node_dirp(struct lcfs_node_s *node);
 
 struct lcfs_ctx_s *lcfs_new_ctx();
@@ -57,7 +62,8 @@ int lcfs_close(struct lcfs_ctx_s *ctx);
 
 struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
 					     const char *fname,
-					     const char *name, int flags);
+					     const char *name, int flags,
+					     int buildflags);
 int lcfs_add_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *parent,
 		   struct lcfs_node_s *child);
 
@@ -75,7 +81,8 @@ int lcfs_write_to(struct lcfs_ctx_s *ctx, FILE *out);
 
 struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 			       struct lcfs_node_s *parent, int fd,
-			       const char *fname, const char *name, int flags);
+			       const char *fname, const char *name, int flags,
+			       int buildflags);
 
 int lcfs_write_to(struct lcfs_ctx_s *ctx, FILE *out);
 

@@ -438,12 +438,18 @@ static int read_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *ret,
 
 struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
 					     const char *fname,
-					     const char *name, int flags)
+					     const char *name, int flags,
+					     int buildflags)
 {
 	struct lcfs_vdata_s tmp_vdata;
 	struct lcfs_node_s *ret;
 	struct stat sb;
 	int r;
+
+	if (buildflags & ~(BUILD_SKIP_XATTRS | BUILD_USE_EPOCH)) {
+		errno = EINVAL;
+		return NULL;
+	}
 
 	if (flags & ~AT_EMPTY_PATH) {
 		errno = EINVAL;
@@ -467,18 +473,22 @@ struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
 	if ((sb.st_mode & S_IFMT) != S_IFDIR)
 		ret->inode.u.file.st_size = sb.st_size;
 
+	if ((buildflags & BUILD_USE_EPOCH) == 0) {
 #if LCFS_USE_TIMESPEC
-	ret->inode.st_mtim = sb.st_mtim;
-	ret->inode.st_ctim = sb.st_ctim;
+		ret->inode.st_mtim = sb.st_mtim;
+		ret->inode.st_ctim = sb.st_ctim;
 #else
-	ret->inode.st_mtim = sb.st_mtim.tv_sec;
-	ret->inode.st_ctim = sb.st_ctim.tv_sec;
+		ret->inode.st_mtim = sb.st_mtim.tv_sec;
+		ret->inode.st_ctim = sb.st_ctim.tv_sec;
 #endif
+	}
 
-	r = read_xattrs(ctx, ret, dirfd, fname, flags);
-	if (r < 0) {
-		free(ret);
-		return NULL;
+	if ((buildflags & BUILD_SKIP_XATTRS) == 0) {
+		r = read_xattrs(ctx, ret, dirfd, fname, flags);
+		if (r < 0) {
+			free(ret);
+			return NULL;
+		}
 	}
 
 	if (name[0]) {
@@ -571,14 +581,16 @@ bool lcfs_node_dirp(struct lcfs_node_s *node)
 
 struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 			       struct lcfs_node_s *parent, int fd,
-			       const char *fname, const char *name, int flags)
+			       const char *fname, const char *name, int flags,
+			       int buildflags)
 {
 	struct lcfs_node_s *node;
 	struct dirent *de;
 	DIR *dir;
 	int dfd;
 
-	node = lcfs_load_node_from_file(ctx, fd, fname, name, flags);
+	node = lcfs_load_node_from_file(ctx, fd, fname, name, flags,
+					buildflags);
 	if (node == NULL)
 		return NULL;
 
@@ -615,7 +627,7 @@ struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 
 		if (de->d_type != DT_DIR) {
 			n = lcfs_build(ctx, node, dfd, de->d_name, de->d_name,
-				       0);
+				       0, buildflags);
 			if (n == NULL) {
 				lcfs_free_node(node);
 				closedir(dir);
@@ -630,7 +642,7 @@ struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 			}
 
 			n = lcfs_build(ctx, node, fd, "", de->d_name,
-				       AT_EMPTY_PATH);
+				       AT_EMPTY_PATH, buildflags);
 			if (n == NULL) {
 				close(fd);
 				lcfs_free_node(node);

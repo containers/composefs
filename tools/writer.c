@@ -88,11 +88,15 @@ static int fill_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
 
 static void usage(const char *argv0)
 {
-	fprintf(stderr, "usage: %s [--chdir=/dir] [--relative]\n", argv0);
+	fprintf(stderr,
+		"usage: %s [--chdir=/dir] [--use-epoch] [--skip-xattrs] [--relative]\n",
+		argv0);
 }
 
 #define OPT_RELATIVE 100
 #define OPT_CHDIR 101
+#define OPT_SKIP_XATTRS 102
+#define OPT_USE_EPOCH 103
 
 int main(int argc, char **argv)
 {
@@ -104,6 +108,18 @@ int main(int argc, char **argv)
 			val: OPT_RELATIVE
 		},
 		{
+			name: "skip-xattrs",
+			has_arg: no_argument,
+			flag: NULL,
+			val: OPT_SKIP_XATTRS
+		},
+		{
+			name: "use-epoch",
+			has_arg: no_argument,
+			flag: NULL,
+			val: OPT_USE_EPOCH
+		},
+		{
 			name: "chdir",
 			has_arg: required_argument,
 			flag: NULL,
@@ -111,6 +127,7 @@ int main(int argc, char **argv)
 		},
 		{},
 	};
+	int buildflags = 0;
 	bool relative_path = false;
 	struct lcfs_node_s *node;
 	struct lcfs_ctx_s *ctx;
@@ -120,6 +137,12 @@ int main(int argc, char **argv)
 
 	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
 		switch (opt) {
+		case OPT_USE_EPOCH:
+			buildflags |= BUILD_USE_EPOCH;
+			break;
+		case OPT_SKIP_XATTRS:
+			buildflags |= BUILD_SKIP_XATTRS;
+			break;
 		case OPT_RELATIVE:
 			relative_path = true;
 			break;
@@ -150,7 +173,7 @@ int main(int argc, char **argv)
 	if (fd < 0)
 		error(EXIT_FAILURE, errno, "open current directory");
 
-	node = lcfs_build(ctx, NULL, fd, "", "", AT_EMPTY_PATH);
+	node = lcfs_build(ctx, NULL, fd, "", "", AT_EMPTY_PATH, buildflags);
 	if (node == NULL)
 		error(EXIT_FAILURE, errno, "load current directory node");
 	close(fd);
