@@ -38,4 +38,8 @@ u64 lcfs_ino_num(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino);
 
 lcfs_off_t lcfs_get_root_index(struct lcfs_context_s *ctx);
 
+ssize_t lcfs_list_xattrs(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, char *names, size_t size);
+
+int lcfs_get_xattr(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, const char *name, void *value, size_t size);
+
 #endif

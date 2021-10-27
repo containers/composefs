@@ -179,3 +179,94 @@ u64 lcfs_ino_num(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
 	char *v = ctx->descriptor + ctx->vdata_off;
 	return ((char *)ino) - v;
 }
+
+static const struct lcfs_xattr_header_s *
+get_xattrs(struct lcfs_context_s *ctx, struct lcfs_inode_s *cfs_ino, size_t *n_xattrs)
+{
+	const struct lcfs_xattr_header_s *xattrs;
+
+	if (cfs_ino->xattrs.len < sizeof(struct lcfs_xattr_header_s))
+		return NULL;
+
+	xattrs = lcfs_get_vdata(ctx, &(cfs_ino->xattrs));
+	if (IS_ERR(xattrs))
+		return ERR_CAST(xattrs);
+
+	*n_xattrs = cfs_ino->xattrs.len / sizeof(struct lcfs_xattr_header_s);
+
+	return xattrs;
+}
+
+ssize_t lcfs_list_xattrs(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, char *names, size_t size)
+{
+	const struct lcfs_xattr_header_s *xattrs;
+	size_t n_xattrs = 0, i;
+	ssize_t copied = 0;
+
+	xattrs = get_xattrs(ctx, ino, &n_xattrs);
+	if (IS_ERR(xattrs))
+		return PTR_ERR(xattrs);
+
+	if (xattrs == NULL)
+		return 0;
+
+	for (i = 0; i < n_xattrs; i++) {
+		const void *xattr;
+
+		xattr = lcfs_get_vdata(ctx, &(xattrs[i].key));
+		if (IS_ERR(xattr))
+			return PTR_ERR(xattr);
+
+		if (size) {
+			if (size - copied < xattrs[i].key.len + 1)
+				return -E2BIG;
+
+			memcpy(names + copied, xattr, xattrs[i].key.len);
+			names[copied + xattrs[i].key.len] = '\0';
+		}
+		copied += xattrs[i].key.len + 1;
+	}
+	return copied;
+}
+
+int lcfs_get_xattr(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, const char *name, void *value, size_t size)
+{
+	const struct lcfs_xattr_header_s *xattrs;
+	size_t name_len = strlen(name);
+	size_t n_xattrs = 0, i;
+
+	xattrs = get_xattrs(ctx, ino, &n_xattrs);
+	if (IS_ERR(xattrs))
+		return PTR_ERR(xattrs);
+
+	if (xattrs == NULL)
+		return -ENODATA;
+
+	for (i = 0; i < n_xattrs; i++) {
+		const void *v;
+
+		if (xattrs[i].key.len != name_len)
+			continue;
+
+		v = lcfs_get_vdata(ctx, &(xattrs[i].key));
+		if (IS_ERR(v))
+			return PTR_ERR(v);
+
+		if (memcmp(v, name, name_len) == 0) {
+			if (size == 0)
+				return xattrs[i].value.len;
+
+			if (size < xattrs[i].value.len)
+				return -E2BIG;
+
+			v = lcfs_get_vdata(ctx, &(xattrs[i].value));
+			if (IS_ERR(v))
+				return PTR_ERR(v);
+
+			memcpy(value, v, xattrs[i].value.len);
+			return xattrs[i].value.len;
+		}
+	}
+
+	return -ENODATA;
+}

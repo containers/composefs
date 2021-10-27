@@ -745,102 +745,23 @@ static int cfs_setxattr(const struct xattr_handler *handler,
 	return -EROFS;
 }
 
-static const struct lcfs_xattr_header_s *
-get_xattrs(struct cfs_info *fsi, struct lcfs_inode_s *cfs_ino, size_t *n_xattrs)
-{
-	const struct lcfs_xattr_header_s *xattrs;
-
-	if (cfs_ino->xattrs.len < sizeof(struct lcfs_xattr_header_s))
-		return NULL;
-
-	xattrs = lcfs_get_vdata(fsi->lcfs_ctx, &(cfs_ino->xattrs));
-	if (IS_ERR(xattrs))
-		return ERR_CAST(xattrs);
-
-	*n_xattrs = cfs_ino->xattrs.len / sizeof(struct lcfs_xattr_header_s);
-
-	return xattrs;
-}
-
 static int cfs_getxattr(const struct xattr_handler *handler,
 			struct dentry *unused2, struct inode *inode,
 			const char *name, void *value, size_t size)
 {
 	struct lcfs_inode_s *cfs_ino = inode->i_private;
 	struct cfs_info *fsi = inode->i_sb->s_fs_info;
-	const struct lcfs_xattr_header_s *xattrs;
-	size_t name_len = strlen(name);
-	size_t n_xattrs = 0, i;
 
-	xattrs = get_xattrs(fsi, cfs_ino, &n_xattrs);
-	if (IS_ERR(xattrs))
-		return PTR_ERR(xattrs);
-
-	if (xattrs == NULL)
-		return -ENODATA;
-
-	for (i = 0; i < n_xattrs; i++) {
-		const void *v;
-
-		if (xattrs[i].key.len != name_len)
-			continue;
-
-		v = lcfs_get_vdata(fsi->lcfs_ctx, &(xattrs[i].key));
-		if (IS_ERR(v))
-			return PTR_ERR(v);
-
-		if (memcmp(v, name, name_len) == 0) {
-			if (size == 0)
-				return xattrs[i].value.len;
-
-			if (size < xattrs[i].value.len)
-				return -E2BIG;
-
-			v = lcfs_get_vdata(fsi->lcfs_ctx, &(xattrs[i].value));
-			if (IS_ERR(v))
-				return PTR_ERR(v);
-
-			memcpy(value, v, xattrs[i].value.len);
-			return xattrs[i].value.len;
-		}
-	}
-
-	return -ENODATA;
+	return lcfs_get_xattr(fsi->lcfs_ctx, cfs_ino, name, value, size);
 }
 
 static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size)
 {
 	struct inode *inode = d_inode(dentry);
-	struct cfs_info *fsi = inode->i_sb->s_fs_info;
-	const struct lcfs_xattr_header_s *xattrs;
-	ssize_t copied = 0;
-	size_t n_xattrs = 0, i;
 	struct lcfs_inode_s *cfs_ino = inode->i_private;
+	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 
-	xattrs = get_xattrs(fsi, cfs_ino, &n_xattrs);
-	if (IS_ERR(xattrs))
-		return PTR_ERR(xattrs);
-
-	if (xattrs == NULL)
-		return 0;
-
-	for (i = 0; i < n_xattrs; i++) {
-		const void *xattr;
-
-		xattr = lcfs_get_vdata(fsi->lcfs_ctx, &(xattrs[i].key));
-		if (IS_ERR(xattr))
-			return PTR_ERR(xattr);
-
-		if (size) {
-			if (size - copied < xattrs[i].key.len + 1)
-				return -E2BIG;
-
-			memcpy(names + copied, xattr, xattrs[i].key.len);
-			names[copied + xattrs[i].key.len] = '\0';
-		}
-		copied += xattrs[i].key.len + 1;
-	}
-	return copied;
+	return lcfs_list_xattrs(fsi->lcfs_ctx, cfs_ino, names, size);
 }
 
 static const struct file_operations cfs_file_operations = {
