@@ -360,3 +360,18 @@ int lcfs_lookup(struct lcfs_context_s *ctx, struct lcfs_inode_s *dir, const char
 	*index = lcfs_get_dentry_index(ctx, found);
 	return 1;
 }
+
+const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
+{
+	const char *real_path;
+
+	if (ino->u.file.payload == 0)
+		return ERR_PTR(-EINVAL);
+
+	real_path = lcfs_c_string(ctx, ino->u.file.payload, NULL, PATH_MAX);
+	if (real_path == NULL)
+		return ERR_PTR(-EIO);
+
+
+	return real_path;
+}

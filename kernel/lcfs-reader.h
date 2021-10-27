@@ -48,4 +48,6 @@ int lcfs_iterate_dir(struct lcfs_context_s *ctx, loff_t first, struct lcfs_inode
 
 int lcfs_lookup(struct lcfs_context_s *ctx, struct lcfs_inode_s *dir, const char *name, lcfs_off_t *index);
 
+const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino);
+
 #endif
