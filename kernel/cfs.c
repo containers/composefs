@@ -490,7 +490,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	if (WARN_ON(file == NULL))
 		return -EIO;
 
-	if (file->f_flags & (O_WRONLY | O_CREAT | O_EXCL | O_NOCTTY | O_TRUNC))
+	if (file->f_flags & (O_WRONLY | O_CREAT | O_EXCL | O_TRUNC))
 		return -EROFS;
 
 	real_path = lcfs_get_payload(fsi->lcfs_ctx, cfs_ino);
