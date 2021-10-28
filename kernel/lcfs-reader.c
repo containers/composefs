@@ -18,6 +18,8 @@
 # include <fcntl.h>
 # define kfree free
 # define vfree free
+# define min(a, b) ((a)<(b)?(a):(b))
+# define check_add_overflow(a, b, d) __builtin_add_overflow(a, b, d)
 
 enum kernel_read_file_id {
 	READING_UNKNOWN,
@@ -40,6 +42,7 @@ int kernel_read_file_from_path(const char *path, loff_t offset, void **buf,
 # include <linux/vmalloc.h>
 # include <linux/slab.h>
 # include <linux/bsearch.h>
+# include <linux/overflow.h>
 #endif
 
 /* just an arbitrary limit.  */
@@ -120,21 +123,6 @@ void lcfs_destroy_ctx(struct lcfs_context_s *ctx)
 	kfree(ctx);
 }
 
-void *lcfs_get_vdata(struct lcfs_context_s *ctx,
-		     const struct lcfs_vdata_s *vdata)
-{
-	size_t off = vdata->off;
-	size_t len = vdata->len;
-
-	if (off >= ctx->descriptor_len || len > ctx->descriptor_len)
-		return ERR_PTR(-ENOMEDIUM);
-
-	if (ctx->vdata_off + off + len > ctx->descriptor_len)
-		return ERR_PTR(-ENOMEDIUM);
-
-	return (char *)(ctx->descriptor + ctx->vdata_off + off);
-}
-
 struct lcfs_dentry_s *lcfs_get_dentry(struct lcfs_context_s *ctx, size_t index)
 {
 	struct lcfs_vdata_s vdata = {
@@ -144,30 +132,55 @@ struct lcfs_dentry_s *lcfs_get_dentry(struct lcfs_context_s *ctx, size_t index)
 	return lcfs_get_vdata(ctx, &vdata);
 }
 
+void *lcfs_get_vdata(struct lcfs_context_s *ctx,
+		     const struct lcfs_vdata_s *vdata)
+{
+	size_t off = vdata->off;
+	size_t len = vdata->len;
+	size_t index_end;
+	size_t index;
+
+	/* Verify that both ends are contained inside the blob data.  */
+	if (check_add_overflow(ctx->vdata_off, off, &index))
+		return ERR_PTR(-ENOMEDIUM);
+
+	if (index >= ctx->descriptor_len)
+		return ERR_PTR(-ENOMEDIUM);
+
+	if (check_add_overflow(index, len, &index_end))
+		return ERR_PTR(-ENOMEDIUM);
+
+	if (index_end > ctx->descriptor_len)
+		return ERR_PTR(-ENOMEDIUM);
+
+	return ctx->descriptor + index;
+}
+
 char *lcfs_c_string(struct lcfs_context_s *ctx, lcfs_c_str_t off, size_t *len,
 		    size_t max)
 {
-	char *data, *endl;
+	char *cstr, *nul;
+	size_t index;
 
-	if (ctx->vdata_off >= ctx->descriptor_len)
+	/* Find the beginning of the string.  */
+	if (check_add_overflow(ctx->vdata_off, (size_t) off, &index))
 		return ERR_PTR(-ENOMEDIUM);
 
-	if (off >= ctx->descriptor_len)
+	if (index >= ctx->descriptor_len)
 		return ERR_PTR(-ENOMEDIUM);
 
-	data = (char *)(ctx->descriptor + ctx->vdata_off + off);
+	cstr = ctx->descriptor + index;
 
 	/* Adjust max if it falls after the end of the buffer.  */
-	if (ctx->descriptor + ctx->descriptor_len < data + max)
-		max = ctx->descriptor + ctx->descriptor_len - data;
+	max = min(ctx->descriptor_len - index, max);
 
-	endl = memchr(data, '\0', max);
-	if (endl == NULL)
+	nul = memchr(cstr, '\0', max);
+	if (nul == NULL)
 		return ERR_PTR(-ENOMEDIUM);
 
 	if (len)
-		*len = endl - data;
-	return data;
+		*len = nul - cstr;
+	return cstr;
 }
 
 lcfs_off_t lcfs_get_dentry_index(struct lcfs_context_s *ctx,
