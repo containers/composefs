@@ -253,9 +253,11 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 				     struct lcfs_node_s *node, yajl_val entry)
 {
 	const char *payload = NULL;
+	char payload_buffer[128];
 	uint16_t min, maj;
 	mode_t mode = 0;
 	yajl_val v;
+	bool is_regular_file = false;
 	bool is_hardlink = false;
 
 	if (node == NULL)
@@ -344,6 +346,20 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 	v = get_child(entry, "x-payload", yajl_t_string);
 	if (v)
 		payload = YAJL_GET_STRING(v);
+	if (payload == NULL && is_regular_file) {
+		char *tmp = NULL;
+		v = get_child(entry, "digest", yajl_t_string);
+		if (v) {
+			tmp = YAJL_GET_STRING(v);
+		}
+		if (tmp) {
+			if (strncmp(tmp, "sha256:", 7) == 0)
+				tmp += 7;
+			snprintf(payload_buffer, sizeof(payload_buffer) - 1, "%.*s/%s", 2, tmp, tmp+2);
+			payload_buffer[sizeof(payload_buffer) - 1] = '\0';
+			payload = payload_buffer;
+		}
+	}
 
 	if (payload) {
 		int r;
