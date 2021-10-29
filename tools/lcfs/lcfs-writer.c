@@ -523,11 +523,6 @@ int lcfs_set_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
 	struct lcfs_vdata_s tmp_vdata;
 	int r;
 
-	if (node->inode.xattrs.len) {
-		errno = EINVAL;
-		return -1;
-	}
-
 	r = lcfs_append_vdata(ctx, &tmp_vdata, xattrs, len);
 	if (r < 0)
 		return r;

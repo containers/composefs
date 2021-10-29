@@ -197,6 +197,8 @@ fill_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, yajl_val xattrs)
 
 		if (!YAJL_IS_STRING(YAJL_GET_OBJECT(xattrs)->values[i])) {
 			free(node);
+			free(buffer);
+			error(0, 0, "xattr value is not a string");
 			return NULL;
 		}
 
@@ -206,6 +208,8 @@ fill_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, yajl_val xattrs)
 				  &written);
 		if (r < 0) {
 			free(node);
+			free(buffer);
+			error(0, 0, "xattr value is not valid b64");
 			return NULL;
 		}
 
@@ -213,15 +217,19 @@ fill_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, yajl_val xattrs)
 						strlen(k), v_buffer, written);
 		if (r < 0) {
 			free(node);
+			free(buffer);
+			error(0, 0, "append xattr");
 			return NULL;
 		}
 	}
 
 	if (lcfs_set_xattrs(ctx, node, buffer, buffer_len) < 0) {
 		free(node);
+		free(buffer);
+		error(0, 0, "set xattrs");
 		return NULL;
 	}
-
+	free(buffer);
 	return node;
 }
 
@@ -260,12 +268,15 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 	bool is_regular_file = false;
 	bool is_hardlink = false;
 
-	if (node == NULL)
+	if (node == NULL) {
+		error(0, 0, "node is NULL");
 		return node;
+	}
 
-	if (strcmp(typ, "reg") == 0)
+	if (strcmp(typ, "reg") == 0) {
 		mode |= S_IFREG;
-	else if (strcmp(typ, "dir") == 0)
+		is_regular_file = true;
+	} else if (strcmp(typ, "dir") == 0)
 		mode |= S_IFDIR;
 	else if (strcmp(typ, "char") == 0)
 		mode |= S_IFCHR;
@@ -278,7 +289,7 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 
 		v = get_child(entry, "linkName", yajl_t_string);
 		if (!v) {
-			fprintf(stderr, "linkName not specified");
+			error(0, 0, "linkName not specified");
 			free(node);
 			return NULL;
 		}
@@ -291,15 +302,15 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 
 		v = get_child(entry, "linkName", yajl_t_string);
 		if (!v) {
-			fprintf(stderr, "linkName not specified");
+			error(0, 0, "linkName not specified");
 			free(node);
 			return NULL;
 		}
 
 		target = get_node(ctx, root, YAJL_GET_STRING(v));
 		if (!target) {
-			fprintf(stderr, "could not find target %s",
-				YAJL_GET_STRING(v));
+ 			error(0, 0, "could not find target %s",
+			      YAJL_GET_STRING(v));
 			free(node);
 			return NULL;
 		}
@@ -368,6 +379,7 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 		r = lcfs_append_vdata(ctx, &out, payload, strlen(payload) + 1);
 		if (r < 0) {
 			free(node);
+			error(0, 0, "append vdata");
 			return NULL;
 		}
 		node->inode.u.file.payload = out.off;
@@ -390,16 +402,20 @@ static struct lcfs_node_s *get_or_add_node(struct lcfs_ctx_s *ctx,
 	struct lcfs_node_s *node = root;
 
 	tmp = get_child(entry, "name", yajl_t_string);
-	if (tmp == NULL)
-		error(EXIT_FAILURE, 0, "entry has no name");
+	if (tmp == NULL) {
+		error(0, 0, "entry has no name");
+		return NULL;
+	}
 
 	it = YAJL_GET_STRING(tmp);
-	if (it == NULL)
+	if (it == NULL) {
+		error(0, 0, "name is not a string");
 		return NULL;
+	}
 
 	path = strdup(it);
 	if (path == NULL)
-		return NULL;
+		error(EXIT_FAILURE, errno, "strdup");
 
 	dpath = path;
 	while ((it = strsep(&dpath, "/"))) {
@@ -412,37 +428,24 @@ static struct lcfs_node_s *get_or_add_node(struct lcfs_ctx_s *ctx,
 		}
 
 		node = append_child(ctx, node, it);
-		if (node == NULL)
-			break;
+		if (node == NULL) {
+			error(0, errno, "append_child");
+			return NULL;
+		}
 	}
 
 	free(path);
 	return fill_file(ctx, typ, root, node, entry);
 }
 
-int main()
+static void do_file(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root, FILE *file)
 {
 	yajl_val entries, root_val, tmp;
-	struct lcfs_node_s *root;
-	struct lcfs_ctx_s *ctx;
-	char cwd[PATH_MAX];
 	size_t i;
 
-	if (isatty(1))
-		error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
-
-	ctx = lcfs_new_ctx();
-	if (ctx == NULL)
-		error(EXIT_FAILURE, errno, "new_ctx");
-
-	root_val = parse_file(stdin);
+	root_val = parse_file(file);
 	if (root_val == NULL)
 		error(EXIT_FAILURE, errno, "parse_file");
-
-	root = malloc(sizeof(struct lcfs_node_s));
-	if (root == NULL)
-		error(EXIT_FAILURE, errno, "malloc");
-	memset(root, 0, sizeof(*root));
 
 	if (!YAJL_IS_OBJECT(root_val))
 		error(EXIT_FAILURE, 0, "invalid type for root");
@@ -471,6 +474,38 @@ int main()
 			error(EXIT_FAILURE, 0, "get_or_add_node");
 	}
 
+	yajl_tree_free(root_val);
+}
+
+int main(int argc, char **argv)
+{
+	struct lcfs_node_s *root;
+	struct lcfs_ctx_s *ctx;
+	char cwd[PATH_MAX];
+	size_t i;
+
+	if (isatty(1))
+		error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
+
+	ctx = lcfs_new_ctx();
+	if (ctx == NULL)
+		error(EXIT_FAILURE, errno, "new_ctx");
+
+	root = malloc(sizeof(struct lcfs_node_s));
+	if (root == NULL)
+		error(EXIT_FAILURE, errno, "malloc");
+	memset(root, 0, sizeof(*root));
+
+	for (i = 1; i < argc; i++) {
+		FILE *f;
+
+		f = fopen(argv[i], "r");
+		if (f == NULL)
+			error(EXIT_FAILURE, errno, "open `%s`", argv[i]);
+		do_file(ctx, root, f);
+		fclose(f);
+	}
+
 	lcfs_set_root(ctx, root);
 
 	getcwd(cwd, sizeof(cwd));
@@ -479,6 +514,5 @@ int main()
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
 
 	lcfs_close(ctx);
-	yajl_tree_free(root_val);
 	return 0;
 }
