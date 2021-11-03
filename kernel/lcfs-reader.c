@@ -142,16 +142,16 @@ void *lcfs_get_vdata(struct lcfs_context_s *ctx,
 
 	/* Verify that both ends are contained inside the blob data.  */
 	if (check_add_overflow(ctx->vdata_off, off, &index))
-		return ERR_PTR(-ENOMEDIUM);
+		return ERR_PTR(-EFSCORRUPTED);
 
 	if (index >= ctx->descriptor_len)
-		return ERR_PTR(-ENOMEDIUM);
+		return ERR_PTR(-EFSCORRUPTED);
 
 	if (check_add_overflow(index, len, &index_end))
-		return ERR_PTR(-ENOMEDIUM);
+		return ERR_PTR(-EFSCORRUPTED);
 
 	if (index_end > ctx->descriptor_len)
-		return ERR_PTR(-ENOMEDIUM);
+		return ERR_PTR(-EFSCORRUPTED);
 
 	return ctx->descriptor + index;
 }
@@ -164,10 +164,10 @@ char *lcfs_c_string(struct lcfs_context_s *ctx, lcfs_c_str_t off, size_t *len,
 
 	/* Find the beginning of the string.  */
 	if (check_add_overflow(ctx->vdata_off, (size_t) off, &index))
-		return ERR_PTR(-ENOMEDIUM);
+		return ERR_PTR(-EFSCORRUPTED);
 
 	if (index >= ctx->descriptor_len)
-		return ERR_PTR(-ENOMEDIUM);
+		return ERR_PTR(-EFSCORRUPTED);
 
 	cstr = ctx->descriptor + index;
 
@@ -176,7 +176,7 @@ char *lcfs_c_string(struct lcfs_context_s *ctx, lcfs_c_str_t off, size_t *len,
 
 	nul = memchr(cstr, '\0', max);
 	if (nul == NULL)
-		return ERR_PTR(-ENOMEDIUM);
+		return ERR_PTR(-EFSCORRUPTED);
 
 	if (len)
 		*len = nul - cstr;

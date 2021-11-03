@@ -3,6 +3,8 @@
 
 #include "lcfs.h"
 
+#define EFSCORRUPTED       EUCLEAN         /* Filesystem is corrupted */
+
 #ifdef FUZZING
 # define ERR_CAST(x)((void *)x)
 # define ERR_PTR(x)((void *)((long)x))
