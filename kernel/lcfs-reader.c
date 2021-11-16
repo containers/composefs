@@ -129,14 +129,14 @@ struct lcfs_dentry_s *lcfs_get_dentry(struct lcfs_context_s *ctx, size_t index)
 		.off = index,
 		.len = sizeof(struct lcfs_dentry_s),
 	};
-	return lcfs_get_vdata(ctx, &vdata);
+	return lcfs_get_vdata(ctx, vdata);
 }
 
 void *lcfs_get_vdata(struct lcfs_context_s *ctx,
-		     const struct lcfs_vdata_s *vdata)
+		     const struct lcfs_vdata_s vdata)
 {
-	size_t off = vdata->off;
-	size_t len = vdata->len;
+	size_t off = vdata.off;
+	size_t len = vdata.len;
 	size_t index_end;
 	size_t index;
 
@@ -199,7 +199,7 @@ struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 		.off = index,
 		.len = sizeof(struct lcfs_inode_s),
 	};
-	return lcfs_get_vdata(ctx, &vdata);
+	return lcfs_get_vdata(ctx, vdata);
 }
 
 lcfs_off_t lcfs_get_root_index(struct lcfs_context_s *ctx)
@@ -223,7 +223,7 @@ struct lcfs_inode_data_s *lcfs_inode_data(struct lcfs_context_s *ctx,
 		.off = ino->inode_data_index,
 		.len = sizeof(struct lcfs_inode_data_s),
 	};
-	return lcfs_get_vdata(ctx, &vdata);
+	return lcfs_get_vdata(ctx, vdata);
 }
 
 u64 lcfs_ino_num(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
@@ -240,7 +240,7 @@ get_xattrs(struct lcfs_context_s *ctx, struct lcfs_inode_s *cfs_ino, size_t *n_x
 	if (cfs_ino->xattrs.len < sizeof(struct lcfs_xattr_header_s))
 		return NULL;
 
-	xattrs = lcfs_get_vdata(ctx, &(cfs_ino->xattrs));
+	xattrs = lcfs_get_vdata(ctx, cfs_ino->xattrs);
 	if (IS_ERR(xattrs))
 		return ERR_CAST(xattrs);
 
@@ -265,7 +265,7 @@ ssize_t lcfs_list_xattrs(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, c
 	for (i = 0; i < n_xattrs; i++) {
 		const void *xattr;
 
-		xattr = lcfs_get_vdata(ctx, &(xattrs[i].key));
+		xattr = lcfs_get_vdata(ctx, xattrs[i].key);
 		if (IS_ERR(xattr))
 			return PTR_ERR(xattr);
 
@@ -300,7 +300,7 @@ int lcfs_get_xattr(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, const c
 		if (xattrs[i].key.len != name_len)
 			continue;
 
-		v = lcfs_get_vdata(ctx, &(xattrs[i].key));
+		v = lcfs_get_vdata(ctx, xattrs[i].key);
 		if (IS_ERR(v))
 			return PTR_ERR(v);
 
@@ -311,7 +311,7 @@ int lcfs_get_xattr(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, const c
 			if (size < xattrs[i].value.len)
 				return -E2BIG;
 
-			v = lcfs_get_vdata(ctx, &(xattrs[i].value));
+			v = lcfs_get_vdata(ctx, xattrs[i].value);
 			if (IS_ERR(v))
 				return PTR_ERR(v);
 

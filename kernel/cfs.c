@@ -612,7 +612,7 @@ static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 			.len = sizeof(struct lcfs_inode_s),
 		};
 
-		inode = lcfs_get_vdata(fsi->lcfs_ctx, &vdata);
+		inode = lcfs_get_vdata(fsi->lcfs_ctx, vdata);
 		if (IS_ERR(inode))
 			return ERR_CAST(inode);
 

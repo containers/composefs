@@ -23,7 +23,7 @@ void lcfs_destroy_ctx(struct lcfs_context_s *ctx);
 struct lcfs_dentry_s *lcfs_get_dentry(struct lcfs_context_s *ctx, size_t index);
 
 void *lcfs_get_vdata(struct lcfs_context_s *ctx,
-		     const struct lcfs_vdata_s *vdata);
+		     const struct lcfs_vdata_s vdata);
 
 lcfs_off_t lcfs_get_dentry_index(struct lcfs_context_s *ctx,
 				 struct lcfs_dentry_s *node);
