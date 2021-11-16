@@ -474,13 +474,8 @@ struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
 		ret->inode.u.file.st_size = sb.st_size;
 
 	if ((buildflags & BUILD_USE_EPOCH) == 0) {
-#if LCFS_USE_TIMESPEC
 		ret->inode.st_mtim = sb.st_mtim;
 		ret->inode.st_ctim = sb.st_ctim;
-#else
-		ret->inode.st_mtim = sb.st_mtim.tv_sec;
-		ret->inode.st_ctim = sb.st_ctim.tv_sec;
-#endif
 	}
 
 	if ((buildflags & BUILD_SKIP_XATTRS) == 0) {

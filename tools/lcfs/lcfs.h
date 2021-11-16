@@ -24,8 +24,6 @@
 
 #define LCFS_VERSION 1
 
-#define LCFS_USE_TIMESPEC 0
-
 typedef uint32_t lcfs_off_t;
 
 typedef lcfs_off_t lcfs_c_str_t;
@@ -69,13 +67,8 @@ struct lcfs_inode_s {
 		} file;
 	} u;
 
-#if LCFS_USE_TIMESPEC
 	struct timespec st_mtim; /* Time of last modification.  */
 	struct timespec st_ctim; /* Time of last status change.  */
-#else
-	uint64_t st_mtim; /* Time of last modification.  */
-	uint64_t st_ctim; /* Time of last modification.  */
-#endif
 
 	/* Variable len data.  */
 	struct lcfs_vdata_s xattrs;

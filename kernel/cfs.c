@@ -97,15 +97,9 @@ static struct inode *cfs_make_inode(struct super_block *sb,
 		inode->i_uid = make_kuid(current_user_ns(), ino_data->st_uid);
 		inode->i_gid = make_kgid(current_user_ns(), ino_data->st_gid);
 		inode->i_mode = ino_data->st_mode;
-#if LCFS_USE_TIMESPEC
 		inode->i_atime = ino->st_mtim;
 		inode->i_mtime = ino->st_mtim;
 		inode->i_ctime = ino->st_ctim;
-#else
-		inode->i_atime.tv_sec = ino->st_mtim;
-		inode->i_mtime.tv_sec = ino->st_mtim;
-		inode->i_ctime.tv_sec = ino->st_ctim;
-#endif
 		switch (ino_data->st_mode & S_IFMT) {
 		case S_IFREG:
 			inode->i_op = &cfs_file_inode_operations;
@@ -449,11 +443,7 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	sb->s_export_op = &cfs_export_operations;
 
 	sb->s_op = &cfs_ops;
-#if LCFS_USE_TIMESPEC
 	sb->s_time_gran = 1;
-#else
-	sb->s_time_gran = NSEC_PER_SEC;
-#endif
 
 	fsi->root_mnt = root_mnt;
 	fsi->base = base;
