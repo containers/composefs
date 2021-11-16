@@ -44,6 +44,8 @@ struct cfs_info {
 	struct file *base;
 };
 
+static struct file empty_file;
+
 static const struct file_operations cfs_file_operations;
 static const struct vm_operations_struct generic_file_vm_ops;
 
@@ -483,6 +485,11 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	if (file->f_flags & (O_WRONLY | O_CREAT | O_EXCL | O_TRUNC))
 		return -EROFS;
 
+	if (cfs_ino->u.file.st_size == 0) {
+		file->private_data = &empty_file;
+		return 0;
+	}
+
 	real_path = lcfs_get_payload(fsi->lcfs_ctx, cfs_ino);
 	if (IS_ERR(real_path))
 		return PTR_ERR(real_path);
@@ -510,13 +517,24 @@ static unsigned long cfs_mmu_get_unmapped_area(struct file *file,
 					       unsigned long pgoff,
 					       unsigned long flags)
 {
+	struct file *realfile = file->private_data;
+
+	if (realfile == &empty_file)
+		return 0;
+
 	return current->mm->get_unmapped_area(file, addr, len, pgoff, flags);
 }
 
 static int cfs_release_file(struct inode *inode, struct file *file)
 {
-	if (WARN_ON(file->private_data == NULL))
+	struct file *realfile = file->private_data;
+
+	if (WARN_ON(realfile == NULL))
 		return -EIO;
+
+	if (realfile == &empty_file)
+		return 0;
+
 	fput(file->private_data);
 
 	return 0;
@@ -526,6 +544,9 @@ static int cfs_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct file *realfile = file->private_data;
 	int ret;
+
+	if (realfile == &empty_file)
+		return 0;
 
 	if (!realfile->f_op->mmap)
 		return -ENODEV;
@@ -546,6 +567,9 @@ static ssize_t cfs_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	struct file *realfile = file->private_data;
 	int ret;
 
+	if (realfile == &empty_file)
+		return 0;
+
 	if (!realfile->f_op->read_iter)
 		return -ENODEV;
 
@@ -559,6 +583,9 @@ static ssize_t cfs_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 static int cfs_fadvise(struct file *file, loff_t offset, loff_t len, int advice)
 {
 	struct file *realfile = file->private_data;
+
+	if (realfile == &empty_file)
+		return 0;
 
 	return vfs_fadvise(realfile, offset, len, advice);
 }
