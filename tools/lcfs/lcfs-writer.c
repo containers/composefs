@@ -298,7 +298,8 @@ int lcfs_write_to(struct lcfs_ctx_s *ctx, FILE *out)
 		.version = LCFS_VERSION,
 		.unused1 = 0,
 		.unused2 = 0,
-		.unused3 = 0,
+		.inode_len = sizeof(struct lcfs_inode_s),
+		.inode_data_len = sizeof(struct lcfs_inode_data_s),
 	};
 	int ret = 0;
 

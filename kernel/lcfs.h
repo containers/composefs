@@ -39,7 +39,9 @@ struct lcfs_header_s {
 	u8 version;
 	u8 unused1;
 	u16 unused2;
-	u32 unused3;
+
+	u32 inode_len;
+	u32 inode_data_len;
 } __attribute__((packed));
 
 struct lcfs_inode_data_s {

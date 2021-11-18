@@ -49,6 +49,8 @@ int kernel_read_file_from_path(const char *path, loff_t offset, void **buf,
 #define MAX_FILE_LENGTH (20 * 1024 * 1024)
 
 struct lcfs_context_s {
+	struct lcfs_header_s header;
+
 	char *descriptor;
 	size_t descriptor_len;
 
@@ -71,6 +73,12 @@ struct lcfs_context_s *lcfs_create_ctx_from_memory(char *blob, size_t size)
 	if (h->version != LCFS_VERSION)
 		goto fail_einval;
 
+	if (h->inode_len != sizeof(struct lcfs_inode_s))
+		goto fail_einval;
+
+	if (h->inode_data_len != sizeof(struct lcfs_inode_data_s))
+		goto fail_einval;
+
 	/* vdata starts immediately after the header */
 	vdata_off = sizeof(struct lcfs_header_s);
 
@@ -79,6 +87,7 @@ struct lcfs_context_s *lcfs_create_ctx_from_memory(char *blob, size_t size)
 	if (ctx == NULL)
 		goto fail;
 
+	ctx->header = *h;
 	ctx->descriptor = blob;
 	ctx->descriptor_len = size;
 	ctx->vdata_off = vdata_off;
