@@ -24,7 +24,7 @@
 
 #define LCFS_VERSION 1
 
-typedef uint32_t lcfs_off_t;
+typedef uint64_t lcfs_off_t;
 
 typedef lcfs_off_t lcfs_c_str_t;
 

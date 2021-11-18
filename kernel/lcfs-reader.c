@@ -97,6 +97,10 @@ struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
 	size_t file_size;
 	int ret;
 
+	if (sizeof(void *) != sizeof(lcfs_off_t)) {
+		return ERR_PTR(-ENOTSUPP);
+	}
+
 	if (descriptor_path == NULL)
 		return ERR_PTR(-EINVAL);
 

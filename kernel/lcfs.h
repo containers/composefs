@@ -26,7 +26,7 @@ typedef uint64_t u64;
 
 #define LCFS_VERSION 1
 
-typedef u32 lcfs_off_t;
+typedef u64 lcfs_off_t;
 
 typedef lcfs_off_t lcfs_c_str_t;
 
