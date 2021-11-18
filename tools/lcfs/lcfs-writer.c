@@ -258,8 +258,8 @@ int cmp_nodes(const void *a, const void *b, void *r)
 	struct lcfs_ctx_s *ctx = r;
 	const struct lcfs_node_s *na = *((const struct lcfs_node_s **)a);
 	const struct lcfs_node_s *nb = *((const struct lcfs_node_s **)b);
-	const char *name_a = ctx->vdata + na->data.name;
-	const char *name_b = ctx->vdata + nb->data.name;
+	const char *name_a = ctx->vdata + na->data.name.off;
+	const char *name_b = ctx->vdata + nb->data.name.off;
 
 	return strcmp(name_a, name_b);
 }
@@ -492,7 +492,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
 			free(ret);
 			return NULL;
 		}
-		ret->data.name = tmp_vdata.off;
+		ret->data.name = tmp_vdata;
 	}
 
 	return ret;
@@ -508,7 +508,7 @@ int lcfs_set_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
 	if (r < 0)
 		return r;
 
-	node->inode.u.file.payload = tmp_vdata.off;
+	node->inode.u.file.payload = tmp_vdata;
 	return 0;
 }
 

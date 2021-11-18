@@ -37,7 +37,7 @@ struct lcfs_inode_s *lcfs_dentry_inode(struct lcfs_context_s *ctx,
 struct lcfs_inode_data_s *lcfs_inode_data(struct lcfs_context_s *ctx,
 					  struct lcfs_inode_s *ino);
 
-char *lcfs_c_string(struct lcfs_context_s *ctx, lcfs_c_str_t off, size_t *len,
+char *lcfs_c_string(struct lcfs_context_s *ctx, struct lcfs_vdata_s vdata, size_t *len,
 		    size_t max);
 
 static inline u64 lcfs_dentry_ino(struct lcfs_dentry_s *d)

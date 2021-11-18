@@ -65,7 +65,7 @@ struct lcfs_inode_s {
 		struct {
 			/* Total size, in bytes.  */
 			u64 st_size;
-			lcfs_c_str_t payload;
+			struct lcfs_vdata_s payload;
 		} file;
 	} u;
 
@@ -81,8 +81,7 @@ struct lcfs_dentry_s {
 	lcfs_off_t inode_index;
 
 	/* Variable len data.  */
-	lcfs_c_str_t name;
-
+	struct lcfs_vdata_s name;
 } __attribute__((packed));
 
 /* xattr representation.  */

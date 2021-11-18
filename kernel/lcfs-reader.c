@@ -156,30 +156,25 @@ void *lcfs_get_vdata(struct lcfs_context_s *ctx,
 	return ctx->descriptor + index;
 }
 
-char *lcfs_c_string(struct lcfs_context_s *ctx, lcfs_c_str_t off, size_t *len,
+char *lcfs_c_string(struct lcfs_context_s *ctx, struct lcfs_vdata_s vdata, size_t *len,
 		    size_t max)
 {
-	char *cstr, *nul;
-	size_t index;
+	char *cstr;
 
-	/* Find the beginning of the string.  */
-	if (check_add_overflow(ctx->vdata_off, (size_t) off, &index))
-		return ERR_PTR(-EFSCORRUPTED);
+	if (vdata.len == 0)
+		return "";
 
-	if (index >= ctx->descriptor_len)
-		return ERR_PTR(-EFSCORRUPTED);
+	cstr = lcfs_get_vdata(ctx, vdata);
+	if (IS_ERR(cstr))
+		return ERR_CAST(cstr);
 
-	cstr = ctx->descriptor + index;
-
-	/* Adjust max if it falls after the end of the buffer.  */
-	max = min(ctx->descriptor_len - index, max);
-
-	nul = memchr(cstr, '\0', max);
-	if (nul == NULL)
+	/* Make sure the string is NUL terminated.  */
+	if (cstr[vdata.len - 1] != '\0')
 		return ERR_PTR(-EFSCORRUPTED);
 
 	if (len)
-		*len = nul - cstr;
+		*len = vdata.len;
+
 	return cstr;
 }
 
@@ -416,13 +411,12 @@ const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *in
 {
 	const char *real_path;
 
-	if (ino->u.file.payload == 0)
+	if (ino->u.file.payload.len == 0)
 		return ERR_PTR(-EINVAL);
 
 	real_path = lcfs_c_string(ctx, ino->u.file.payload, NULL, PATH_MAX);
 	if (real_path == NULL)
 		return ERR_PTR(-EIO);
-
 
 	return real_path;
 }

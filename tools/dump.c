@@ -50,10 +50,10 @@ static const void *get_vdata(const char *x)
 static const char *get_v_payload(const struct lcfs_inode_s *ino,
 				 const char *vdata)
 {
-	if (ino->u.file.payload == 0)
+	if (ino->u.file.payload.len == 0)
 		return "";
 
-	return vdata + ino->u.file.payload;
+	return vdata + ino->u.file.payload.off;
 }
 
 static bool is_dir(const struct lcfs_inode_data_s *d)
@@ -103,7 +103,8 @@ static int dump_dentry(const void *vdata, const char *name, size_t index,
 		     i += sizeof(struct lcfs_dentry_s)) {
 			const struct lcfs_dentry_s *de = vdata + i;
 
-			dump_dentry(vdata, vdata + de->name, de->inode_index,
+			dump_dentry(vdata, vdata + de->name.off,
+                                    de->inode_index,
 				    rec + 1, extended, xattrs);
 		}
 	}
@@ -122,7 +123,7 @@ static int compare_names(const void *a, const void *b)
 	struct bsearch_key_s *key = (struct bsearch_key_s *)a;
 	const struct lcfs_dentry_s *de = b;
 
-	const char *name = key->vdata + de->name;
+	const char *name = key->vdata + de->name.off;
 
 	return strcmp(key->name, name);
 }

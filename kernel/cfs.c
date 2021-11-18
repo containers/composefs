@@ -79,7 +79,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		return ERR_CAST(ino_data);
 
 	if ((ino_data->st_mode & S_IFMT) == S_IFLNK) {
-		if (ino->u.file.payload == 0)
+		if (ino->u.file.payload.len == 0)
 			return ERR_PTR(-EINVAL);
 
 		target_link = (char *)lcfs_c_string(

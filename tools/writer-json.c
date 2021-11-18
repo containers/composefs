@@ -119,13 +119,13 @@ static inline const char *get_fname(struct lcfs_ctx_s *ctx,
 	char *out = NULL;
 	size_t len;
 
-	if (d->name == 0)
+	if (d->name.len == 0)
 		return "";
 
 	if (lcfs_get_vdata(ctx, &out, &len) < 0)
 		return NULL;
 
-	return out + d->name;
+	return out + d->name.off;
 }
 
 static struct lcfs_node_s *get_node_child(struct lcfs_ctx_s *ctx,
@@ -164,7 +164,7 @@ append_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *dir, const char *name)
 	if (child == NULL)
 		return NULL;
 
-	child->data.name = out.off;
+	child->data.name = out;
 
 	dir->children[dir->children_size++] = child;
 	child->parent = dir;
@@ -382,7 +382,7 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 			error(0, 0, "append vdata");
 			return NULL;
 		}
-		node->inode.u.file.payload = out.off;
+		node->inode.u.file.payload = out;
 	}
 
 	v = get_child(entry, "xattrs", yajl_t_object);

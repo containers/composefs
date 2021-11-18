@@ -43,10 +43,10 @@ static int fill_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
 	if (ret < 0)
 		return ret;
 
-	if (node->data.name == 0)
+	if (node->data.name.len == 0)
 		fname = "";
 	else
-		fname = vdata + node->data.name;
+		fname = vdata + node->data.name.off;
 
 	if (fname[0]) {
 		ret = sprintf(path + len, "/%s", fname);
