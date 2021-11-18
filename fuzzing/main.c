@@ -22,11 +22,15 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 {
 	struct test_context_s *test_ctx = private;
 	struct lcfs_context_s *ctx = test_ctx->ctx;
+	struct lcfs_inode_s cfs_ino_buf;
 	struct lcfs_inode_s *cfs_ino;
+	struct lcfs_inode_data_s cfs_ino_data_buf;
 	struct lcfs_inode_data_s *cfs_ino_data;
+	struct lcfs_dentry_s dentry_buf;
 	ssize_t i, size_xattrs;
 	char xattrs[256+1];
 	const char *cstr;
+	int ret;
 
 	if (test_ctx->recursion_left <= 0)
 		return true;
@@ -36,23 +40,34 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 	while (*cstr)
 		cstr++;
 
-	cfs_ino = lcfs_get_ino_index(ctx, ino);
+	cfs_ino = lcfs_get_ino_index(ctx, ino, &cfs_ino_buf);
 	if (IS_ERR(cfs_ino))
 		return true;
 
-	cfs_ino_data = lcfs_inode_data(ctx, cfs_ino);
+
+	cfs_ino_data = lcfs_inode_data(ctx, cfs_ino, &cfs_ino_data_buf);
 	if (IS_ERR(cfs_ino_data))
 		return true;
 
-	if ((dtype & S_IFMT) != S_IFDIR) {
+	if ((dtype & S_IFMT) == S_IFDIR) {
+		lcfs_off_t index;
+
+		lcfs_lookup(ctx, cfs_ino, name, &index);
+		lcfs_get_dentry(ctx, index, &dentry_buf);
+	} else {
+		char *path_buf = malloc(PATH_MAX);
 		size_t len;
 
-		cstr = lcfs_c_string(ctx, cfs_ino->u.file.payload, &len, PATH_MAX);
+		if (path_buf == NULL)
+			return true;
+
+		cstr = lcfs_c_string(ctx, cfs_ino->u.file.payload, &len, path_buf, PATH_MAX);
 		if (!IS_ERR(cstr)) {
 			/* Consume the C string.  */
 			while (*cstr)
 				cstr++;
 		}
+		free(path_buf);
 	}
 
 	size_xattrs = lcfs_list_xattrs(ctx, cfs_ino, xattrs, sizeof(xattrs)-1);
@@ -79,14 +94,19 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 	return true;
 }
 
+#define min(a,b) ((a)<(b)?(a):(b))
+
 int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 {
 	const size_t max_recursion = 10;
+	struct test_context_s test_ctx;
 	struct lcfs_context_s *ctx;
+	struct lcfs_inode_s ino_buf;
 	struct lcfs_inode_s *ino;
+	char name[NAME_MAX];
+	lcfs_off_t index;
 	lcfs_off_t off;
 	char *copy;
-	struct test_context_s test_ctx;
 
 	copy = malloc(len+1);
 	if (copy == NULL)
@@ -102,7 +122,11 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 
 	off = lcfs_get_root_index(ctx);
 
-	ino = lcfs_get_ino_index(ctx, off);
+	ino = lcfs_get_ino_index(ctx, off, &ino_buf);
+
+	memcpy(name, buf, min(len, NAME_MAX - 1));
+	name[min(len, NAME_MAX - 1)] = '\0';
+	lcfs_lookup(ctx, ino, name, &index);
 
 	test_ctx.ctx = ctx;
 	test_ctx.recursion_left = max_recursion;
@@ -118,11 +142,15 @@ int main (int argc, char **argv)
 {
 #ifdef FUZZING_RUN_SINGLE
 	size_t i;
+
 	for (i = 1; i < argc; i++) {
 		size_t len;
-		char *content = read_file(argv[1], &len);
+		char *content;
+
+		content = read_file(argv[i], &len);
 		if (content == NULL)
 			continue;
+
 		LLVMFuzzerTestOneInput(content, len);
 		free(content);
 	}

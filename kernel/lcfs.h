@@ -18,6 +18,7 @@ typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
+#define timespec64 timespec
 #endif
 
 #include <linux/types.h>
@@ -59,10 +60,7 @@ struct lcfs_inode_s {
 	/* stat data.  */
 	union {
 		/* Offset and length to the content of the directory.  */
-		struct {
-			lcfs_off_t off;
-			lcfs_off_t len;
-		} dir;
+		struct lcfs_vdata_s dir;
 
 		struct {
 			/* Total size, in bytes.  */

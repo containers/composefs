@@ -57,10 +57,7 @@ struct lcfs_inode_s {
 	/* stat data.  */
 	union {
 		/* Offset and length to the content of the directory.  */
-		struct {
-			lcfs_off_t off;
-			lcfs_off_t len;
-		} dir;
+		struct lcfs_vdata_s dir;
 
 		struct {
 			/* Total size, in bytes.  */

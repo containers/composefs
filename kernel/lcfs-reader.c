@@ -21,21 +21,11 @@
 # define min(a, b) ((a)<(b)?(a):(b))
 # define check_add_overflow(a, b, d) __builtin_add_overflow(a, b, d)
 
-enum kernel_read_file_id {
-	READING_UNKNOWN,
-};
-
 void *kzalloc(size_t len, int ignored)
 {
 	return malloc(len);
 }
 
-int kernel_read_file_from_path(const char *path, loff_t offset, void **buf,
-			       size_t buf_size, size_t *file_size,
-			       enum kernel_read_file_id id)
-{
-	return -ENOENT;
-}
 #else
 # include <linux/string.h>
 # include <linux/kernel_read_file.h>
@@ -45,24 +35,23 @@ int kernel_read_file_from_path(const char *path, loff_t offset, void **buf,
 # include <linux/overflow.h>
 #endif
 
-/* just an arbitrary limit.  */
-#define MAX_FILE_LENGTH (20 * 1024 * 1024)
-
 struct lcfs_context_s {
 	struct lcfs_header_s header;
 
+#ifdef FUZZING
 	char *descriptor;
-	size_t descriptor_len;
+#else
+	struct file *descriptor;
+#endif
 
-	/* offset of vdata in DESCRIPTOR.  */
-	size_t vdata_off;
+	size_t descriptor_len;
 };
 
+#ifdef FUZZING
 struct lcfs_context_s *lcfs_create_ctx_from_memory(char *blob, size_t size)
 {
 	struct lcfs_context_s *ctx;
 	struct lcfs_header_s *h;
-	size_t vdata_off;
 	int ret;
 
 	if (size < sizeof(struct lcfs_header_s) + sizeof(struct lcfs_inode_s))
@@ -79,9 +68,6 @@ struct lcfs_context_s *lcfs_create_ctx_from_memory(char *blob, size_t size)
 	if (h->inode_data_len != sizeof(struct lcfs_inode_data_s))
 		goto fail_einval;
 
-	/* vdata starts immediately after the header */
-	vdata_off = sizeof(struct lcfs_header_s);
-
 	ctx = kzalloc(sizeof(struct lcfs_context_s), GFP_KERNEL);
 	ret = -ENOMEM;
 	if (ctx == NULL)
@@ -90,7 +76,6 @@ struct lcfs_context_s *lcfs_create_ctx_from_memory(char *blob, size_t size)
 	ctx->header = *h;
 	ctx->descriptor = blob;
 	ctx->descriptor_len = size;
-	ctx->vdata_off = vdata_off;
 
 	return ctx;
 fail_einval:
@@ -99,62 +84,76 @@ fail:
 	return ERR_PTR(ret);
 }
 
+#else
+
 struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
 {
 	struct lcfs_context_s *ctx;
-	void *blob = NULL;
-	size_t file_size;
-	int ret;
+	struct file *descriptor;
+	loff_t i_size;
 
 	if (sizeof(void *) != sizeof(lcfs_off_t)) {
 		return ERR_PTR(-ENOTSUPP);
 	}
 
-	if (descriptor_path == NULL)
+	descriptor = filp_open(descriptor_path, O_RDONLY, 0);
+	if (IS_ERR(descriptor))
+		return ERR_CAST(descriptor);
+
+	i_size = i_size_read(file_inode(descriptor));
+	if (i_size <= 0 || i_size > SIZE_MAX) {
+		fput(descriptor);
 		return ERR_PTR(-EINVAL);
-
-	/* FIXME: mmap the file and do not use any limit.  */
-	ret = kernel_read_file_from_path(descriptor_path, 0, &blob,
-					 MAX_FILE_LENGTH, &file_size,
-					 READING_UNKNOWN);
-	if (ret < 0)
-		return ERR_PTR(ret);
-
-	ctx = lcfs_create_ctx_from_memory(blob, file_size);
-	if (IS_ERR (ctx)) {
-		vfree(blob);
-		return ctx;
 	}
+
+	ctx = kzalloc(sizeof(struct lcfs_context_s), GFP_KERNEL);
+	if (ctx == NULL) {
+		fput(descriptor);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	ctx->descriptor = descriptor;
+	ctx->descriptor_len = (size_t) i_size;
+
 	return ctx;
 }
+
+#endif
 
 void lcfs_destroy_ctx(struct lcfs_context_s *ctx)
 {
 	if (!ctx)
 		return;
+#ifdef FUZZING
 	vfree(ctx->descriptor);
+#else
+	fput(ctx->descriptor);
+#endif
 	kfree(ctx);
 }
 
-struct lcfs_dentry_s *lcfs_get_dentry(struct lcfs_context_s *ctx, size_t index)
+struct lcfs_dentry_s *lcfs_get_dentry(struct lcfs_context_s *ctx, size_t index,
+				      struct lcfs_dentry_s *buffer)
 {
 	struct lcfs_vdata_s vdata = {
 		.off = index,
 		.len = sizeof(struct lcfs_dentry_s),
 	};
-	return lcfs_get_vdata(ctx, vdata);
+	return lcfs_get_vdata(ctx, vdata, buffer);
 }
 
 void *lcfs_get_vdata(struct lcfs_context_s *ctx,
-		     const struct lcfs_vdata_s vdata)
+		     const struct lcfs_vdata_s vdata,
+		     void *dest)
 {
+#ifdef FUZZING
 	size_t off = vdata.off;
 	size_t len = vdata.len;
 	size_t index_end;
 	size_t index;
 
 	/* Verify that both ends are contained inside the blob data.  */
-	if (check_add_overflow(ctx->vdata_off, off, &index))
+	if (check_add_overflow(sizeof(struct lcfs_header_s), off, &index))
 		return ERR_PTR(-EFSCORRUPTED);
 
 	if (index >= ctx->descriptor_len)
@@ -166,18 +165,49 @@ void *lcfs_get_vdata(struct lcfs_context_s *ctx,
 	if (index_end > ctx->descriptor_len)
 		return ERR_PTR(-EFSCORRUPTED);
 
-	return ctx->descriptor + index;
+	if (!dest)
+		return NULL;
+
+	memcpy(dest, ctx->descriptor + index, len);
+#else
+	size_t copied;
+	loff_t pos = vdata.off + sizeof(struct lcfs_header_s);
+
+	if (!dest)
+		return NULL;
+
+	copied = 0;
+	while (copied < vdata.len) {
+		ssize_t bytes;
+
+		bytes = kernel_read(ctx->descriptor, dest + copied,
+				    vdata.len - copied, &pos);
+		if (bytes < 0)
+			return ERR_PTR(bytes);
+		if (bytes == 0)
+			return ERR_PTR(-EINVAL);
+
+		copied += bytes;
+	}
+
+	if (copied != vdata.len)
+		return ERR_PTR(-EFSCORRUPTED);
+#endif
+	return dest;
 }
 
 char *lcfs_c_string(struct lcfs_context_s *ctx, struct lcfs_vdata_s vdata, size_t *len,
-		    size_t max)
+		    char *buf, size_t max)
 {
 	char *cstr;
 
 	if (vdata.len == 0)
 		return "";
 
-	cstr = lcfs_get_vdata(ctx, vdata);
+	if (vdata.len > max)
+		return ERR_PTR(-EINVAL);
+
+	cstr = lcfs_get_vdata(ctx, vdata, buf);
 	if (IS_ERR(cstr))
 		return ERR_CAST(cstr);
 
@@ -191,23 +221,15 @@ char *lcfs_c_string(struct lcfs_context_s *ctx, struct lcfs_vdata_s vdata, size_
 	return cstr;
 }
 
-lcfs_off_t lcfs_get_dentry_index(struct lcfs_context_s *ctx,
-				 struct lcfs_dentry_s *de)
-{
-	const char *payload;
-
-	payload = ctx->descriptor + sizeof(struct lcfs_header_s);
-	return (lcfs_off_t)((const char *)de - payload);
-}
-
 struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
-					lcfs_off_t index)
+					lcfs_off_t index,
+					struct lcfs_inode_s *buffer)
 {
 	const struct lcfs_vdata_s vdata = {
 		.off = index,
 		.len = sizeof(struct lcfs_inode_s),
 	};
-	return lcfs_get_vdata(ctx, vdata);
+	return lcfs_get_vdata(ctx, vdata, buffer);
 }
 
 lcfs_off_t lcfs_get_root_index(struct lcfs_context_s *ctx)
@@ -219,42 +241,21 @@ lcfs_off_t lcfs_get_root_index(struct lcfs_context_s *ctx)
 }
 
 struct lcfs_inode_s *lcfs_dentry_inode(struct lcfs_context_s *ctx,
-				       struct lcfs_dentry_s *node)
+				       struct lcfs_dentry_s *node,
+				       struct lcfs_inode_s *buffer)
 {
-	return lcfs_get_ino_index(ctx, node->inode_index);
+	return lcfs_get_ino_index(ctx, node->inode_index, buffer);
 }
 
 struct lcfs_inode_data_s *lcfs_inode_data(struct lcfs_context_s *ctx,
-					  struct lcfs_inode_s *ino)
+					  struct lcfs_inode_s *ino,
+					  struct lcfs_inode_data_s *buffer)
 {
 	const struct lcfs_vdata_s vdata = {
 		.off = ino->inode_data_index,
 		.len = sizeof(struct lcfs_inode_data_s),
 	};
-	return lcfs_get_vdata(ctx, vdata);
-}
-
-u64 lcfs_ino_num(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
-{
-	char *v = ctx->descriptor + ctx->vdata_off;
-	return ((char *)ino) - v;
-}
-
-static const struct lcfs_xattr_header_s *
-get_xattrs(struct lcfs_context_s *ctx, struct lcfs_inode_s *cfs_ino, size_t *n_xattrs)
-{
-	const struct lcfs_xattr_header_s *xattrs;
-
-	if (cfs_ino->xattrs.len < sizeof(struct lcfs_xattr_header_s))
-		return NULL;
-
-	xattrs = lcfs_get_vdata(ctx, cfs_ino->xattrs);
-	if (IS_ERR(xattrs))
-		return ERR_CAST(xattrs);
-
-	*n_xattrs = cfs_ino->xattrs.len / sizeof(struct lcfs_xattr_header_s);
-
-	return xattrs;
+	return lcfs_get_vdata(ctx, vdata, buffer);
 }
 
 ssize_t lcfs_list_xattrs(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, char *names, size_t size)
@@ -263,28 +264,46 @@ ssize_t lcfs_list_xattrs(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, c
 	size_t n_xattrs = 0, i;
 	ssize_t copied = 0;
 
-	xattrs = get_xattrs(ctx, ino, &n_xattrs);
+	if (ino->xattrs.len == 0)
+		return 0;
+
+	/* Check for overflows.  */
+	xattrs = lcfs_get_vdata(ctx, ino->xattrs, NULL);
 	if (IS_ERR(xattrs))
 		return PTR_ERR(xattrs);
 
-	if (xattrs == NULL)
-		return 0;
+	n_xattrs = ino->xattrs.len / sizeof(struct lcfs_xattr_header_s);
 
 	for (i = 0; i < n_xattrs; i++) {
+		struct lcfs_xattr_header_s h_buf;
+		struct lcfs_xattr_header_s *h;
+		char xattr_buf[XATTR_NAME_MAX];
+		struct lcfs_vdata_s vdata;
 		const void *xattr;
 
-		xattr = lcfs_get_vdata(ctx, xattrs[i].key);
+		vdata.off = ino->xattrs.off + i * sizeof (*h);
+		vdata.len = sizeof(*h);
+
+		/* Read the xattr header.  */
+		h = lcfs_get_vdata(ctx, vdata, &h_buf);
+		if (IS_ERR(h))
+			return PTR_ERR(h);
+
+		if (h->key.len > XATTR_NAME_MAX)
+			return -EFSCORRUPTED;
+
+		xattr = lcfs_get_vdata(ctx, h->key, xattr_buf);
 		if (IS_ERR(xattr))
 			return PTR_ERR(xattr);
 
 		if (size) {
-			if (size - copied < xattrs[i].key.len + 1)
+			if (size - copied < h->key.len + 1)
 				return -E2BIG;
 
-			memcpy(names + copied, xattr, xattrs[i].key.len);
-			names[copied + xattrs[i].key.len] = '\0';
+			memcpy(names + copied, xattr, h->key.len);
+			names[copied + h->key.len] = '\0';
 		}
-		copied += xattrs[i].key.len + 1;
+		copied += h->key.len + 1;
 	}
 	return copied;
 }
@@ -294,72 +313,104 @@ int lcfs_get_xattr(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, const c
 	const struct lcfs_xattr_header_s *xattrs;
 	size_t name_len = strlen(name);
 	size_t n_xattrs = 0, i;
+	ssize_t copied = 0;
 
-	xattrs = get_xattrs(ctx, ino, &n_xattrs);
+	if (ino->xattrs.len == 0)
+		return 0;
+
+	if (name_len > XATTR_NAME_MAX)
+		return 0;
+
+	/* Check for overflows.  */
+	xattrs = lcfs_get_vdata(ctx, ino->xattrs, NULL);
 	if (IS_ERR(xattrs))
 		return PTR_ERR(xattrs);
 
-	if (xattrs == NULL)
-		return -ENODATA;
+	n_xattrs = ino->xattrs.len / sizeof(struct lcfs_xattr_header_s);
 
 	for (i = 0; i < n_xattrs; i++) {
-		const void *v;
+		struct lcfs_xattr_header_s h_buf;
+		struct lcfs_xattr_header_s *h;
+		char xattr_buf[XATTR_NAME_MAX];
+		struct lcfs_vdata_s vdata;
+		const void *v, *xattr;
 
-		if (xattrs[i].key.len != name_len)
+		vdata.off = ino->xattrs.off + i * sizeof (*h);
+		vdata.len = sizeof(*h);
+
+		/* Read the xattr header.  */
+		h = lcfs_get_vdata(ctx, vdata, &h_buf);
+		if (IS_ERR(h))
+			return PTR_ERR(h);
+
+		if (h->key.len != name_len)
 			continue;
 
-		v = lcfs_get_vdata(ctx, xattrs[i].key);
+		/* Read the name.  */
+		xattr = lcfs_get_vdata(ctx, h->key, xattr_buf);
+		if (IS_ERR(xattr))
+			return PTR_ERR(xattr);
+
+		if (memcmp(xattr, name, name_len) != 0)
+			continue;
+
+		if (size == 0)
+			return h->value.len;
+
+		if (size - copied < h->value.len + 1)
+			return -E2BIG;
+
+		/* Read its value directly into VALUE.  */
+		v = lcfs_get_vdata(ctx, h->value, value);
 		if (IS_ERR(v))
 			return PTR_ERR(v);
 
-		if (memcmp(v, name, name_len) == 0) {
-			if (size == 0)
-				return xattrs[i].value.len;
-
-			if (size < xattrs[i].value.len)
-				return -E2BIG;
-
-			v = lcfs_get_vdata(ctx, xattrs[i].value);
-			if (IS_ERR(v))
-				return PTR_ERR(v);
-
-			memcpy(value, v, xattrs[i].value.len);
-			return xattrs[i].value.len;
-		}
+		return h->key.len;
 	}
-
-	return -ENODATA;
+	return copied;
 }
 
 int lcfs_iterate_dir(struct lcfs_context_s *ctx, loff_t first, struct lcfs_inode_s *dir_ino, lcfs_dir_iter_cb cb, void *private)
 {
 	size_t i, entries;
+	void *check;
+
+	/* Check for overflows.  */
+	check = lcfs_get_vdata(ctx, dir_ino->u.dir, NULL);
+	if (IS_ERR(check))
+		return PTR_ERR(check);
 
 	entries = dir_ino->u.dir.len / sizeof(struct lcfs_dentry_s);
 
 	for (i = first; i < entries; i++) {
+		struct lcfs_inode_data_s ino_data_buf;
 		struct lcfs_inode_data_s *ino_data;
+		struct lcfs_dentry_s dentry_buf;
 		struct lcfs_dentry_s *dentry;
+		struct lcfs_inode_s ino_buf;
 		struct lcfs_inode_s *ino;
+		char name_buf[NAME_MAX];
 		size_t name_len = 0;
 		const char *name;
 		size_t nd;
 
 		nd = i * sizeof(struct lcfs_dentry_s);
 
-		dentry = lcfs_get_dentry(ctx, dir_ino->u.dir.off + nd);
+		dentry = lcfs_get_dentry(ctx, dir_ino->u.dir.off + nd,
+					 &dentry_buf);
 		if (IS_ERR(dentry))
 			return PTR_ERR(dentry);
 
-		name = lcfs_c_string(ctx, dentry->name, &name_len, NAME_MAX);
+		name = lcfs_c_string(ctx, dentry->name, &name_len,
+				     name_buf, NAME_MAX);
 		if (IS_ERR(name))
 			return PTR_ERR(name);
 
-		ino = lcfs_dentry_inode(ctx, dentry);
+		ino = lcfs_dentry_inode(ctx, dentry, &ino_buf);
 		if (IS_ERR(ino))
 			return PTR_ERR(ino);
 
-		ino_data = lcfs_inode_data(ctx, ino);
+		ino_data = lcfs_inode_data(ctx, ino, &ino_data_buf);
 		if (IS_ERR(ino_data))
 			return PTR_ERR(ino_data);
 
@@ -379,11 +430,19 @@ struct bsearch_key_s {
 /* The first argument is the KEY, so take advantage to pass additional data.  */
 static int compare_names(const void *a, const void *b)
 {
-	struct bsearch_key_s *key = (struct bsearch_key_s *)a;
-	const struct lcfs_dentry_s *dentry = b;
+	struct bsearch_key_s *key = (struct bsearch_key_s *) a;
+	const struct lcfs_dentry_s *dentry;
+	struct lcfs_dentry_s dentry_buf;
+	char buf[NAME_MAX];
 	const char *name;
 
-	name = lcfs_c_string(key->ctx, dentry->name, NULL, NAME_MAX);
+	dentry = lcfs_get_dentry(key->ctx, (size_t) b, &dentry_buf);
+	if (IS_ERR(dentry)) {
+		key->err = PTR_ERR(dentry);
+		return 0;
+	}
+
+	name = lcfs_c_string(key->ctx, dentry->name, NULL, buf, NAME_MAX);
 	if (IS_ERR(name)) {
 		key->err = PTR_ERR(name);
 		return 0;
@@ -393,41 +452,41 @@ static int compare_names(const void *a, const void *b)
 
 int lcfs_lookup(struct lcfs_context_s *ctx, struct lcfs_inode_s *dir, const char *name, lcfs_off_t *index)
 {
-	struct lcfs_dentry_s *dir_content, *end;
 	struct lcfs_dentry_s *found;
 	struct bsearch_key_s key = {
 		.name = name,
 		.ctx = ctx,
 		.err = 0,
 	};
+	size_t size, n_entries;
+	void *check;
 
-	dir_content = lcfs_get_dentry(ctx, dir->u.dir.off);
-	if (IS_ERR(dir_content))
-		return 0;
+	/* Check the entire directory is in the blob.  */
+	check = lcfs_get_vdata(ctx, dir->u.dir, NULL);
+	if (check)
+		return PTR_ERR(check);
 
-	/* Check that the last index is valid as well.  */
-	end = lcfs_get_dentry(ctx, dir->u.dir.off + dir->u.dir.len);
-	if (end == NULL)
-		return 0;
+	size = sizeof(struct lcfs_dentry_s);
+	n_entries = dir->u.dir.len / size;
 
-	found = bsearch(&key, dir_content,
-			dir->u.dir.len / sizeof(struct lcfs_dentry_s),
-			sizeof(struct lcfs_dentry_s), compare_names);
+	found = bsearch(&key, NULL + dir->u.dir.off, n_entries,
+			size, compare_names);
 	if (found == NULL || key.err)
 		return 0;
 
-	*index = lcfs_get_dentry_index(ctx, found);
+	*index = (lcfs_off_t) found;
+
 	return 1;
 }
 
-const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
+const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, void *buf)
 {
 	const char *real_path;
 
 	if (ino->u.file.payload.len == 0)
 		return ERR_PTR(-EINVAL);
 
-	real_path = lcfs_c_string(ctx, ino->u.file.payload, NULL, PATH_MAX);
+	real_path = lcfs_c_string(ctx, ino->u.file.payload, NULL, buf, PATH_MAX);
 	if (real_path == NULL)
 		return ERR_PTR(-EIO);
 

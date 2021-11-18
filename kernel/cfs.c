@@ -67,26 +67,44 @@ static const struct address_space_operations cfs_aops = {
 
 static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
                                     struct super_block *sb,
+				    ino_t ino_num,
 				    struct lcfs_inode_s *ino,
 				    const struct inode *dir)
 {
+	struct lcfs_inode_data_s ino_data_buf;
 	struct lcfs_inode_data_s *ino_data;
-	char *target_link;
+	struct lcfs_inode_s *ino_copy = NULL;
+	char *target_link = NULL;
 	struct inode *inode;
 
-	ino_data = lcfs_inode_data(ctx, ino);
+	ino_data = lcfs_inode_data(ctx, ino, &ino_data_buf);
 	if (IS_ERR(ino_data))
 		return ERR_CAST(ino_data);
 
 	if ((ino_data->st_mode & S_IFMT) == S_IFLNK) {
+		const char *link;
+
 		if (ino->u.file.payload.len == 0)
 			return ERR_PTR(-EINVAL);
 
-		target_link = (char *)lcfs_c_string(
-			ctx, ino->u.file.payload, NULL, PATH_MAX);
-		if (IS_ERR(target_link))
+		target_link = kmalloc(PATH_MAX, GFP_KERNEL);
+		if (!target_link)
+			return ERR_PTR(-ENOMEM);
+
+		link = lcfs_c_string(ctx, ino->u.file.payload,
+					     NULL, target_link, PATH_MAX);
+		if (IS_ERR(link)) {
+			kfree(target_link);
 			return ERR_CAST(target_link);
+		}
 	}
+
+	ino_copy = kmalloc(sizeof(*ino_copy), GFP_KERNEL);
+	if (!ino_copy) {
+		kfree(target_link);
+		return ERR_PTR(-ENOMEM);
+	}
+	memcpy(ino_copy, ino, sizeof(*ino));
 
 	inode = new_inode(sb);
 	if (inode) {
@@ -95,9 +113,9 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		mapping_set_gfp_mask(inode->i_mapping, GFP_HIGHUSER);
 		mapping_set_unevictable(inode->i_mapping);
 
-		inode->i_private = ino;
+		inode->i_private = ino_copy;
 
-		inode->i_ino = lcfs_ino_num(ctx, ino);
+		inode->i_ino = ino_num;
 		set_nlink(inode, ino_data->st_nlink);
 		inode->i_rdev = ino_data->st_rdev;
 		inode->i_uid = make_kuid(current_user_ns(), ino_data->st_uid);
@@ -124,8 +142,11 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 			break;
 		case S_IFCHR:
 		case S_IFBLK:
-			if (current_user_ns() != &init_user_ns)
+			if (current_user_ns() != &init_user_ns) {
+				kfree(target_link);
+				kfree(ino_copy);
 				return ERR_PTR(-EPERM);
+			}
 			fallthrough;
 		default:
 			inode->i_op = &cfs_file_inode_operations;
@@ -141,31 +162,35 @@ static struct inode *cfs_get_inode(struct super_block *sb, size_t index,
 				   const struct inode *dir)
 {
 	struct cfs_info *fsi = sb->s_fs_info;
+	struct lcfs_inode_s ino_buf;
 	struct lcfs_inode_s *ino;
-	struct lcfs_dentry_s *node;
+	struct lcfs_dentry_s de_buf;
+	struct lcfs_dentry_s *de;
 
-	node = lcfs_get_dentry(fsi->lcfs_ctx, index);
-	if (IS_ERR(node))
-		return ERR_CAST(node);
+	de = lcfs_get_dentry(fsi->lcfs_ctx, index, &de_buf);
+	if (IS_ERR(de))
+		return ERR_CAST(de);
 
-	ino = lcfs_dentry_inode(fsi->lcfs_ctx, node);
+	ino = lcfs_dentry_inode(fsi->lcfs_ctx, de, &ino_buf);
 	if (IS_ERR(ino))
 		return ERR_CAST(ino);
 
-	return cfs_make_inode(fsi->lcfs_ctx, sb, ino, dir);
+	return cfs_make_inode(fsi->lcfs_ctx, sb, de->inode_index,
+			      ino, dir);
 }
 
 static struct inode *cfs_get_root_inode(struct super_block *sb)
 {
 	struct cfs_info *fsi = sb->s_fs_info;
 	lcfs_off_t index = lcfs_get_root_index(fsi->lcfs_ctx);
+	struct lcfs_inode_s ino_buf;
 	struct lcfs_inode_s *ino;
 
-	ino = lcfs_get_ino_index(fsi->lcfs_ctx, index);
+	ino = lcfs_get_ino_index(fsi->lcfs_ctx, index, &ino_buf);
 	if (IS_ERR(ino))
 		return ERR_CAST(ino);
 
-	return cfs_make_inode(fsi->lcfs_ctx, sb, ino, NULL);
+	return cfs_make_inode(fsi->lcfs_ctx, sb, index, ino, NULL);
 }
 
 static int cfs_rmdir(struct inode *ino, struct dentry *dir)
@@ -245,11 +270,14 @@ static bool cfs_iterate_cb(void *private, const char *name, int name_len, u64 in
 
 static int cfs_iterate(struct file *file, struct dir_context *ctx)
 {
-	struct cfs_info *fsi = file->f_inode->i_sb->s_fs_info;
-	struct lcfs_inode_s *ino = file->f_inode->i_private;
+	struct lcfs_inode_s *ino;
+	struct cfs_info *fsi;
 
 	if (!dir_emit_dots(file, ctx))
 		return 0;
+
+	fsi = file->f_inode->i_sb->s_fs_info;
+	ino = file->f_inode->i_private;
 
 	return lcfs_iterate_dir(fsi->lcfs_ctx, ctx->pos - 2, ino,
 				cfs_iterate_cb, ctx);
@@ -340,10 +368,19 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 	return 0;
 }
 
+static void cfs_free_inode(struct inode *inode)
+{
+	if (S_ISLNK(inode->i_mode))
+		kfree(inode->i_link);
+	kfree(inode->i_private);
+	free_inode_nonrcu(inode);
+}
+
 static const struct super_operations cfs_ops = {
 	.statfs = simple_statfs,
 	.drop_inode = generic_delete_inode,
 	.show_options = cfs_show_options,
+	.free_inode = cfs_free_inode,
 };
 
 enum cfs_param {
@@ -480,6 +517,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 {
 	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 	struct lcfs_inode_s *cfs_ino = inode->i_private;
+	char *path_buf = NULL;
 	struct file *real_file;
 	const char *real_path;
 
@@ -494,9 +532,15 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 		return 0;
 	}
 
-	real_path = lcfs_get_payload(fsi->lcfs_ctx, cfs_ino);
-	if (IS_ERR(real_path))
+	path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (!path_buf)
+		return -ENOMEM;
+
+	real_path = lcfs_get_payload(fsi->lcfs_ctx, cfs_ino, &path_buf);
+	if (IS_ERR(real_path)) {
+		kfree(path_buf);
 		return PTR_ERR(real_path);
+	}
 
 	/* FIXME: prevent loops opening files.  */
 
@@ -507,6 +551,9 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 		real_file = file_open_root(&(fsi->base->f_path), real_path,
 					   file->f_flags, 0);
 	}
+
+	kfree(path_buf);
+
 	if (IS_ERR(real_file)) {
 		return PTR_ERR(real_file);
 	}
@@ -597,8 +644,6 @@ static int cfs_fadvise(struct file *file, loff_t offset, loff_t len, int advice)
 static int cfs_encode_fh(struct inode *inode, u32 *fh, int *max_len,
 			 struct inode *parent)
 {
-	struct cfs_info *fsi = inode->i_sb->s_fs_info;
-	struct lcfs_inode_s *cfs_ino = inode->i_private;
 	int len = 3;
 	u64 nodeid;
 	u32 generation;
@@ -608,7 +653,7 @@ static int cfs_encode_fh(struct inode *inode, u32 *fh, int *max_len,
 		return FILEID_INVALID;
 	}
 
-	nodeid = lcfs_ino_num(fsi->lcfs_ctx, cfs_ino);
+	nodeid = inode->i_ino;
 	generation = inode->i_generation;
 
 	fh[0] = (u32)(nodeid >> 32);
@@ -637,17 +682,18 @@ static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 
 	ino = ilookup(sb, (lcfs_off_t)inode_index);
 	if (!ino) {
+		struct lcfs_inode_s inode_buf;
 		struct lcfs_inode_s *inode;
 		struct lcfs_vdata_s vdata = {
 			.off = inode_index,
 			.len = sizeof(struct lcfs_inode_s),
 		};
 
-		inode = lcfs_get_vdata(fsi->lcfs_ctx, vdata);
+		inode = lcfs_get_vdata(fsi->lcfs_ctx, vdata, &inode_buf);
 		if (IS_ERR(inode))
 			return ERR_CAST(inode);
 
-		ino = cfs_make_inode(fsi->lcfs_ctx, sb, inode, NULL);
+		ino = cfs_make_inode(fsi->lcfs_ctx, sb, inode_index, inode, NULL);
 		if (IS_ERR(ino))
 			return ERR_CAST(ino);
 	}

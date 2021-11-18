@@ -14,38 +14,42 @@
 
 struct lcfs_context_s;
 
-struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path);
-
+#ifdef FUZZING
 struct lcfs_context_s *lcfs_create_ctx_from_memory(char *blob, size_t size);
+#else
+struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path);
+#endif
 
 void lcfs_destroy_ctx(struct lcfs_context_s *ctx);
 
-struct lcfs_dentry_s *lcfs_get_dentry(struct lcfs_context_s *ctx, size_t index);
+struct lcfs_dentry_s *lcfs_get_dentry(struct lcfs_context_s *ctx, size_t index,
+				      struct lcfs_dentry_s *buffer);
 
+/* Copy the specified VDATA to DEST.  DEST must be preallocated and must be at least
+   vdata.len bytes.  */
 void *lcfs_get_vdata(struct lcfs_context_s *ctx,
-		     const struct lcfs_vdata_s vdata);
-
-lcfs_off_t lcfs_get_dentry_index(struct lcfs_context_s *ctx,
-				 struct lcfs_dentry_s *node);
+		     const struct lcfs_vdata_s vdata,
+		     void *dest);
 
 struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
-					lcfs_off_t index);
+					lcfs_off_t index,
+					struct lcfs_inode_s *buffer);
 
 struct lcfs_inode_s *lcfs_dentry_inode(struct lcfs_context_s *ctx,
-				       struct lcfs_dentry_s *node);
+				       struct lcfs_dentry_s *node,
+				       struct lcfs_inode_s *buffer);
 
 struct lcfs_inode_data_s *lcfs_inode_data(struct lcfs_context_s *ctx,
-					  struct lcfs_inode_s *ino);
+					  struct lcfs_inode_s *ino,
+					  struct lcfs_inode_data_s *buffer);
 
 char *lcfs_c_string(struct lcfs_context_s *ctx, struct lcfs_vdata_s vdata, size_t *len,
-		    size_t max);
+		    char *buf, size_t max);
 
 static inline u64 lcfs_dentry_ino(struct lcfs_dentry_s *d)
 {
 	return d->inode_index;
 }
-
-u64 lcfs_ino_num(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino);
 
 lcfs_off_t lcfs_get_root_index(struct lcfs_context_s *ctx);
 
@@ -59,6 +63,6 @@ int lcfs_iterate_dir(struct lcfs_context_s *ctx, loff_t first, struct lcfs_inode
 
 int lcfs_lookup(struct lcfs_context_s *ctx, struct lcfs_inode_s *dir, const char *name, lcfs_off_t *index);
 
-const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino);
+const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, void *buf);
 
 #endif
