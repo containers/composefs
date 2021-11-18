@@ -29,8 +29,12 @@
 
 #include "lcfs-reader.h"
 
+#ifdef STANDALONE_COMPOSEFS
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
+#else
+#include "cfs.h"
+#endif
 
 #define CFS_MAGIC 0x12345678
 
@@ -61,16 +65,16 @@ static const struct address_space_operations cfs_aops = {
 	.direct_IO = noop_direct_IO,
 };
 
-static struct inode *cfs_make_inode(struct super_block *sb,
+static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
+                                    struct super_block *sb,
 				    struct lcfs_inode_s *ino,
 				    const struct inode *dir)
 {
 	struct lcfs_inode_data_s *ino_data;
-	struct cfs_info *fsi = sb->s_fs_info;
 	char *target_link;
 	struct inode *inode;
 
-	ino_data = lcfs_inode_data(fsi->lcfs_ctx, ino);
+	ino_data = lcfs_inode_data(ctx, ino);
 	if (IS_ERR(ino_data))
 		return ERR_CAST(ino_data);
 
@@ -79,7 +83,7 @@ static struct inode *cfs_make_inode(struct super_block *sb,
 			return ERR_PTR(-EINVAL);
 
 		target_link = (char *)lcfs_c_string(
-			fsi->lcfs_ctx, ino->u.file.payload, NULL, PATH_MAX);
+			ctx, ino->u.file.payload, NULL, PATH_MAX);
 		if (IS_ERR(target_link))
 			return ERR_CAST(target_link);
 	}
@@ -93,7 +97,7 @@ static struct inode *cfs_make_inode(struct super_block *sb,
 
 		inode->i_private = ino;
 
-		inode->i_ino = lcfs_ino_num(fsi->lcfs_ctx, ino);
+		inode->i_ino = lcfs_ino_num(ctx, ino);
 		set_nlink(inode, ino_data->st_nlink);
 		inode->i_rdev = ino_data->st_rdev;
 		inode->i_uid = make_kuid(current_user_ns(), ino_data->st_uid);
@@ -148,7 +152,7 @@ static struct inode *cfs_get_inode(struct super_block *sb, size_t index,
 	if (IS_ERR(ino))
 		return ERR_CAST(ino);
 
-	return cfs_make_inode(sb, ino, dir);
+	return cfs_make_inode(fsi->lcfs_ctx, sb, ino, dir);
 }
 
 static struct inode *cfs_get_root_inode(struct super_block *sb)
@@ -161,7 +165,7 @@ static struct inode *cfs_get_root_inode(struct super_block *sb)
 	if (IS_ERR(ino))
 		return ERR_CAST(ino);
 
-	return cfs_make_inode(sb, ino, NULL);
+	return cfs_make_inode(fsi->lcfs_ctx, sb, ino, NULL);
 }
 
 static int cfs_rmdir(struct inode *ino, struct dentry *dir)
@@ -349,7 +353,7 @@ enum cfs_param {
 
 const struct fs_parameter_spec cfs_parameters[] = {
 	fsparam_string("descriptor", Opt_descriptor_file),
-	fsparam_string("base", Opt_base_path),
+	fsparam_string("basedir", Opt_base_path),
 	{}
 };
 
@@ -643,7 +647,7 @@ static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 		if (IS_ERR(inode))
 			return ERR_CAST(inode);
 
-		ino = cfs_make_inode(sb, inode, NULL);
+		ino = cfs_make_inode(fsi->lcfs_ctx, sb, inode, NULL);
 		if (IS_ERR(ino))
 			return ERR_CAST(ino);
 	}
@@ -778,6 +782,7 @@ static struct file_system_type cfs_type = {
 	.fs_flags = FS_USERNS_MOUNT,
 };
 
+#ifdef STANDALONE_COMPOSEFS
 static int __init init_cfs(void)
 {
 	return register_filesystem(&cfs_type);
@@ -790,3 +795,12 @@ static void __exit exit_cfs(void)
 
 module_init(init_cfs);
 module_exit(exit_cfs);
+
+#else
+
+struct vfsmount *cfs_mount(void *raw_data)
+{
+	return vfs_kern_mount(&cfs_type, 0, "", raw_data);
+}
+
+#endif
