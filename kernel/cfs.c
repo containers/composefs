@@ -82,19 +82,8 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		return ERR_CAST(ino_data);
 
 	if ((ino_data->st_mode & S_IFMT) == S_IFLNK) {
-		const char *link;
-
-		if (ino->u.file.payload.len == 0)
-			return ERR_PTR(-EINVAL);
-
-		target_link = kmalloc(PATH_MAX, GFP_KERNEL);
-		if (!target_link)
-			return ERR_PTR(-ENOMEM);
-
-		link = lcfs_c_string(ctx, ino->u.file.payload,
-					     NULL, target_link, PATH_MAX);
-		if (IS_ERR(link)) {
-			kfree(target_link);
+		target_link = lcfs_dup_payload_path(ctx, ino);
+		if (IS_ERR(target_link)) {
 			return ERR_CAST(target_link);
 		}
 	}
@@ -158,8 +147,9 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 	return inode;
 }
 
-static struct inode *cfs_get_inode(struct super_block *sb, size_t index,
-				   const struct inode *dir)
+static struct inode *cfs_get_inode_from_dentry_index(struct super_block *sb,
+						     const struct inode *dir,
+						     size_t index)
 {
 	struct cfs_info *fsi = sb->s_fs_info;
 	struct lcfs_inode_s ino_buf;
@@ -323,7 +313,7 @@ struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 	if (ret == 0)
 		goto return_negative;
 
-	inode = cfs_get_inode(dir->i_sb, index, dir);
+	inode = cfs_get_inode_from_dentry_index(dir->i_sb, dir, index);
 	if (IS_ERR(inode)) {
 		return ERR_CAST(inode);
 	}

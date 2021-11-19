@@ -39,8 +39,8 @@ struct lcfs_inode_data_s *lcfs_inode_data(struct lcfs_context_s *ctx,
 					  struct lcfs_inode_s *ino,
 					  struct lcfs_inode_data_s *buffer);
 
-char *lcfs_c_string(struct lcfs_context_s *ctx, struct lcfs_vdata_s vdata, size_t *len,
-		    char *buf, size_t max);
+const char *lcfs_c_string(struct lcfs_context_s *ctx, struct lcfs_vdata_s vdata,
+			  char *buf, size_t max);
 
 static inline u64 lcfs_dentry_ino(struct lcfs_dentry_s *d)
 {
@@ -60,5 +60,7 @@ int lcfs_iterate_dir(struct lcfs_context_s *ctx, loff_t first, struct lcfs_inode
 int lcfs_lookup(struct lcfs_context_s *ctx, struct lcfs_inode_s *dir, const char *name, lcfs_off_t *index);
 
 const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, void *buf);
+
+char *lcfs_dup_payload_path(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino);
 
 #endif

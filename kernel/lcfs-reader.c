@@ -9,73 +9,7 @@
 #include "lcfs.h"
 #include "lcfs-reader.h"
 
-#ifdef FUZZING
-# define GFP_KERNEL 0
-# include <stdio.h>
-# include <errno.h>
-# include <stdlib.h>
-# include <string.h>
-# include <fcntl.h>
-#include <unistd.h>
-#include <sys/stat.h>
-
-# define kfree free
-# define vfree free
-# define min(a, b) ((a)<(b)?(a):(b))
-# define check_add_overflow(a, b, d) __builtin_add_overflow(a, b, d)
-# define ENOTSUPP ENOTSUP
-
-void *kzalloc(size_t len, int ignored)
-{
-	return malloc(len);
-}
-
-struct file
-{
-	int fd;
-};
-
-struct file *filp_open(const char *path, int flags, int mode)
-{
-	struct file *r;
-	int fd;
-
-	fd = open(path, flags, mode);
-	if (fd < 0)
-		return ERR_PTR(-errno);
-	r = malloc(sizeof(struct file));
-	if (r == NULL) {
-		close(fd);
-		return ERR_PTR(-ENOMEM);
-	}
-	r->fd = fd;
-	return r;
-}
-
-struct file *file_inode(struct file *f)
-{
-	return f;
-}
-
-loff_t i_size_read(struct file *f)
-{
-	struct stat st;
-	int r;
-
-	r = fstat(f->fd, &st);
-	if (r < 0)
-		return r;
-
-	return st.st_size;
-}
-
-void fput(struct file *f)
-{
-	close(f->fd);
-	free(f);
-}
-
-#else
+#ifndef FUZZING
 # include <linux/string.h>
 # include <linux/kernel_read_file.h>
 # include <linux/vmalloc.h>
@@ -83,6 +17,8 @@ void fput(struct file *f)
 # include <linux/bsearch.h>
 # include <linux/overflow.h>
 #endif
+
+#include "lcfs-fuzzing.h"
 
 struct lcfs_context_s
 {
@@ -128,11 +64,7 @@ void lcfs_destroy_ctx(struct lcfs_context_s *ctx)
 {
 	if (!ctx)
 		return;
-#ifdef FUZZING
-	vfree(ctx->descriptor);
-#else
 	fput(ctx->descriptor);
-#endif
 	kfree(ctx);
 }
 
@@ -160,15 +92,8 @@ void *lcfs_get_vdata(struct lcfs_context_s *ctx,
 	while (copied < vdata.len) {
 		ssize_t bytes;
 
-#ifdef FUZZING
-		bytes = pread(ctx->descriptor->fd, dest + copied,
-				    vdata.len - copied, pos);
-		pos += bytes;
-#else
-
 		bytes = kernel_read(ctx->descriptor, dest + copied,
 				    vdata.len - copied, &pos);
-#endif
 		if (bytes < 0)
 			return ERR_PTR(bytes);
 		if (bytes == 0)
@@ -182,8 +107,8 @@ void *lcfs_get_vdata(struct lcfs_context_s *ctx,
 	return dest;
 }
 
-char *lcfs_c_string(struct lcfs_context_s *ctx, struct lcfs_vdata_s vdata, size_t *len,
-		    char *buf, size_t max)
+const char *lcfs_c_string(struct lcfs_context_s *ctx, struct lcfs_vdata_s vdata,
+			  char *buf, size_t max)
 {
 	char *cstr;
 
@@ -200,9 +125,6 @@ char *lcfs_c_string(struct lcfs_context_s *ctx, struct lcfs_vdata_s vdata, size_
 	/* Make sure the string is NUL terminated.  */
 	if (cstr[vdata.len - 1] != '\0')
 		return ERR_PTR(-EFSCORRUPTED);
-
-	if (len)
-		*len = vdata.len;
 
 	return cstr;
 }
@@ -376,7 +298,6 @@ int lcfs_iterate_dir(struct lcfs_context_s *ctx, loff_t first, struct lcfs_inode
 		struct lcfs_inode_s ino_buf;
 		struct lcfs_inode_s *ino;
 		char name_buf[NAME_MAX];
-		size_t name_len = 0;
 		const char *name;
 		size_t nd;
 
@@ -387,8 +308,7 @@ int lcfs_iterate_dir(struct lcfs_context_s *ctx, loff_t first, struct lcfs_inode
 		if (IS_ERR(dentry))
 			return PTR_ERR(dentry);
 
-		name = lcfs_c_string(ctx, dentry->name, &name_len,
-				     name_buf, NAME_MAX);
+		name = lcfs_c_string(ctx, dentry->name, name_buf, NAME_MAX);
 		if (IS_ERR(name))
 			return PTR_ERR(name);
 
@@ -400,8 +320,9 @@ int lcfs_iterate_dir(struct lcfs_context_s *ctx, loff_t first, struct lcfs_inode
 		if (IS_ERR(ino_data))
 			return PTR_ERR(ino_data);
 
-		if (!cb(private, name, name_len, lcfs_dentry_ino(dentry),
-			      ino_data->st_mode & S_IFMT))
+		if (!cb(private, name, dentry->name.len,
+			lcfs_dentry_ino(dentry),
+			ino_data->st_mode & S_IFMT))
 			break;
 	}
 	return 0;
@@ -428,7 +349,7 @@ static int compare_names(const void *a, const void *b)
 		return 0;
 	}
 
-	name = lcfs_c_string(key->ctx, dentry->name, NULL, buf, NAME_MAX);
+	name = lcfs_c_string(key->ctx, dentry->name, buf, NAME_MAX);
 	if (IS_ERR(name)) {
 		key->err = PTR_ERR(name);
 		return 0;
@@ -470,11 +391,36 @@ const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *in
 	const char *real_path;
 
 	if (ino->u.file.payload.len == 0)
-		return ERR_PTR(-EINVAL);
+	return ERR_PTR(-EINVAL);
 
-	real_path = lcfs_c_string(ctx, ino->u.file.payload, NULL, buf, PATH_MAX);
+	real_path = lcfs_c_string(ctx, ino->u.file.payload, buf, PATH_MAX);
 	if (real_path == NULL)
 		return ERR_PTR(-EIO);
 
 	return real_path;
+}
+
+char *lcfs_dup_payload_path(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
+{
+	const char *v;
+	char *link;
+
+	if (ino->u.file.payload.len == 0)
+		return ERR_PTR(-EINVAL);
+
+	if (ino->u.file.payload.len > PATH_MAX)
+		return ERR_PTR(-EINVAL);
+
+	link = kmalloc(ino->u.file.payload.len, GFP_KERNEL);
+	if (!link)
+		return ERR_PTR(-ENOMEM);
+
+	v = lcfs_c_string(ctx, ino->u.file.payload, link,
+			  ino->u.file.payload.len);
+	if (IS_ERR(v)) {
+		kfree(link);
+		return ERR_CAST(v);
+	}
+
+	return link;
 }
