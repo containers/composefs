@@ -630,20 +630,15 @@ struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 			if (n == NULL)
 				goto fail;
 		} else {
-			int fd;
-
 			if (buildflags & BUILD_SKIP_DEVICES) {
 				if (de->d_type == DT_BLK
 				    || de->d_type == DT_CHR)
 					continue;
 			}
 
-			fd = dup(dfd);
-			if (fd < 0)
-				goto fail;
-
-			n = lcfs_build(ctx, node, fd, de->d_name, de->d_name,
-				       0, buildflags);
+			n = lcfs_load_node_from_file(ctx, dfd, de->d_name,
+						     de->d_name, 0,
+						     buildflags);
 			if (n == NULL)
 				goto fail;
 		}
