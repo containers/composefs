@@ -447,7 +447,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
 	struct stat sb;
 	int r;
 
-	if (buildflags & ~(BUILD_SKIP_XATTRS | BUILD_USE_EPOCH)) {
+	if (buildflags & ~(BUILD_SKIP_XATTRS | BUILD_USE_EPOCH | BUILD_SKIP_DEVICES)) {
 		errno = EINVAL;
 		return NULL;
 	}
@@ -631,6 +631,12 @@ struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 				goto fail;
 		} else {
 			int fd;
+
+			if (buildflags & BUILD_SKIP_DEVICES) {
+				if (de->d_type == DT_BLK
+				    || de->d_type == DT_CHR)
+					continue;
+			}
 
 			fd = dup(dfd);
 			if (fd < 0)

@@ -53,6 +53,7 @@ struct lcfs_node_s {
 enum {
 	BUILD_SKIP_XATTRS = (1 << 0),
 	BUILD_USE_EPOCH = (1 << 1),
+	BUILD_SKIP_DEVICES = (1 << 2),
 };
 
 bool lcfs_node_dirp(struct lcfs_node_s *node);
