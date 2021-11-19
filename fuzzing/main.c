@@ -1,8 +1,13 @@
+#define _GNU_SOURCE
+
 #include "../kernel/lcfs-reader.h"
 
 #include <stddef.h>
 #include <fcntl.h>
 #include <stdint.h>
+#include <unistd.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
 #include "../tools/read-file.h"
@@ -96,6 +101,25 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 
 #define min(a,b) ((a)<(b)?(a):(b))
 
+ssize_t safe_write(int fd, const void *buf, ssize_t count)
+{
+	ssize_t written = 0;
+	if (count < 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	while (written < count) {
+		ssize_t w = write (fd, buf + written, count - written);
+		if (w < 0) {
+			if (errno == EINTR || errno == EAGAIN)
+				continue;
+			return w;
+		}
+		written += w;
+	}
+	return written;
+}
+
 int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 {
 	const size_t max_recursion = 10;
@@ -104,25 +128,32 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 	struct lcfs_inode_s ino_buf;
 	struct lcfs_inode_s *ino;
 	char name[NAME_MAX];
+	char proc_path[64];
 	lcfs_off_t index;
 	lcfs_off_t off;
-	char *copy;
+	int fd;
 
-	copy = malloc(len+1);
-	if (copy == NULL)
+	fd = open(".", O_TMPFILE | O_RDWR, S_IRUSR | S_IWUSR);
+	if (fd < 0)
 		return 0;
 
-	memcpy(copy, buf, len);
+	if(safe_write(fd, buf, len) < 0) {
+		close(fd);
+		return 0;
+	}
 
-	ctx = lcfs_create_ctx_from_memory(copy, len);
+	sprintf(proc_path, "/proc/self/fd/%d", fd);
+	ctx = lcfs_create_ctx(proc_path);
+	close(fd);
 	if (IS_ERR(ctx)) {
-		free(copy);
 		return 0;
 	}
 
 	off = lcfs_get_root_index(ctx);
 
 	ino = lcfs_get_ino_index(ctx, off, &ino_buf);
+	if (IS_ERR (ino))
+		return 0;
 
 	memcpy(name, buf, min(len, NAME_MAX - 1));
 	name[min(len, NAME_MAX - 1)] = '\0';

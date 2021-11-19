@@ -14,11 +14,7 @@
 
 struct lcfs_context_s;
 
-#ifdef FUZZING
-struct lcfs_context_s *lcfs_create_ctx_from_memory(char *blob, size_t size);
-#else
 struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path);
-#endif
 
 void lcfs_destroy_ctx(struct lcfs_context_s *ctx);
 

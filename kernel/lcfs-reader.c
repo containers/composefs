@@ -16,14 +16,63 @@
 # include <stdlib.h>
 # include <string.h>
 # include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+
 # define kfree free
 # define vfree free
 # define min(a, b) ((a)<(b)?(a):(b))
 # define check_add_overflow(a, b, d) __builtin_add_overflow(a, b, d)
+# define ENOTSUPP ENOTSUP
 
 void *kzalloc(size_t len, int ignored)
 {
 	return malloc(len);
+}
+
+struct file
+{
+	int fd;
+};
+
+struct file *filp_open(const char *path, int flags, int mode)
+{
+	struct file *r;
+	int fd;
+
+	fd = open(path, flags, mode);
+	if (fd < 0)
+		return ERR_PTR(-errno);
+	r = malloc(sizeof(struct file));
+	if (r == NULL) {
+		close(fd);
+		return ERR_PTR(-ENOMEM);
+	}
+	r->fd = fd;
+	return r;
+}
+
+struct file *file_inode(struct file *f)
+{
+	return f;
+}
+
+loff_t i_size_read(struct file *f)
+{
+	struct stat st;
+	int r;
+
+	r = fstat(f->fd, &st);
+	if (r < 0)
+		return r;
+
+	return st.st_size;
+}
+
+void fput(struct file *f)
+{
+	close(f->fd);
+	free(f);
 }
 
 #else
@@ -35,56 +84,13 @@ void *kzalloc(size_t len, int ignored)
 # include <linux/overflow.h>
 #endif
 
-struct lcfs_context_s {
+struct lcfs_context_s
+{
 	struct lcfs_header_s header;
-
-#ifdef FUZZING
-	char *descriptor;
-#else
 	struct file *descriptor;
-#endif
 
 	size_t descriptor_len;
 };
-
-#ifdef FUZZING
-struct lcfs_context_s *lcfs_create_ctx_from_memory(char *blob, size_t size)
-{
-	struct lcfs_context_s *ctx;
-	struct lcfs_header_s *h;
-	int ret;
-
-	if (size < sizeof(struct lcfs_header_s) + sizeof(struct lcfs_inode_s))
-		goto fail_einval;
-
-	h = (struct lcfs_header_s *)blob;
-
-	if (h->version != LCFS_VERSION)
-		goto fail_einval;
-
-	if (h->inode_len != sizeof(struct lcfs_inode_s))
-		goto fail_einval;
-
-	if (h->inode_data_len != sizeof(struct lcfs_inode_data_s))
-		goto fail_einval;
-
-	ctx = kzalloc(sizeof(struct lcfs_context_s), GFP_KERNEL);
-	ret = -ENOMEM;
-	if (ctx == NULL)
-		goto fail;
-
-	ctx->header = *h;
-	ctx->descriptor = blob;
-	ctx->descriptor_len = size;
-
-	return ctx;
-fail_einval:
-	ret = -EINVAL;
-fail:
-	return ERR_PTR(ret);
-}
-
-#else
 
 struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
 {
@@ -118,8 +124,6 @@ struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
 	return ctx;
 }
 
-#endif
-
 void lcfs_destroy_ctx(struct lcfs_context_s *ctx)
 {
 	if (!ctx)
@@ -146,30 +150,6 @@ void *lcfs_get_vdata(struct lcfs_context_s *ctx,
 		     const struct lcfs_vdata_s vdata,
 		     void *dest)
 {
-#ifdef FUZZING
-	size_t off = vdata.off;
-	size_t len = vdata.len;
-	size_t index_end;
-	size_t index;
-
-	/* Verify that both ends are contained inside the blob data.  */
-	if (check_add_overflow(sizeof(struct lcfs_header_s), off, &index))
-		return ERR_PTR(-EFSCORRUPTED);
-
-	if (index >= ctx->descriptor_len)
-		return ERR_PTR(-EFSCORRUPTED);
-
-	if (check_add_overflow(index, len, &index_end))
-		return ERR_PTR(-EFSCORRUPTED);
-
-	if (index_end > ctx->descriptor_len)
-		return ERR_PTR(-EFSCORRUPTED);
-
-	if (!dest)
-		return NULL;
-
-	memcpy(dest, ctx->descriptor + index, len);
-#else
 	size_t copied;
 	loff_t pos = vdata.off + sizeof(struct lcfs_header_s);
 
@@ -180,8 +160,15 @@ void *lcfs_get_vdata(struct lcfs_context_s *ctx,
 	while (copied < vdata.len) {
 		ssize_t bytes;
 
+#ifdef FUZZING
+		bytes = pread(ctx->descriptor->fd, dest + copied,
+				    vdata.len - copied, pos);
+		pos += bytes;
+#else
+
 		bytes = kernel_read(ctx->descriptor, dest + copied,
 				    vdata.len - copied, &pos);
+#endif
 		if (bytes < 0)
 			return ERR_PTR(bytes);
 		if (bytes == 0)
@@ -192,7 +179,6 @@ void *lcfs_get_vdata(struct lcfs_context_s *ctx,
 
 	if (copied != vdata.len)
 		return ERR_PTR(-EFSCORRUPTED);
-#endif
 	return dest;
 }
 
