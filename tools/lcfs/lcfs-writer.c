@@ -572,7 +572,8 @@ bool lcfs_node_dirp(struct lcfs_node_s *node)
 
 struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 			       struct lcfs_node_s *parent, int fd,
-			       const char *fname, const char *name, int flags,
+			       const char *fname, const char *name,
+			       int flags,
 			       int buildflags)
 {
 	struct lcfs_node_s *node;
@@ -582,20 +583,24 @@ struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 
 	node = lcfs_load_node_from_file(ctx, fd, fname, name, flags,
 					buildflags);
-	if (node == NULL)
+	if (node == NULL) {
+		close(fd);
 		return NULL;
+	}
 
-	if (!lcfs_node_dirp(node))
+	if (!lcfs_node_dirp(node)) {
+		close(fd);
 		return node;
+	}
 
 	dir = fdopendir(fd);
 	if (dir == NULL) {
+		close(fd);
 		lcfs_free_node(node);
 		return NULL;
 	}
 
 	dfd = dirfd(dir);
-
 	for (;;) {
 		struct lcfs_node_s *n;
 		int r;
@@ -603,55 +608,52 @@ struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 		errno = 0;
 		de = readdir(dir);
 		if (de == NULL) {
-			if (errno) {
-				lcfs_free_node(node);
-				closedir(dir);
-				return NULL;
-			}
-			closedir(dir);
-			return node;
+			if (errno)
+				goto fail;
+
+			break;
 		}
 
 		if (strcmp(de->d_name, ".") == 0 ||
 		    strcmp(de->d_name, "..") == 0)
 			continue;
 
-		if (de->d_type != DT_DIR) {
-			n = lcfs_build(ctx, node, dfd, de->d_name, de->d_name,
-				       0, buildflags);
-			if (n == NULL) {
-				lcfs_free_node(node);
-				closedir(dir);
-				return NULL;
-			}
-		} else {
-			int fd = openat(dfd, de->d_name, O_RDONLY | O_NOFOLLOW);
-			if (fd < 0) {
-				lcfs_free_node(node);
-				closedir(dir);
-				return NULL;
-			}
+		if (de->d_type == DT_DIR) {
+			int fd;
+
+			fd = openat(dfd, de->d_name, O_RDONLY | O_NOFOLLOW);
+			if (fd < 0)
+				goto fail;
 
 			n = lcfs_build(ctx, node, fd, "", de->d_name,
 				       AT_EMPTY_PATH, buildflags);
-			if (n == NULL) {
-				close(fd);
-				lcfs_free_node(node);
-				closedir(dir);
-				return NULL;
-			}
-			close(fd);
+			if (n == NULL)
+				goto fail;
+		} else {
+			int fd;
+
+			fd = dup(dfd);
+			if (fd < 0)
+				goto fail;
+
+			n = lcfs_build(ctx, node, fd, de->d_name, de->d_name,
+				       0, buildflags);
+			if (n == NULL)
+				goto fail;
 		}
 
 		r = lcfs_add_child(ctx, node, n);
-		if (r < 0) {
-			lcfs_free_node(node);
-			closedir(dir);
-			return NULL;
-		}
+		if (r < 0)
+			goto fail;
 	}
 
+	closedir(dir);
 	return node;
+
+fail:
+	lcfs_free_node(node);
+	closedir(dir);
+	return NULL;
 }
 
 int lcfs_get_vdata(struct lcfs_ctx_s *ctx, char **vdata, size_t *len)

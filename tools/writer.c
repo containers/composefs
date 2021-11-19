@@ -176,7 +176,6 @@ int main(int argc, char **argv)
 	node = lcfs_build(ctx, NULL, fd, "", "", AT_EMPTY_PATH, buildflags);
 	if (node == NULL)
 		error(EXIT_FAILURE, errno, "load current directory node");
-	close(fd);
 
 	lcfs_set_root(ctx, node);
 
