@@ -391,13 +391,9 @@ const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *in
 	const char *real_path;
 
 	if (ino->u.file.payload.len == 0)
-	return ERR_PTR(-EINVAL);
+		return ERR_PTR(-EINVAL);
 
-	real_path = lcfs_c_string(ctx, ino->u.file.payload, buf, PATH_MAX);
-	if (real_path == NULL)
-		return ERR_PTR(-EIO);
-
-	return real_path;
+	return lcfs_c_string(ctx, ino->u.file.payload, buf, PATH_MAX);
 }
 
 char *lcfs_dup_payload_path(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
