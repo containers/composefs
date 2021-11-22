@@ -71,7 +71,7 @@ static inline loff_t i_size_read(struct file *f)
 
 	r = fstat(f->fd, &st);
 	if (r < 0)
-		return r;
+		return -errno;
 
 	return st.st_size;
 }
