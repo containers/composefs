@@ -35,6 +35,7 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 	ssize_t i, size_xattrs;
 	char xattrs[256+1];
 	const char *cstr;
+	char *payload;
 	int ret;
 
 	if (test_ctx->recursion_left <= 0)
@@ -53,6 +54,10 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 	cfs_ino_data = lcfs_inode_data(ctx, cfs_ino, &cfs_ino_data_buf);
 	if (IS_ERR(cfs_ino_data))
 		return true;
+
+	payload = lcfs_dup_payload_path(ctx, cfs_ino);
+	if (!IS_ERR(payload))
+		free(payload);
 
 	if ((dtype & S_IFMT) == S_IFDIR) {
 		lcfs_off_t index;
@@ -98,6 +103,7 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 		test_ctx->recursion_left--;
 		lcfs_iterate_dir(ctx, 0, cfs_ino, iter_cb, test_ctx);
 		test_ctx->recursion_left++;
+		return false;
 	}
 
 	return true;
@@ -151,7 +157,7 @@ static struct lcfs_context_s *create_ctx(uint8_t *buf, size_t len)
 
 int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 {
-	const size_t max_recursion = 10;
+	const size_t max_recursion = 2;
 	struct test_context_s test_ctx;
 	struct lcfs_context_s *ctx;
 	struct lcfs_inode_s ino_buf;
@@ -165,6 +171,27 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 	if (ctx == NULL)
 		return 0;
 
+	if (len >= sizeof (lcfs_off_t)) {
+		off = *((lcfs_off_t *) buf);
+		lcfs_get_ino_index(ctx, off, &ino_buf);
+	}
+	if (len >= sizeof (size_t)) {
+		size_t s;
+		struct lcfs_inode_data_s ino_data_buf;
+		struct lcfs_dentry_s d_buf;
+		struct lcfs_dentry_s* d;
+
+		s = *((size_t *) buf);
+
+		d = lcfs_get_dentry(ctx, s, &d_buf);
+		if (!IS_ERR(d)) {
+			lcfs_dentry_ino(d);
+			ino = lcfs_dentry_inode(ctx, d, &ino_buf);
+			if (!IS_ERR(ino))
+				lcfs_inode_data(ctx, ino, &ino_data_buf);
+		}
+	}
+
 	off = lcfs_get_root_index(ctx);
 
 	ino = lcfs_get_ino_index(ctx, off, &ino_buf);
@@ -173,6 +200,9 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 
 	memcpy(name, buf, min(len, NAME_MAX - 1));
 	name[min(len, NAME_MAX - 1)] = '\0';
+
+	lcfs_list_xattrs(ctx, ino, NULL, 0);
+	lcfs_get_xattr(ctx, ino, name, NULL, 0);
 	lcfs_lookup(ctx, ino, name, &index);
 
 	test_ctx.ctx = ctx;
