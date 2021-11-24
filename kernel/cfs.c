@@ -526,7 +526,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	if (!path_buf)
 		return -ENOMEM;
 
-	real_path = lcfs_get_payload(fsi->lcfs_ctx, cfs_ino, &path_buf);
+	real_path = lcfs_get_payload(fsi->lcfs_ctx, cfs_ino, path_buf);
 	if (IS_ERR(real_path)) {
 		kfree(path_buf);
 		return PTR_ERR(real_path);
