@@ -388,8 +388,6 @@ int lcfs_lookup(struct lcfs_context_s *ctx, struct lcfs_inode_s *dir, const char
 
 const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, void *buf)
 {
-	const char *real_path;
-
 	if (ino->u.file.payload.len == 0)
 		return ERR_PTR(-EINVAL);
 
