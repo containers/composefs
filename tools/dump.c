@@ -91,8 +91,8 @@ static int dump_dentry(const void *vdata, const char *name, size_t index,
 	} else if (!extended)
 		printf("%s\n", name);
 	else {
-		printf("name:%s|mode:%o|nlinks:%u|uid:%d|gid:%d|size:%lu|payload:%s\n",
-		       name, ino_data->st_mode, ino_data->st_nlink,
+		printf("name:%s|ino:%zu|mode:%o|nlinks:%u|uid:%d|gid:%d|size:%lu|payload:%s\n",
+		       name, index, ino_data->st_mode, ino_data->st_nlink,
 		       ino_data->st_uid, ino_data->st_gid,
 		       dirp ? 0 : ino->u.file.st_size,
 		       dirp ? "" : get_v_payload(ino, vdata));
