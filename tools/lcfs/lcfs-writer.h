@@ -48,6 +48,8 @@ struct lcfs_node_s {
 	struct lcfs_dentry_s data;
 	struct lcfs_inode_s inode;
 	struct lcfs_inode_data_s inode_data;
+
+	struct lcfs_extend_s extend;
 };
 
 enum {

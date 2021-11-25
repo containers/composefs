@@ -55,23 +55,7 @@ static int fill_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
 		len += ret;
 	}
 
-	if (!lcfs_node_dirp(node)) {
-		if ((node->inode_data.st_mode & S_IFMT) == S_IFLNK) {
-			char target[PATH_MAX + 1];
-			ssize_t s = readlink(path, target, sizeof(target));
-			if (s < 0)
-				return ret;
-
-			target[s] = '\0';
-			ret = lcfs_set_payload(ctx, node, target, s + 1);
-			if (ret < 0)
-				return ret;
-		} else {
-			ret = lcfs_set_payload(ctx, node, path, len + 1);
-			if (ret < 0)
-				return ret;
-		}
-	} else {
+	if (lcfs_node_dirp(node)) {
 		size_t i;
 
 		for (i = 0; i < node->children_size; i++) {
@@ -80,6 +64,20 @@ static int fill_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
 				return ret;
 			path[len] = '\0';
 		}
+	} else if ((node->inode_data.st_mode & S_IFMT) == S_IFLNK) {
+		char target[PATH_MAX + 1];
+		ssize_t s = readlink(path, target, sizeof(target));
+		if (s < 0)
+			return ret;
+
+		target[s] = '\0';
+		ret = lcfs_set_payload(ctx, node, target, s + 1);
+		if (ret < 0)
+			return ret;
+	} else if ((node->inode_data.st_mode & S_IFMT) == S_IFREG) {
+		ret = lcfs_set_payload(ctx, node, path, len + 1);
+		if (ret < 0)
+			return ret;
 	}
 	path[old_len] = '\0';
 

@@ -341,7 +341,7 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 	if ((mode & S_IFMT) != S_IFDIR) {
 		v = get_child(entry, "size", yajl_t_number);
 		if (v)
-			node->inode.u.file.st_size = YAJL_GET_INTEGER(v);
+			node->extend.st_size = YAJL_GET_INTEGER(v);
 	}
 
 	v = get_child(entry, "devMinor", yajl_t_number);
@@ -382,7 +382,22 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 			error(0, 0, "append vdata");
 			return NULL;
 		}
-		node->inode.u.file.payload = out;
+
+		if (is_regular_file) {
+			node->extend.src_offset = 0;
+			node->extend.payload = out;
+
+			r = lcfs_append_vdata(ctx, &out, &(node->extend),
+					      sizeof (node->extend));
+			if (r < 0) {
+				free(node);
+				error(0, 0, "append vdata");
+				return NULL;
+			}
+			node->inode.u.extends = out;
+		} else {
+			node->inode.u.payload = out;
+		}
 	}
 
 	v = get_child(entry, "xattrs", yajl_t_object);

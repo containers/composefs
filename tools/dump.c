@@ -47,13 +47,36 @@ static const void *get_vdata(const char *x)
 	return x + sizeof(struct lcfs_header_s);
 }
 
-static const char *get_v_payload(const struct lcfs_inode_s *ino,
+static uint64_t get_size(bool symlink_p,
+			 const struct lcfs_inode_s *ino,
+			 const struct lcfs_extend_s *extends,
+			 const char *vdata)
+{
+	off_t res = 0;
+	size_t i;
+
+	if (symlink_p)
+		return 0;
+
+	for (i = 0; i < ino->u.extends.len; i += sizeof(struct lcfs_extend_s)) {
+		res += extends[i / sizeof(struct lcfs_extend_s)].st_size;
+	}
+
+	return res;
+}
+
+static const char *get_v_payload(bool symlink_p,
+				 const struct lcfs_inode_s *ino,
+				 const struct lcfs_extend_s *extends,
 				 const char *vdata)
 {
-	if (ino->u.file.payload.len == 0)
+	if (symlink_p)
+		return vdata + ino->u.payload.off;
+
+	if (ino->u.extends.len == 0)
 		return "";
 
-	return vdata + ino->u.file.payload.off;
+	return vdata + extends[0].payload.off;
 }
 
 static bool is_dir(const struct lcfs_inode_data_s *d)
@@ -61,17 +84,23 @@ static bool is_dir(const struct lcfs_inode_data_s *d)
 	return (d->st_mode & S_IFMT) == S_IFDIR;
 }
 
+static bool is_symlink(const struct lcfs_inode_data_s *d)
+{
+	return (d->st_mode & S_IFMT) == S_IFLNK;
+}
+
 static int dump_dentry(const void *vdata, const char *name, size_t index,
 		       size_t rec, bool extended, bool xattrs)
 {
 	struct lcfs_inode_data_s *ino_data;
+	struct lcfs_extend_s *extends;
 	struct lcfs_inode_s *ino;
-	bool dirp;
+	bool dirp, symlinkp;
 	size_t i;
 
 	ino = (struct lcfs_inode_s *)(vdata + index);
 	ino_data = (struct lcfs_inode_data_s *)(vdata + ino->inode_data_index);
-
+	extends = (struct lcfs_extend_s *)(vdata + ino->u.extends.off);
 	dirp = is_dir(ino_data);
 
 	putchar('|');
@@ -94,8 +123,8 @@ static int dump_dentry(const void *vdata, const char *name, size_t index,
 		printf("name:%s|ino:%zu|mode:%o|nlinks:%u|uid:%d|gid:%d|size:%lu|payload:%s\n",
 		       name, index, ino_data->st_mode, ino_data->st_nlink,
 		       ino_data->st_uid, ino_data->st_gid,
-		       dirp ? 0 : ino->u.file.st_size,
-		       dirp ? "" : get_v_payload(ino, vdata));
+		       dirp ? 0 : get_size(is_symlink(ino_data), ino, extends, vdata),
+		       dirp ? "" : get_v_payload(is_symlink(ino_data), ino, extends, vdata));
 	}
 
 	if (dirp) {

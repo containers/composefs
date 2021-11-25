@@ -300,6 +300,7 @@ int lcfs_write_to(struct lcfs_ctx_s *ctx, FILE *out)
 		.unused2 = 0,
 		.inode_len = sizeof(struct lcfs_inode_s),
 		.inode_data_len = sizeof(struct lcfs_inode_data_s),
+		.extend_len = sizeof(struct lcfs_extend_s),
 	};
 	int ret = 0;
 
@@ -471,8 +472,9 @@ struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
 	ret->inode_data.st_gid = sb.st_gid;
 	ret->inode_data.st_rdev = sb.st_rdev;
 
-	if ((sb.st_mode & S_IFMT) != S_IFDIR)
-		ret->inode.u.file.st_size = sb.st_size;
+	if ((sb.st_mode & S_IFMT) == S_IFREG) {
+		ret->extend.st_size = sb.st_size;
+	}
 
 	if ((buildflags & BUILD_USE_EPOCH) == 0) {
 		ret->inode.st_mtim = sb.st_mtim;
@@ -509,7 +511,22 @@ int lcfs_set_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
 	if (r < 0)
 		return r;
 
-	node->inode.u.file.payload = tmp_vdata;
+	if ((node->inode_data.st_mode & S_IFMT) == S_IFLNK) {
+		node->inode.u.payload = tmp_vdata;
+	} else if ((node->inode_data.st_mode & S_IFMT) == S_IFREG) {
+		node->extend.src_offset = 0;
+		node->extend.payload = tmp_vdata;
+
+		r = lcfs_append_vdata(ctx, &tmp_vdata, &(node->extend),
+				      sizeof(node->extend));
+		if (r < 0)
+			return r;
+		node->inode.u.extends = tmp_vdata;
+	} else {
+		errno = EINVAL;
+		return -1;
+	}
+
 	return 0;
 }
 

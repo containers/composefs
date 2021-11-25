@@ -40,6 +40,9 @@ struct lcfs_header_s {
 
 	uint32_t inode_len;
 	uint32_t inode_data_len;
+	uint32_t extend_len;
+
+	uint64_t unused3[3];
 } __attribute__((packed));
 
 struct lcfs_inode_data_s {
@@ -50,21 +53,18 @@ struct lcfs_inode_data_s {
 	uint32_t st_rdev; /* Device ID (if special file).  */
 } __attribute__((packed));
 
+struct lcfs_extend_s {
+	/* Total size of this extend in bytes.  */
+	uint64_t st_size;
+
+	/* Source file.  */
+	uint64_t src_offset;
+	struct lcfs_vdata_s payload;
+} __attribute__((packed));
+
 struct lcfs_inode_s {
 	/* Index of struct lcfs_inode_data_s. */
 	lcfs_off_t inode_data_index;
-
-	/* stat data.  */
-	union {
-		/* Offset and length to the content of the directory.  */
-		struct lcfs_vdata_s dir;
-
-		struct {
-			/* Total size, in bytes.  */
-			uint64_t st_size;
-			struct lcfs_vdata_s payload;
-		} file;
-	} u;
 
 	struct timespec st_mtim; /* Time of last modification.  */
 	struct timespec st_ctim; /* Time of last status change.  */
@@ -72,6 +72,16 @@ struct lcfs_inode_s {
 	/* Variable len data.  */
 	struct lcfs_vdata_s xattrs;
 
+	union {
+		/* Offset and length to the content of the directory.  */
+		struct lcfs_vdata_s dir;
+
+		/* Payload used for symlinks.  */
+		struct lcfs_vdata_s payload;
+
+		/* Payload used for symlinks.  */
+		struct lcfs_vdata_s extends;
+	} u;
 } __attribute__((packed));
 
 struct lcfs_dentry_s {
