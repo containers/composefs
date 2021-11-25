@@ -43,6 +43,9 @@ struct lcfs_header_s {
 
 	u32 inode_len;
 	u32 inode_data_len;
+	u32 extend_len;
+
+	u64 unused3[3];
 } __attribute__((packed));
 
 struct lcfs_inode_data_s {
@@ -53,27 +56,35 @@ struct lcfs_inode_data_s {
 	u32 st_rdev; /* Device ID (if special file).  */
 } __attribute__((packed));
 
+struct lcfs_extend_s {
+	/* Total size of this extend in bytes.  */
+	u64 st_size;
+
+	/* Source file.  */
+	u64 src_offset;
+	struct lcfs_vdata_s payload;
+} __attribute__((packed));
+
 struct lcfs_inode_s {
 	/* Index of struct lcfs_inode_data_s. */
 	lcfs_off_t inode_data_index;
-
-	/* stat data.  */
-	union {
-		/* Offset and length to the content of the directory.  */
-		struct lcfs_vdata_s dir;
-
-		struct {
-			/* Total size, in bytes.  */
-			u64 st_size;
-			struct lcfs_vdata_s payload;
-		} file;
-	} u;
 
 	struct timespec64 st_mtim; /* Time of last modification.  */
 	struct timespec64 st_ctim; /* Time of last status change.  */
 
 	/* Variable len data.  */
 	struct lcfs_vdata_s xattrs;
+
+	union {
+		/* Offset and length to the content of the directory.  */
+		struct lcfs_vdata_s dir;
+
+		/* Payload used for symlinks.  */
+		struct lcfs_vdata_s payload;
+
+		/* Payload used for symlinks.  */
+		struct lcfs_vdata_s extends;
+	} u;
 } __attribute__((packed));
 
 struct lcfs_dentry_s {

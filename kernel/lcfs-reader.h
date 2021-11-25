@@ -63,4 +63,8 @@ const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *in
 
 char *lcfs_dup_payload_path(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino);
 
+const char *lcfs_get_extend(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, size_t n_extend, off_t *off, void *buf);
+
+int lcfs_get_file_size(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, loff_t *size);
+
 #endif

@@ -66,16 +66,27 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 		lcfs_get_dentry(ctx, index, &dentry_buf);
 	} else {
 		char *path_buf = malloc(PATH_MAX);
+		loff_t size;
+		off_t off;
 
 		if (path_buf == NULL)
 			return true;
 
+		lcfs_get_extend(ctx, cfs_ino, 0, &off, path_buf);
+		lcfs_get_extend(ctx, cfs_ino, 1, &off, path_buf);
+		lcfs_get_extend(ctx, cfs_ino, -1, &off, path_buf);
+		lcfs_get_extend(ctx, cfs_ino, 0, NULL, path_buf);
+		lcfs_get_extend(ctx, cfs_ino, 1, NULL, path_buf);
+		lcfs_get_extend(ctx, cfs_ino, -1, NULL, path_buf);
+
+		lcfs_get_file_size(ctx, cfs_ino, &size);
+
 		lcfs_get_payload(ctx, cfs_ino, path_buf);
 
-		if (cfs_ino->u.file.payload.len <= PATH_MAX)
-			lcfs_get_vdata(ctx, cfs_ino->u.file.payload, path_buf);
+		if (cfs_ino->u.payload.len <= PATH_MAX)
+			lcfs_get_vdata(ctx, cfs_ino->u.payload, path_buf);
 
-		cstr = lcfs_c_string(ctx, cfs_ino->u.file.payload, path_buf, PATH_MAX);
+		cstr = lcfs_c_string(ctx, cfs_ino->u.payload, path_buf, PATH_MAX);
 		if (!IS_ERR(cstr)) {
 			/* Consume the C string.  */
 			while (*cstr)

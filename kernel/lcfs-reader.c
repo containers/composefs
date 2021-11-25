@@ -388,10 +388,10 @@ int lcfs_lookup(struct lcfs_context_s *ctx, struct lcfs_inode_s *dir, const char
 
 const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, void *buf)
 {
-	if (ino->u.file.payload.len == 0)
+	if (ino->u.payload.len == 0)
 		return ERR_PTR(-EINVAL);
 
-	return lcfs_c_string(ctx, ino->u.file.payload, buf, PATH_MAX);
+	return lcfs_c_string(ctx, ino->u.payload, buf, PATH_MAX);
 }
 
 char *lcfs_dup_payload_path(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
@@ -399,22 +399,71 @@ char *lcfs_dup_payload_path(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino
 	const char *v;
 	char *link;
 
-	if (ino->u.file.payload.len == 0)
+	if (ino->u.payload.len == 0)
 		return ERR_PTR(-EINVAL);
 
-	if (ino->u.file.payload.len > PATH_MAX)
+	if (ino->u.payload.len > PATH_MAX)
 		return ERR_PTR(-EINVAL);
 
-	link = kmalloc(ino->u.file.payload.len, GFP_KERNEL);
+	link = kmalloc(ino->u.payload.len, GFP_KERNEL);
 	if (!link)
 		return ERR_PTR(-ENOMEM);
 
-	v = lcfs_c_string(ctx, ino->u.file.payload, link,
-			  ino->u.file.payload.len);
+	v = lcfs_c_string(ctx, ino->u.payload, link,
+			  ino->u.payload.len);
 	if (IS_ERR(v)) {
 		kfree(link);
 		return ERR_CAST(v);
 	}
 
 	return link;
+}
+
+const char *lcfs_get_extend(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, size_t n_extend, off_t *off, void *buf)
+{
+	struct lcfs_extend_s extends_buf;
+	struct lcfs_extend_s *extends;
+
+	/* Only one extend support yet.  */
+	if (n_extend != 0)
+		return ERR_PTR(-EINVAL);
+
+	if (ino->u.extends.len != sizeof (struct lcfs_extend_s))
+		return ERR_PTR(-EFSCORRUPTED);
+
+	extends = lcfs_get_vdata(ctx, ino->u.extends, &extends_buf);
+	if (IS_ERR (extends)) {
+		/* otherwise gcc complains with -Wreturn-local-addr.  */
+		int r;
+
+		r = PTR_ERR(extends);
+		return ERR_PTR(r);;
+	}
+
+	if (off)
+		*off = extends[0].src_offset;
+
+	return lcfs_c_string(ctx, extends[0].payload, buf, PATH_MAX);
+}
+
+int lcfs_get_file_size(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, loff_t *size)
+{
+	struct lcfs_extend_s extends_buf;
+	struct lcfs_extend_s *extends;
+
+	if (ino->u.extends.len == 0) {
+		*size = 0;
+		return 0;
+	}
+
+	/* Only one extend support yet.  */
+	if (ino->u.extends.len != sizeof (struct lcfs_extend_s))
+		return -EFSCORRUPTED;
+
+	extends = lcfs_get_vdata(ctx, ino->u.extends, &extends_buf);
+	if (IS_ERR (extends))
+		return PTR_ERR(extends);
+
+	*size = (loff_t) extends[0].st_size;
+	return 0;
 }
