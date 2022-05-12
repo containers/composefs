@@ -523,9 +523,8 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	if (WARN_ON(file == NULL))
 		return -EIO;
 
-	if (file->f_flags & (O_WRONLY | O_CREAT | O_EXCL | O_TRUNC))
+	if (file->f_flags & (O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_TRUNC))
 		return -EROFS;
-
 
 	if (cfs_ino->u.extends.len == 0) {
 		file->private_data = &empty_file;
