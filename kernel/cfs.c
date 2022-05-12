@@ -478,6 +478,7 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	sb->s_maxbytes = MAX_LFS_FILESIZE;
 	sb->s_blocksize = PAGE_SIZE;
 	sb->s_blocksize_bits = PAGE_SHIFT;
+	sb->s_flags |= SB_RDONLY;
 	sb->s_magic = CFS_MAGIC;
 	sb->s_xattr = cfs_xattr_handlers;
 	sb->s_export_op = &cfs_export_operations;
