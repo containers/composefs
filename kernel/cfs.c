@@ -313,9 +313,6 @@ struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 	if (dentry->d_name.len > NAME_MAX)
 		return ERR_PTR(-ENAMETOOLONG);
 
-	if (!dentry->d_sb->s_d_op)
-		d_set_d_op(dentry, &simple_dentry_operations);
-
 	ret = lcfs_lookup(fsi->lcfs_ctx, cfs_ino, dentry->d_name.name, &index);
 	if (ret == 0)
 		goto return_negative;
@@ -450,6 +447,8 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 
 	if (sb->s_root)
 		return -EINVAL;
+
+        sb->s_d_op = &simple_dentry_operations;
 
 	ret = kern_path("/", LOOKUP_DIRECTORY, &rootpath);
 	if (ret) {
