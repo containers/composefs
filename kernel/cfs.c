@@ -373,10 +373,29 @@ static void cfs_free_inode(struct inode *inode)
 	free_inode_nonrcu(inode);
 }
 
+static void cfs_put_super(struct super_block *sb)
+{
+	struct cfs_info *fsi = sb->s_fs_info;
+
+	if (fsi->root_mnt)
+		kern_unmount(fsi->root_mnt);
+	if (fsi->lcfs_ctx)
+		lcfs_destroy_ctx(fsi->lcfs_ctx);
+	if (fsi->descriptor_path)
+		kfree(fsi->descriptor_path);
+	if (fsi->base)
+		fput(fsi->base);
+	if (fsi->base_path)
+		kfree(fsi->base_path);
+
+	kfree(fsi);
+}
+
 static const struct super_operations cfs_ops = {
 	.statfs = simple_statfs,
 	.drop_inode = generic_delete_inode,
 	.show_options = cfs_show_options,
+	.put_super = cfs_put_super,
 	.free_inode = cfs_free_inode,
 };
 
@@ -809,31 +828,12 @@ static int cfs_init_fs_context(struct fs_context *fc)
 	return 0;
 }
 
-static void cfs_kill_sb(struct super_block *sb)
-{
-	struct cfs_info *fsi = sb->s_fs_info;
-
-	if (fsi->root_mnt)
-		kern_unmount(fsi->root_mnt);
-	if (fsi->lcfs_ctx)
-		lcfs_destroy_ctx(fsi->lcfs_ctx);
-	if (fsi->descriptor_path)
-		kfree(fsi->descriptor_path);
-	if (fsi->base)
-		fput(fsi->base);
-	if (fsi->base_path)
-		kfree(fsi->base_path);
-
-	kfree(fsi);
-	kill_litter_super(sb);
-}
-
 static struct file_system_type cfs_type = {
 	.name = "composefs",
 	.init_fs_context = cfs_init_fs_context,
 	.parameters = cfs_parameters,
-	.kill_sb = cfs_kill_sb,
 	.fs_flags = FS_USERNS_MOUNT,
+	.kill_sb = kill_anon_super,
 };
 
 #ifdef STANDALONE_COMPOSEFS
