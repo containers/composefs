@@ -31,6 +31,7 @@
 #include <sys/types.h>
 #include <sys/sysmacros.h>
 #include <yajl/yajl_tree.h>
+#include <getopt.h>
 
 /* Adapted from mailutils 0.6.91(distributed under LGPL 2.0+)  */
 static int b64_input(char c)
@@ -492,15 +493,60 @@ static void do_file(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root, FILE *file
 	yajl_tree_free(root_val);
 }
 
+#define OPT_OUT 100
+
+static void usage(const char *argv0)
+{
+	fprintf(stderr,
+		"usage: %s [--out=filedname] jsonfile...\n",
+		argv0);
+}
+
 int main(int argc, char **argv)
 {
+	const struct option longopts[] = {
+		{
+			name: "out",
+			has_arg: required_argument,
+			flag: NULL,
+			val: OPT_OUT
+		},
+		{},
+	};
 	struct lcfs_node_s *root;
 	struct lcfs_ctx_s *ctx;
 	char cwd[PATH_MAX];
 	size_t i;
+	int opt;
+	const char *out = NULL;
+	FILE *out_file;
 
-	if (isatty(1))
-		error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
+	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
+		switch (opt) {
+		case OPT_OUT:
+			out = optarg;
+			break;
+		case ':':
+			fprintf(stderr, "option needs a value\n");
+			exit(EXIT_FAILURE);
+		default:
+			usage(argv[0]);
+			exit(1);
+		}
+	}
+
+	argv += optind;
+	argc -= optind;
+
+	if (out != NULL) {
+		out_file = fopen(out, "w");
+		if (out_file == NULL)
+			error(EXIT_FAILURE, errno, "Failed to open output file");
+	} else {
+		if (isatty(1))
+			error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
+		out_file = stdout;
+	}
 
 	ctx = lcfs_new_ctx();
 	if (ctx == NULL)
@@ -511,7 +557,7 @@ int main(int argc, char **argv)
 		error(EXIT_FAILURE, errno, "malloc");
 	memset(root, 0, sizeof(*root));
 
-	for (i = 1; i < argc; i++) {
+	for (i = 0; i < argc; i++) {
 		FILE *f;
 
 		f = fopen(argv[i], "r");
@@ -525,7 +571,7 @@ int main(int argc, char **argv)
 
 	getcwd(cwd, sizeof(cwd));
 
-	if (lcfs_write_to(ctx, stdout) < 0)
+	if (lcfs_write_to(ctx, out_file) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
 
 	lcfs_close(ctx);

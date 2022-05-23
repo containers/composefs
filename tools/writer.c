@@ -87,7 +87,7 @@ static int fill_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage: %s [--chdir=/dir] [--use-epoch] [--skip-xattrs] [--relative] [--skip-devices]\n",
+		"usage: %s [--chdir=/dir] [--use-epoch] [--skip-xattrs] [--relative] [--skip-devices] [--out=filedname]\n",
 		argv0);
 }
 
@@ -96,6 +96,7 @@ static void usage(const char *argv0)
 #define OPT_SKIP_XATTRS 102
 #define OPT_USE_EPOCH 103
 #define OPT_SKIP_DEVICES 104
+#define OPT_OUT 105
 
 int main(int argc, char **argv)
 {
@@ -130,15 +131,23 @@ int main(int argc, char **argv)
 			flag: NULL,
 			val: OPT_CHDIR
 		},
+		{
+			name: "out",
+			has_arg: required_argument,
+			flag: NULL,
+			val: OPT_OUT
+		},
 		{},
 	};
 	int buildflags = 0;
 	bool relative_path = false;
 	struct lcfs_node_s *node;
 	struct lcfs_ctx_s *ctx;
+	const char *out = NULL;
 	char cwd[PATH_MAX];
 	int opt;
 	int fd;
+	FILE *out_file;
 
 	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
 		switch (opt) {
@@ -158,6 +167,9 @@ int main(int argc, char **argv)
 			if (chdir(optarg) < 0)
 				error(EXIT_FAILURE, errno, "chdir");
 			break;
+		case OPT_OUT:
+			out = optarg;
+			break;
 		case ':':
 			fprintf(stderr, "option needs a value\n");
 			exit(EXIT_FAILURE);
@@ -167,8 +179,15 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (isatty(1))
-		error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
+	if (out != NULL) {
+		out_file = fopen(out, "w");
+		if (out_file == NULL)
+			error(EXIT_FAILURE, errno, "Failed to open output file");
+	} else {
+		if (isatty(1))
+			error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
+		out_file = stdout;
+	}
 
 	argv += optind;
 	argc -= optind;
@@ -194,7 +213,7 @@ int main(int argc, char **argv)
 
 	fill_payload(ctx, node, cwd, strlen(cwd));
 
-	if (lcfs_write_to(ctx, stdout) < 0)
+	if (lcfs_write_to(ctx, out_file) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
 
 	lcfs_close(ctx);
