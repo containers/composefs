@@ -432,6 +432,11 @@ static int read_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *ret,
 	return r;
 }
 
+struct lcfs_node_s *lcfs_node_new(void)
+{
+	return calloc(1, sizeof(struct lcfs_node_s));
+}
+
 struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
 					     const char *fname,
 					     const char *name, int flags,
@@ -456,7 +461,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
 	if (r < 0)
 		return NULL;
 
-	ret = calloc(1, sizeof(*ret));
+	ret = lcfs_node_new();
 	if (ret == NULL)
 		return NULL;
 

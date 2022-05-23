@@ -161,7 +161,7 @@ append_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *dir, const char *name)
 		return NULL;
 	dir->children = tmp;
 
-	child = calloc(1, sizeof(*child));
+	child = lcfs_node_new();
 	if (child == NULL)
 		return NULL;
 
@@ -552,10 +552,9 @@ int main(int argc, char **argv)
 	if (ctx == NULL)
 		error(EXIT_FAILURE, errno, "new_ctx");
 
-	root = malloc(sizeof(struct lcfs_node_s));
+	root = lcfs_node_new();
 	if (root == NULL)
 		error(EXIT_FAILURE, errno, "malloc");
-	memset(root, 0, sizeof(*root));
 
 	for (i = 0; i < argc; i++) {
 		FILE *f;

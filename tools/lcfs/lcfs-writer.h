@@ -63,6 +63,7 @@ bool lcfs_node_dirp(struct lcfs_node_s *node);
 struct lcfs_ctx_s *lcfs_new_ctx();
 int lcfs_close(struct lcfs_ctx_s *ctx);
 
+struct lcfs_node_s *lcfs_node_new(void);
 struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
 					     const char *fname,
 					     const char *name, int flags,
