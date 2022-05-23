@@ -90,7 +90,6 @@ static void vdata_ht_freer(void *data)
 struct lcfs_ctx_s *lcfs_new_ctx()
 {
 	struct lcfs_ctx_s *ret;
-	struct lcfs_vdata_s tmp;
 
 	ret = calloc(1, sizeof *ret);
 	if (ret == NULL)
@@ -98,11 +97,6 @@ struct lcfs_ctx_s *lcfs_new_ctx()
 
 	ret->ht = hash_initialize(0, NULL, vdata_ht_hasher, vdata_ht_comparator,
 				  vdata_ht_freer);
-
-	if (lcfs_append_vdata(ret, &tmp, "\0", 1) < 0) {
-		free(ret);
-		return NULL;
-	}
 
 	return ret;
 }
