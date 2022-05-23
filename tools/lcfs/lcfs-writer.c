@@ -180,6 +180,28 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 		node->data.name = out;
 	}
 
+        if (node->payload) {
+		r = lcfs_append_vdata(ctx, &out, node->payload, strlen(node->payload) + 1);
+		if (r < 0)
+			return r;
+
+		if ((node->inode_data.st_mode & S_IFMT) == S_IFLNK) {
+			node->inode.u.payload = out;
+		} else if ((node->inode_data.st_mode & S_IFMT) == S_IFREG) {
+			node->extend.src_offset = 0;
+			node->extend.payload = out;
+
+			r = lcfs_append_vdata(ctx, &out, &(node->extend),
+					      sizeof(node->extend));
+			if (r < 0)
+				return r;
+			node->inode.u.extends = out;
+		} else {
+			errno = EINVAL;
+			return -1;
+		}
+	}
+
 	if (node->link_to) {
 		r = dump_inode(ctx, node->link_to);
 		node->data.inode_index = node->link_to->data.inode_index;
@@ -504,28 +526,11 @@ struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
 }
 
 int lcfs_set_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
-		     const char *payload, size_t len)
+		     const char *payload)
 {
-	struct lcfs_vdata_s tmp_vdata;
-	int r;
-
-	r = lcfs_append_vdata(ctx, &tmp_vdata, payload, len);
-	if (r < 0)
-		return r;
-
-	if ((node->inode_data.st_mode & S_IFMT) == S_IFLNK) {
-		node->inode.u.payload = tmp_vdata;
-	} else if ((node->inode_data.st_mode & S_IFMT) == S_IFREG) {
-		node->extend.src_offset = 0;
-		node->extend.payload = tmp_vdata;
-
-		r = lcfs_append_vdata(ctx, &tmp_vdata, &(node->extend),
-				      sizeof(node->extend));
-		if (r < 0)
-			return r;
-		node->inode.u.extends = tmp_vdata;
-	} else {
-		errno = EINVAL;
+	node->payload = strdup(payload);
+	if (node->payload == NULL) {
+		errno = ENOMEM;
 		return -1;
 	}
 
@@ -580,6 +585,7 @@ int lcfs_free_node(struct lcfs_node_s *node)
 		lcfs_free_node(node->children[i]);
 	free(node->children);
 	free(node->name);
+	free(node->payload);
 	free(node);
 
 	return 0;

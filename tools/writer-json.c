@@ -376,7 +376,7 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 	if (payload) {
 		int r;
 
-		r = lcfs_set_payload(ctx, node, payload, strlen(payload) + 1);
+		r = lcfs_set_payload(ctx, node, payload);
 		if (r < 0) {
 			lcfs_free_node(node);
 			error(0, 0, "set_payload");

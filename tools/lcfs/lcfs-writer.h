@@ -46,6 +46,8 @@ struct lcfs_node_s {
 	bool inode_written;
 
 	char *name;
+	char *payload;
+
 	struct lcfs_dentry_s data;
 
 	struct lcfs_inode_s inode;
@@ -76,7 +78,7 @@ int lcfs_add_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *parent,
 int lcfs_free_node(struct lcfs_node_s *node);
 
 int lcfs_set_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
-		     const char *payload, size_t len);
+		     const char *payload);
 
 int lcfs_set_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
 		    const char *xattrs, size_t len);
