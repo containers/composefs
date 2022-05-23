@@ -95,7 +95,7 @@ static int dump_dentry(const void *vdata, const char *name, size_t index,
 	struct lcfs_inode_data_s *ino_data;
 	struct lcfs_extend_s *extends;
 	struct lcfs_inode_s *ino;
-	bool dirp, symlinkp;
+	bool dirp;
 	size_t i;
 
 	ino = (struct lcfs_inode_s *)(vdata + index);
