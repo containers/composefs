@@ -262,7 +262,7 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 {
 	const char *payload = NULL;
 	char payload_buffer[128];
-	uint16_t min, maj;
+	uint16_t min = 0, maj = 0;
 	mode_t mode = 0;
 	yajl_val v;
 	bool is_regular_file = false;
