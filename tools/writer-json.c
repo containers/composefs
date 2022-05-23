@@ -375,29 +375,12 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 
 	if (payload) {
 		int r;
-		struct lcfs_vdata_s out;
 
-		r = lcfs_append_vdata(ctx, &out, payload, strlen(payload) + 1);
+		r = lcfs_set_payload(ctx, node, payload, strlen(payload) + 1);
 		if (r < 0) {
 			lcfs_free_node(node);
-			error(0, 0, "append vdata");
+			error(0, 0, "set_payload");
 			return NULL;
-		}
-
-		if (is_regular_file) {
-			node->extend.src_offset = 0;
-			node->extend.payload = out;
-
-			r = lcfs_append_vdata(ctx, &out, &(node->extend),
-					      sizeof (node->extend));
-			if (r < 0) {
-				lcfs_free_node(node);
-				error(0, 0, "append vdata");
-				return NULL;
-			}
-			node->inode.u.extends = out;
-		} else {
-			node->inode.u.payload = out;
 		}
 	}
 
