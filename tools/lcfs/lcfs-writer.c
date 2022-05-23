@@ -172,6 +172,14 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 	if (node->inode_written)
 		return 0;
 
+	if (node->name) {
+		r = lcfs_append_vdata(ctx, &out, node->name, strlen(node->name) + 1);
+		if (r < 0) {
+			return 0;
+		}
+		node->data.name = out;
+	}
+
 	if (node->link_to) {
 		r = dump_inode(ctx, node->link_to);
 		node->data.inode_index = node->link_to->data.inode_index;
@@ -249,13 +257,10 @@ static void append_to_next(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 
 int cmp_nodes(const void *a, const void *b, void *r)
 {
-	struct lcfs_ctx_s *ctx = r;
 	const struct lcfs_node_s *na = *((const struct lcfs_node_s **)a);
 	const struct lcfs_node_s *nb = *((const struct lcfs_node_s **)b);
-	const char *name_a = ctx->vdata + na->data.name.off;
-	const char *name_b = ctx->vdata + nb->data.name.off;
 
-	return strcmp(name_a, name_b);
+	return strcmp(na->name, nb->name);
 }
 
 static int serialize_children(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
@@ -442,7 +447,6 @@ struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
 					     const char *name, int flags,
 					     int buildflags)
 {
-	struct lcfs_vdata_s tmp_vdata;
 	struct lcfs_node_s *ret;
 	struct stat sb;
 	int r;
@@ -489,12 +493,11 @@ struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
 	}
 
 	if (name[0]) {
-		r = lcfs_append_vdata(ctx, &tmp_vdata, name, strlen(name) + 1);
-		if (r < 0) {
-			free(ret);
+		ret->name = strdup(name);
+		if (ret->name == NULL) {
+			lcfs_free_node(ret);
 			return NULL;
 		}
-		ret->data.name = tmp_vdata;
 	}
 
 	return ret;
@@ -576,6 +579,7 @@ int lcfs_free_node(struct lcfs_node_s *node)
 	for (i = 0; i < node->children_size; i++)
 		lcfs_free_node(node->children[i]);
 	free(node->children);
+	free(node->name);
 	free(node);
 
 	return 0;

@@ -150,10 +150,6 @@ append_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *dir, const char *name)
 {
 	struct lcfs_node_s **tmp;
 	struct lcfs_node_s *child;
-	struct lcfs_vdata_s out;
-
-	if (lcfs_append_vdata(ctx, &out, name, strlen(name) + 1) < 0)
-		return NULL;
 
 	tmp = realloc(dir->children,
 		      sizeof(struct lcfs_node_s) * (dir->children_size + 1));
@@ -165,7 +161,11 @@ append_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *dir, const char *name)
 	if (child == NULL)
 		return NULL;
 
-	child->data.name = out;
+	child->name = strdup(name);
+	if (child->name == NULL) {
+		lcfs_free_node(child);
+		return NULL;
+        }
 
 	dir->children[dir->children_size++] = child;
 	child->parent = dir;
