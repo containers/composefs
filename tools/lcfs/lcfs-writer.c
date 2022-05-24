@@ -324,7 +324,7 @@ static void append_to_next(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 	}
 }
 
-int cmp_nodes(const void *a, const void *b, void *r)
+static int cmp_nodes(const void *a, const void *b, void *r)
 {
 	const struct lcfs_node_s *na = *((const struct lcfs_node_s **)a);
 	const struct lcfs_node_s *nb = *((const struct lcfs_node_s **)b);
