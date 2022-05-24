@@ -40,7 +40,10 @@ static int fill_payload(struct lcfs_node_s *node,
         fname = lcfs_node_get_name(node);
 
 	if (fname) {
-		ret = sprintf(path + len, "/%s", fname);
+		if (len == 0)
+			ret = sprintf(path + len, "%s", fname);
+		else
+			ret = sprintf(path + len, "/%s", fname);
 		if (ret < 0)
 			return ret;
 		len += ret;
@@ -197,7 +200,7 @@ int main(int argc, char **argv)
 		error(EXIT_FAILURE, errno, "load current directory node");
 
 	if (relative_path)
-		strcpy(cwd, ".");
+		strcpy(cwd, "");
 	else
 		getcwd(cwd, sizeof(cwd));
 
