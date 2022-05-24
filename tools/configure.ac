@@ -2,6 +2,7 @@ AC_PREREQ([2.69])
 AC_INIT([composefs], [0.1], [giuseppe@scrivano.org])
 AC_CONFIG_SRCDIR([dump.c])
 AC_CONFIG_HEADERS([config.h])
+AC_SYS_LARGEFILE
 
 AM_INIT_AUTOMAKE([1.11.2 -Wno-portability foreign tar-ustar no-dist-gzip dist-xz subdir-objects])
 
