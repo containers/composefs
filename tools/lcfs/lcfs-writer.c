@@ -44,6 +44,18 @@ struct lcfs_ctx_s {
 	struct lcfs_node_s *cur;
 };
 
+static char *memdup(const char *s, size_t len)
+{
+	char *s2 = malloc(len);
+	if (s2 == NULL) {
+		errno = ENOMEM;
+		return NULL;
+	}
+	memcpy(s2, s, len);
+	return s2;
+}
+
+
 struct hasher_vdata_s {
 	const char *const *vdata;
 	lcfs_off_t off;
@@ -171,6 +183,32 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 
 	if (node->inode_written)
 		return 0;
+
+	if (node->n_xattrs > 0) {
+		size_t i;
+		size_t buffer_len = 0;
+		struct lcfs_xattr_header_s buffer[node->n_xattrs];
+
+		for (i = 0; i < node->n_xattrs; i++) {
+			struct lcfs_xattr_s *xattr = &node->xattrs[i];
+			struct lcfs_xattr_header_s *header = &buffer[i];
+
+			r = lcfs_append_vdata(ctx, &(header->key), xattr->key, strlen(xattr->key));
+			if (r < 0) {
+				return r;
+			}
+
+			r = lcfs_append_vdata(ctx, &(header->value), xattr->value, xattr->value_len);
+			if (r < 0)
+				return r;
+		}
+
+		r = lcfs_append_vdata(ctx, &out, buffer, sizeof(buffer));
+		if (r < 0)
+			return r;
+
+		node->inode.xattrs = out;
+	}
 
 	if (node->name) {
 		r = lcfs_append_vdata(ctx, &out, node->name, strlen(node->name) + 1);
@@ -386,8 +424,6 @@ int lcfs_append_vdata_no_dedup(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 static int read_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *ret,
 		       int dirfd, const char *fname, int flags)
 {
-	size_t buffer_len = 0;
-	char *buffer = NULL;
 	char path[PATH_MAX];
 	ssize_t list_size;
 	char *list, *it;
@@ -418,14 +454,12 @@ static int read_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *ret,
 		value_size = lgetxattr(path, it, NULL, 0);
 		if (value_size < 0) {
 			free(list);
-			free(buffer);
 			return value_size;
 		}
 
 		value = malloc(value_size);
 		if (value == NULL) {
 			free(list);
-			free(buffer);
 			return -1;
 		}
 
@@ -433,16 +467,13 @@ static int read_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *ret,
 		if (r < 0) {
 			free(list);
 			free(value);
-			free(buffer);
 			return r;
 		}
 
-		r = lcfs_append_xattr_to_buffer(ctx, &buffer, &buffer_len, it,
-						len, value, value_size);
+		r = lcfs_append_xattr(ret, it, value, value_size);
 		if (r < 0) {
 			free(list);
 			free(value);
-			free(buffer);
 			return r;
 		}
 
@@ -451,10 +482,6 @@ static int read_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *ret,
 	}
 
 	free(list);
-
-	r = lcfs_set_xattrs(ctx, ret, buffer, buffer_len);
-
-	free(buffer);
 
 	return r;
 }
@@ -537,20 +564,6 @@ int lcfs_set_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
 	return 0;
 }
 
-int lcfs_set_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
-		    const char *xattrs, size_t len)
-{
-	struct lcfs_vdata_s tmp_vdata;
-	int r;
-
-	r = lcfs_append_vdata(ctx, &tmp_vdata, xattrs, len);
-	if (r < 0)
-		return r;
-
-	node->inode.xattrs = tmp_vdata;
-	return 0;
-}
-
 int lcfs_add_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *parent,
 		   struct lcfs_node_s *child)
 {
@@ -586,6 +599,13 @@ int lcfs_free_node(struct lcfs_node_s *node)
 	free(node->children);
 	free(node->name);
 	free(node->payload);
+
+	for (i = 0; i < node->n_xattrs; i++) {
+		free (node->xattrs[i].key);
+		free (node->xattrs[i].value);
+	}
+	free(node->xattrs);
+
 	free(node);
 
 	return 0;
@@ -690,29 +710,33 @@ int lcfs_get_vdata(struct lcfs_ctx_s *ctx, char **vdata, size_t *len)
 	return 0;
 }
 
-int lcfs_append_xattr_to_buffer(struct lcfs_ctx_s *ctx, char **buffer,
-				size_t *len, const char *key, size_t key_len,
-				const char *value, size_t value_len)
+int lcfs_append_xattr(struct lcfs_node_s *node,
+		      const char *key,
+		      const char *value, size_t value_len)
 {
-	struct lcfs_xattr_header_s header;
-	char *tmp;
-	int r;
+	struct lcfs_xattr_s *xattrs;
+	char *k, *v;
 
-	r = lcfs_append_vdata(ctx, &(header.key), key, key_len);
-	if (r < 0)
-		return r;
-
-	r = lcfs_append_vdata(ctx, &(header.value), value, value_len);
-	if (r < 0)
-		return r;
-
-	tmp = realloc(*buffer, *len + sizeof(struct lcfs_xattr_header_s));
-	if (tmp == NULL)
+	xattrs = realloc(node->xattrs, (node->n_xattrs + 1) * sizeof(struct lcfs_xattr_s));
+	if (xattrs == NULL) {
+		errno = ENOMEM;
 		return -1;
+	}
+	node->xattrs = xattrs;
 
-	*buffer = tmp;
-	memcpy(*buffer + *len, &header, sizeof(header));
-	*len = *len + sizeof(struct lcfs_xattr_header_s);
+	k = strdup (key);
+	v = memdup (value, value_len);
+	if (k == NULL || v == NULL) {
+		free(k);
+		free(v);
+		errno = ENOMEM;
+		return -1;
+	}
+
+	xattrs[node->n_xattrs].key = k;
+	xattrs[node->n_xattrs].value = v;
+	xattrs[node->n_xattrs].value_len = value_len;
+	node->n_xattrs++;
 
 	return 0;
 }

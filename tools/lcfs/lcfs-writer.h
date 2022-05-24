@@ -30,6 +30,12 @@ struct lcfs_ctx_s;
 
 /* In memory representation used to build the file.  */
 
+struct lcfs_xattr_s {
+	char *key;
+	char *value;
+	size_t value_len;
+};
+
 struct lcfs_node_s {
 	struct lcfs_node_s *next;
 
@@ -47,6 +53,9 @@ struct lcfs_node_s {
 
 	char *name;
 	char *payload;
+
+	struct lcfs_xattr_s *xattrs;
+	size_t n_xattrs;
 
 	struct lcfs_dentry_s data;
 
@@ -80,9 +89,6 @@ int lcfs_free_node(struct lcfs_node_s *node);
 int lcfs_set_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
 		     const char *payload);
 
-int lcfs_set_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
-		    const char *xattrs, size_t len);
-
 void lcfs_set_root(struct lcfs_ctx_s *ctx, struct lcfs_node_s *parent);
 
 int lcfs_write_to(struct lcfs_ctx_s *ctx, FILE *out);
@@ -96,9 +102,9 @@ int lcfs_write_to(struct lcfs_ctx_s *ctx, FILE *out);
 
 int lcfs_get_vdata(struct lcfs_ctx_s *ctx, char **vdata, size_t *len);
 
-int lcfs_append_xattr_to_buffer(struct lcfs_ctx_s *ctx, char **buffer,
-				size_t *len, const char *key, size_t key_len,
-				const char *value, size_t value_len);
+int lcfs_append_xattr(struct lcfs_node_s *node,
+		      const char *key,
+		      const char *value, size_t value_len);
 
 int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 		      const void *data, size_t len);

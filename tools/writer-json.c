@@ -184,8 +184,6 @@ static struct lcfs_node_s *
 fill_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, yajl_val xattrs)
 {
 	size_t i;
-	size_t buffer_len = 0;
-	char *buffer = NULL;
 	char v_buffer[4096];
 
 	if (!YAJL_IS_OBJECT(xattrs))
@@ -198,7 +196,6 @@ fill_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, yajl_val xattrs)
 
 		if (!YAJL_IS_STRING(YAJL_GET_OBJECT(xattrs)->values[i])) {
 			lcfs_free_node(node);
-			free(buffer);
 			error(0, 0, "xattr value is not a string");
 			return NULL;
 		}
@@ -209,28 +206,18 @@ fill_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, yajl_val xattrs)
 				  &written);
 		if (r < 0) {
 			lcfs_free_node(node);
-			free(buffer);
 			error(0, 0, "xattr value is not valid b64");
 			return NULL;
 		}
 
-		r = lcfs_append_xattr_to_buffer(ctx, &buffer, &buffer_len, k,
-						strlen(k), v_buffer, written);
+		r = lcfs_append_xattr(node, k, v_buffer, written);
 		if (r < 0) {
 			lcfs_free_node(node);
-			free(buffer);
 			error(0, 0, "append xattr");
 			return NULL;
 		}
 	}
 
-	if (lcfs_set_xattrs(ctx, node, buffer, buffer_len) < 0) {
-		lcfs_free_node(node);
-		free(buffer);
-		error(0, 0, "set xattrs");
-		return NULL;
-	}
-	free(buffer);
 	return node;
 }
 
