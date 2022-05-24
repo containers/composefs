@@ -135,8 +135,8 @@ append_child(struct lcfs_node_s *dir, const char *name)
 	struct lcfs_node_s *parent;
 
 	for (parent = dir; parent != NULL; parent = parent->parent) {
-		if (parent->inode_data.st_mode == 0) {
-			parent->inode_data.st_mode = 0755 | S_IFDIR;
+		if (lcfs_node_get_mode(parent) == 0) {
+			lcfs_node_set_mode(parent, 0755 | S_IFDIR);
 		}
 	}
 
@@ -231,7 +231,6 @@ static struct lcfs_node_s *fill_file(const char *typ,
 	mode_t mode = 0;
 	yajl_val v;
 	bool is_regular_file = false;
-	bool is_hardlink = false;
 
 	if (node == NULL) {
 		error(0, 0, "node is NULL");
@@ -280,33 +279,28 @@ static struct lcfs_node_s *fill_file(const char *typ,
 			return NULL;
 		}
 
-		is_hardlink = true;
-
 		node->link_to = target;
-		target->inode_data.st_nlink++;
+		lcfs_node_set_nlink(target, lcfs_node_get_nlink(target) + 1);
 	}
-
-	if (!is_hardlink)
-		node->inode_data.st_nlink = 1;
 
 	v = get_child(entry, "mode", yajl_t_number);
 	if (v)
 		mode |= (YAJL_GET_INTEGER(v));
 
-	node->inode_data.st_mode = mode;
+	lcfs_node_set_mode(node, mode);
 
 	v = get_child(entry, "uid", yajl_t_number);
 	if (v)
-		node->inode_data.st_uid = YAJL_GET_INTEGER(v);
+		lcfs_node_set_uid(node, YAJL_GET_INTEGER(v));
 
 	v = get_child(entry, "gid", yajl_t_number);
 	if (v)
-		node->inode_data.st_uid = YAJL_GET_INTEGER(v);
+		lcfs_node_set_gid(node, YAJL_GET_INTEGER(v));
 
 	if ((mode & S_IFMT) != S_IFDIR) {
 		v = get_child(entry, "size", yajl_t_number);
 		if (v)
-			node->extend.st_size = YAJL_GET_INTEGER(v);
+			lcfs_node_set_size(node, YAJL_GET_INTEGER(v));
 	}
 
 	v = get_child(entry, "devMinor", yajl_t_number);
@@ -316,7 +310,7 @@ static struct lcfs_node_s *fill_file(const char *typ,
 	if (v)
 		maj = YAJL_GET_INTEGER(v);
 
-	node->inode_data.st_rdev = makedev(maj, min);
+	lcfs_node_set_rdev(node, makedev(maj, min));
 
 	/* custom extension to the CRFS format.  */
 	v = get_child(entry, "x-payload", yajl_t_string);

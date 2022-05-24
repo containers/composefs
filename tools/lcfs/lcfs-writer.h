@@ -69,7 +69,6 @@ enum {
 	BUILD_SKIP_DEVICES = (1 << 2),
 };
 
-bool lcfs_node_dirp(struct lcfs_node_s *node);
 
 struct lcfs_node_s *lcfs_node_new(void);
 void lcfs_node_free(struct lcfs_node_s *node);
@@ -84,6 +83,26 @@ int lcfs_node_append_xattr(struct lcfs_node_s *node,
 			   const char *value, size_t value_len);
 int lcfs_node_set_payload(struct lcfs_node_s *node,
 			  const char *payload);
+
+bool lcfs_node_dirp(struct lcfs_node_s *node);
+uint32_t lcfs_node_get_mode(struct lcfs_node_s *node);
+void lcfs_node_set_mode(struct lcfs_node_s *node,
+			uint32_t mode);
+uint32_t lcfs_node_get_uid(struct lcfs_node_s *node);
+void lcfs_node_set_uid(struct lcfs_node_s *node,
+		       uint32_t uid);
+uint32_t lcfs_node_get_gid(struct lcfs_node_s *node);
+void lcfs_node_set_gid(struct lcfs_node_s *node,
+		       uint32_t gid);
+uint32_t lcfs_node_get_rdev(struct lcfs_node_s *node);
+void lcfs_node_set_rdev(struct lcfs_node_s *node,
+			uint32_t rdev);
+uint32_t lcfs_node_get_nlink(struct lcfs_node_s *node);
+void lcfs_node_set_nlink(struct lcfs_node_s *node,
+			 uint32_t nlink);
+uint64_t lcfs_node_get_size(struct lcfs_node_s *node);
+void lcfs_node_set_size(struct lcfs_node_s *node,
+			uint64_t size);
 
 struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int fd,
 			       const char *fname, const char *name, int flags,

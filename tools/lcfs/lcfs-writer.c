@@ -583,6 +583,72 @@ int lcfs_node_set_payload(struct lcfs_node_s *node,
 	return 0;
 }
 
+uint32_t lcfs_node_get_mode(struct lcfs_node_s *node)
+{
+	return node->inode_data.st_mode;
+}
+
+void lcfs_node_set_mode(struct lcfs_node_s *node,
+			uint32_t mode)
+{
+	node->inode_data.st_mode = mode;
+}
+
+uint32_t lcfs_node_get_uid(struct lcfs_node_s *node)
+{
+	return node->inode_data.st_uid;
+}
+
+void lcfs_node_set_uid(struct lcfs_node_s *node,
+                       uint32_t uid)
+{
+	node->inode_data.st_uid = uid;
+}
+
+uint32_t lcfs_node_get_gid(struct lcfs_node_s *node)
+{
+	return node->inode_data.st_gid;
+}
+
+void lcfs_node_set_gid(struct lcfs_node_s *node,
+                      uint32_t gid)
+{
+	node->inode_data.st_gid = gid;
+}
+
+uint32_t lcfs_node_get_rdev(struct lcfs_node_s *node)
+{
+	return node->inode_data.st_rdev;
+}
+
+void lcfs_node_set_rdev(struct lcfs_node_s *node,
+                       uint32_t rdev)
+{
+	node->inode_data.st_rdev = rdev;
+}
+
+uint32_t lcfs_node_get_nlink(struct lcfs_node_s *node)
+{
+	return node->inode_data.st_nlink;
+}
+
+void lcfs_node_set_nlink(struct lcfs_node_s *node,
+			 uint32_t nlink)
+{
+	node->inode_data.st_nlink = nlink;
+}
+
+uint64_t lcfs_node_get_size(struct lcfs_node_s *node)
+{
+	return node->extend.st_size;
+}
+
+void lcfs_node_set_size(struct lcfs_node_s *node,
+			 uint64_t size)
+{
+	node->extend.st_size = size;
+}
+
 int lcfs_node_add_child(struct lcfs_node_s *parent,
                         struct lcfs_node_s *child)
 {
