@@ -136,6 +136,7 @@ int main(int argc, char **argv)
 	bool relative_path = false;
 	struct lcfs_node_s *root;
 	const char *out = NULL;
+	const char *chdir_path = NULL;
 	char cwd[PATH_MAX];
 	int opt;
 	int fd;
@@ -156,8 +157,7 @@ int main(int argc, char **argv)
 			relative_path = true;
 			break;
 		case OPT_CHDIR:
-			if (chdir(optarg) < 0)
-				error(EXIT_FAILURE, errno, "chdir");
+			chdir_path = optarg;
 			break;
 		case OPT_OUT:
 			out = optarg;
@@ -180,6 +180,10 @@ int main(int argc, char **argv)
 			error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
 		out_file = stdout;
 	}
+
+	if (chdir_path &&
+	    chdir(chdir_path) < 0)
+		error(EXIT_FAILURE, errno, "chdir");
 
 	argv += optind;
 	argc -= optind;
