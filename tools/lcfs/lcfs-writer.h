@@ -74,15 +74,19 @@ struct lcfs_node_s *lcfs_node_new(void);
 void lcfs_node_free(struct lcfs_node_s *node);
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 					     const char *fname,
-					     const char *name, int flags,
+					     int flags,
 					     int buildflags);
+struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node,
+					   const char *name);
 int lcfs_node_add_child(struct lcfs_node_s *parent,
-			struct lcfs_node_s *child);
+			struct lcfs_node_s *child,
+			const char *name);
 int lcfs_node_append_xattr(struct lcfs_node_s *node,
 			   const char *key,
 			   const char *value, size_t value_len);
 int lcfs_node_set_payload(struct lcfs_node_s *node,
 			  const char *payload);
+
 
 bool lcfs_node_dirp(struct lcfs_node_s *node);
 uint32_t lcfs_node_get_mode(struct lcfs_node_s *node);

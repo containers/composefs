@@ -114,20 +114,6 @@ static yajl_val get_child(yajl_val node, const char *name, int type)
 	return yajl_tree_get(node, path, type);
 }
 
-static struct lcfs_node_s *get_node_child(struct lcfs_node_s *root,
-					  const char *name)
-{
-	size_t i;
-
-	for (i = 0; i < root->children_size; ++i) {
-		struct lcfs_node_s *child = root->children[i];
-
-		if (child->name && strcmp(child->name, name) == 0)
-			return child;
-	}
-	return NULL;
-}
-
 static struct lcfs_node_s *
 append_child(struct lcfs_node_s *dir, const char *name)
 {
@@ -144,13 +130,7 @@ append_child(struct lcfs_node_s *dir, const char *name)
 	if (child == NULL)
 		return NULL;
 
-	child->name = strdup(name);
-	if (child->name == NULL) {
-		lcfs_node_free(child);
-		return NULL;
-        }
-
-	if (lcfs_node_add_child(dir, child) < 0) {
+	if (lcfs_node_add_child(dir, child, name) < 0) {
 		lcfs_node_free(child);
 		return NULL;
 	}
@@ -212,7 +192,7 @@ static struct lcfs_node_s *get_node(struct lcfs_node_s *root, const char *what)
 	while ((it = strsep(&dpath, "/"))) {
 		if (node == root && strcmp(it, "..") == 0)
 			continue;
-		node = get_node_child(node, it);
+		node = lcfs_node_lookup_child(node, it);
 		if (!node)
 			break;
 	}
@@ -377,7 +357,7 @@ static struct lcfs_node_s *get_or_add_node(const char *typ,
 	while ((it = strsep(&dpath, "/"))) {
 		struct lcfs_node_s *c;
 
-		c = get_node_child(node, it);
+		c = lcfs_node_lookup_child(node, it);
 		if (c) {
 			node = c;
 			continue;

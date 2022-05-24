@@ -512,7 +512,7 @@ struct lcfs_node_s *lcfs_node_new(void)
 
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 					     const char *fname,
-					     const char *name, int flags,
+					     int flags,
 					     int buildflags)
 {
 	struct lcfs_node_s *ret;
@@ -556,14 +556,6 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 		r = read_xattrs(ret, dirfd, fname, flags);
 		if (r < 0) {
 			free(ret);
-			return NULL;
-		}
-	}
-
-	if (name[0]) {
-		ret->name = strdup(name);
-		if (ret->name == NULL) {
-			lcfs_node_free(ret);
 			return NULL;
 		}
 	}
@@ -649,13 +641,48 @@ void lcfs_node_set_size(struct lcfs_node_s *node,
 	node->extend.st_size = size;
 }
 
+struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node,
+					   const char *name)
+{
+	size_t i;
+
+	for (i = 0; i < node->children_size; ++i) {
+		struct lcfs_node_s *child = node->children[i];
+
+		if (child->name && strcmp(child->name, name) == 0)
+			return child;
+	}
+
+	return NULL;
+}
+
 int lcfs_node_add_child(struct lcfs_node_s *parent,
-                        struct lcfs_node_s *child)
+                        struct lcfs_node_s *child,
+			const char *name)
 {
 	struct lcfs_node_s **new_children;
 	size_t new_size;
+	char *name_copy;
+
 	if ((parent->inode_data.st_mode & S_IFMT) != S_IFDIR) {
 		errno = ENOTDIR;
+		return -1;
+	}
+
+	/* Each node can only be added once */
+	if (child->name != NULL) {
+		errno = EMLINK;
+		return -1;
+	}
+
+	if (lcfs_node_lookup_child(parent, name) != NULL) {
+		errno = EEXIST;
+		return -1;
+	}
+
+	name_copy = strdup(name);
+	if (name_copy == NULL) {
+		errno = ENOMEM;
 		return -1;
 	}
 
@@ -663,14 +690,18 @@ int lcfs_node_add_child(struct lcfs_node_s *parent,
 
 	new_children = reallocarray(parent->children, sizeof(*parent->children),
 				    new_size);
-	if (new_children == NULL)
+	if (new_children == NULL) {
+		errno = ENOMEM;
+		free(name_copy);
 		return -1;
+	}
 
 	parent->children = new_children;
 
 	parent->children[parent->children_size] = child;
 	parent->children_size = new_size;
 	child->parent = parent;
+	child->name = name_copy;
 
 	return 0;
 }
@@ -709,7 +740,7 @@ struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int fd,
 	DIR *dir;
 	int dfd;
 
-	node = lcfs_load_node_from_file(fd, fname, name, flags,
+	node = lcfs_load_node_from_file(fd, fname, flags,
 					buildflags);
 	if (node == NULL) {
 		close(fd);
@@ -765,13 +796,12 @@ struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int fd,
 			}
 
 			n = lcfs_load_node_from_file(dfd, de->d_name,
-						     de->d_name, 0,
-						     buildflags);
+						     0, buildflags);
 			if (n == NULL)
 				goto fail;
 		}
 
-		r = lcfs_node_add_child(node, n);
+		r = lcfs_node_add_child(node, n, de->d_name);
 		if (r < 0)
 			goto fail;
 	}
