@@ -674,13 +674,13 @@ struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 			continue;
 
 		if (de->d_type == DT_DIR) {
-			int fd;
+			int subdir_fd;
 
-			fd = openat(dfd, de->d_name, O_RDONLY | O_NOFOLLOW);
-			if (fd < 0)
+			subdir_fd = openat(dfd, de->d_name, O_RDONLY | O_NOFOLLOW);
+			if (subdir_fd < 0)
 				goto fail;
 
-			n = lcfs_build(ctx, node, fd, "", de->d_name,
+			n = lcfs_build(ctx, node, subdir_fd, "", de->d_name,
 				       AT_EMPTY_PATH, buildflags);
 			if (n == NULL)
 				goto fail;
