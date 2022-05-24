@@ -363,12 +363,20 @@ static void append_to_next(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 	}
 }
 
-static int cmp_nodes(const void *a, const void *b, void *r)
+static int cmp_nodes(const void *a, const void *b)
 {
 	const struct lcfs_node_s *na = *((const struct lcfs_node_s **)a);
 	const struct lcfs_node_s *nb = *((const struct lcfs_node_s **)b);
 
 	return strcmp(na->name, nb->name);
+}
+
+static int cmp_xattr(const void *a, const void *b)
+{
+	const struct lcfs_xattr_s *na = a;
+	const struct lcfs_xattr_s *nb = b;
+
+	return strcmp(na->key, nb->key);
 }
 
 static int serialize_children(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
@@ -379,8 +387,9 @@ static int serialize_children(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 	if (node->children_size == 0)
 		return 0;
 
-	qsort_r(node->children, node->children_size, sizeof(node->children[0]),
-		cmp_nodes, ctx);
+	qsort(node->children, node->children_size, sizeof(node->children[0]), cmp_nodes);
+
+	qsort(node->xattrs, node->n_xattrs, sizeof(node->xattrs[0]), cmp_xattr);
 
 	for (i = 0; i < node->children_size; i++)
 		append_to_next(ctx, node->children[i]);
