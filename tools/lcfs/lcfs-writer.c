@@ -62,7 +62,6 @@ struct lcfs_node_s {
 	struct lcfs_dentry_s data;
 
 	struct lcfs_inode_s inode;
-	struct lcfs_inode_data_s inode_data;
 
 	struct lcfs_extend_s extend;
 };
@@ -271,9 +270,9 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 		if (r < 0)
 			return r;
 
-		if ((node->inode_data.st_mode & S_IFMT) == S_IFLNK) {
+		if ((node->inode.st_mode & S_IFMT) == S_IFLNK) {
 			node->inode.u.payload = out;
-		} else if ((node->inode_data.st_mode & S_IFMT) == S_IFREG) {
+		} else if ((node->inode.st_mode & S_IFMT) == S_IFREG) {
 			node->extend.payload = out;
 
 			r = lcfs_append_vdata(ctx, &out, &(node->extend),
@@ -293,13 +292,6 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 		return r;
 	} else {
 		struct lcfs_inode_s *ino = &(node->inode);
-
-		r = lcfs_append_vdata(ctx, &out, &(node->inode_data),
-				      sizeof(node->inode_data));
-		if (r < 0)
-			return r;
-
-		ino->inode_data_index = out.off;
 
 		r = lcfs_append_vdata_opts(ctx, &out, ino, sizeof(*ino),
 					   node != ctx->root); /* Don't dedup the root inode, it needs to be last */
@@ -414,7 +406,6 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 		.unused1 = 0,
 		.unused2 = 0,
 		.inode_len = sizeof(struct lcfs_inode_s),
-		.inode_data_len = sizeof(struct lcfs_inode_data_s),
 		.extend_len = sizeof(struct lcfs_extend_s),
 	};
 	int ret = 0;
@@ -582,11 +573,11 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 	if (ret == NULL)
 		return NULL;
 
-	ret->inode_data.st_nlink = sb.st_nlink;
-	ret->inode_data.st_mode = sb.st_mode;
-	ret->inode_data.st_uid = sb.st_uid;
-	ret->inode_data.st_gid = sb.st_gid;
-	ret->inode_data.st_rdev = sb.st_rdev;
+	ret->inode.st_nlink = sb.st_nlink;
+	ret->inode.st_mode = sb.st_mode;
+	ret->inode.st_uid = sb.st_uid;
+	ret->inode.st_gid = sb.st_gid;
+	ret->inode.st_rdev = sb.st_rdev;
 
 	if ((sb.st_mode & S_IFMT) == S_IFREG) {
 		ret->extend.st_size = sb.st_size;
@@ -640,57 +631,57 @@ struct lcfs_node_s * lcfs_node_get_child(struct lcfs_node_s *node, size_t i)
 
 uint32_t lcfs_node_get_mode(struct lcfs_node_s *node)
 {
-	return node->inode_data.st_mode;
+	return node->inode.st_mode;
 }
 
 void lcfs_node_set_mode(struct lcfs_node_s *node,
 			uint32_t mode)
 {
-	node->inode_data.st_mode = mode;
+	node->inode.st_mode = mode;
 }
 
 uint32_t lcfs_node_get_uid(struct lcfs_node_s *node)
 {
-	return node->inode_data.st_uid;
+	return node->inode.st_uid;
 }
 
 void lcfs_node_set_uid(struct lcfs_node_s *node,
                        uint32_t uid)
 {
-	node->inode_data.st_uid = uid;
+	node->inode.st_uid = uid;
 }
 
 uint32_t lcfs_node_get_gid(struct lcfs_node_s *node)
 {
-	return node->inode_data.st_gid;
+	return node->inode.st_gid;
 }
 
 void lcfs_node_set_gid(struct lcfs_node_s *node,
                       uint32_t gid)
 {
-	node->inode_data.st_gid = gid;
+	node->inode.st_gid = gid;
 }
 
 uint32_t lcfs_node_get_rdev(struct lcfs_node_s *node)
 {
-	return node->inode_data.st_rdev;
+	return node->inode.st_rdev;
 }
 
 void lcfs_node_set_rdev(struct lcfs_node_s *node,
                        uint32_t rdev)
 {
-	node->inode_data.st_rdev = rdev;
+	node->inode.st_rdev = rdev;
 }
 
 uint32_t lcfs_node_get_nlink(struct lcfs_node_s *node)
 {
-	return node->inode_data.st_nlink;
+	return node->inode.st_nlink;
 }
 
 void lcfs_node_set_nlink(struct lcfs_node_s *node,
 			 uint32_t nlink)
 {
-	node->inode_data.st_nlink = nlink;
+	node->inode.st_nlink = nlink;
 }
 
 uint64_t lcfs_node_get_size(struct lcfs_node_s *node)
@@ -728,7 +719,7 @@ void lcfs_node_make_hardlink(struct lcfs_node_s *node,
 			     struct lcfs_node_s *target)
 {
 	node->link_to = target;
-	target->inode_data.st_nlink++;
+	target->inode.st_nlink++;
 }
 
 int lcfs_node_add_child(struct lcfs_node_s *parent,
@@ -739,7 +730,7 @@ int lcfs_node_add_child(struct lcfs_node_s *parent,
 	size_t new_size;
 	char *name_copy;
 
-	if ((parent->inode_data.st_mode & S_IFMT) != S_IFDIR) {
+	if ((parent->inode.st_mode & S_IFMT) != S_IFDIR) {
 		errno = ENOTDIR;
 		return -1;
 	}
@@ -802,7 +793,7 @@ void lcfs_node_free(struct lcfs_node_s *node)
 
 bool lcfs_node_dirp(struct lcfs_node_s *node)
 {
-	return (node->inode_data.st_mode & S_IFMT) == S_IFDIR;
+	return (node->inode.st_mode & S_IFMT) == S_IFDIR;
 }
 
 struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int fd,

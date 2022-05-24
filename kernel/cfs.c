@@ -71,17 +71,11 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 				    struct lcfs_inode_s *ino,
 				    const struct inode *dir)
 {
-	struct lcfs_inode_data_s ino_data_buf;
-	struct lcfs_inode_data_s *ino_data;
 	struct lcfs_inode_s *ino_copy = NULL;
 	char *target_link = NULL;
 	struct inode *inode;
 
-	ino_data = lcfs_inode_data(ctx, ino, &ino_data_buf);
-	if (IS_ERR(ino_data))
-		return ERR_CAST(ino_data);
-
-	if ((ino_data->st_mode & S_IFMT) == S_IFLNK) {
+	if ((ino->st_mode & S_IFMT) == S_IFLNK) {
 		target_link = lcfs_dup_payload_path(ctx, ino);
 		if (IS_ERR(target_link)) {
 			return ERR_CAST(target_link);
@@ -99,7 +93,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 	if (inode) {
 		int r;
 
-		inode_init_owner(&init_user_ns, inode, dir, ino_data->st_mode);
+		inode_init_owner(&init_user_ns, inode, dir, ino->st_mode);
 		inode->i_mapping->a_ops = &cfs_aops;
 		mapping_set_gfp_mask(inode->i_mapping, GFP_HIGHUSER);
 		mapping_set_unevictable(inode->i_mapping);
@@ -107,15 +101,15 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		inode->i_private = ino_copy;
 
 		inode->i_ino = ino_num;
-		set_nlink(inode, ino_data->st_nlink);
-		inode->i_rdev = ino_data->st_rdev;
-		inode->i_uid = make_kuid(current_user_ns(), ino_data->st_uid);
-		inode->i_gid = make_kgid(current_user_ns(), ino_data->st_gid);
-		inode->i_mode = ino_data->st_mode;
+		set_nlink(inode, ino->st_nlink);
+		inode->i_rdev = ino->st_rdev;
+		inode->i_uid = make_kuid(current_user_ns(), ino->st_uid);
+		inode->i_gid = make_kgid(current_user_ns(), ino->st_gid);
+		inode->i_mode = ino->st_mode;
 		inode->i_atime = ino->st_mtim;
 		inode->i_mtime = ino->st_mtim;
 		inode->i_ctime = ino->st_ctim;
-		switch (ino_data->st_mode & S_IFMT) {
+		switch (ino->st_mode & S_IFMT) {
 		case S_IFREG:
 			inode->i_op = &cfs_file_inode_operations;
 			inode->i_fop = &cfs_file_operations;
@@ -146,8 +140,8 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 			fallthrough;
 		default:
 			inode->i_op = &cfs_file_inode_operations;
-			init_special_inode(inode, ino_data->st_mode,
-					   ino_data->st_rdev);
+			init_special_inode(inode, ino->st_mode,
+					   ino->st_rdev);
 			break;
 		}
 	}

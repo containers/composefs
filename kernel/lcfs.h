@@ -42,18 +42,9 @@ struct lcfs_header_s {
 	u16 unused2;
 
 	u32 inode_len;
-	u32 inode_data_len;
 	u32 extend_len;
 
 	u64 unused3[3];
-} __attribute__((packed));
-
-struct lcfs_inode_data_s {
-	u32 st_mode; /* File type and mode.  */
-	u32 st_nlink; /* Number of hard links.  */
-	u32 st_uid; /* User ID of owner.  */
-	u32 st_gid; /* Group ID of owner.  */
-	u32 st_rdev; /* Device ID (if special file).  */
 } __attribute__((packed));
 
 struct lcfs_extend_s {
@@ -65,8 +56,11 @@ struct lcfs_extend_s {
 } __attribute__((packed));
 
 struct lcfs_inode_s {
-	/* Index of struct lcfs_inode_data_s. */
-	lcfs_off_t inode_data_index;
+	u32 st_mode; /* File type and mode.  */
+	u32 st_nlink; /* Number of hard links.  */
+	u32 st_uid; /* User ID of owner.  */
+	u32 st_gid; /* Group ID of owner.  */
+	u32 st_rdev; /* Device ID (if special file).  */
 
 	struct timespec64 st_mtim; /* Time of last modification.  */
 	struct timespec64 st_ctim; /* Time of last status change.  */

@@ -155,17 +155,6 @@ struct lcfs_inode_s *lcfs_dentry_inode(struct lcfs_context_s *ctx,
 	return lcfs_get_ino_index(ctx, node->inode_index, buffer);
 }
 
-struct lcfs_inode_data_s *lcfs_inode_data(struct lcfs_context_s *ctx,
-					  struct lcfs_inode_s *ino,
-					  struct lcfs_inode_data_s *buffer)
-{
-	const struct lcfs_vdata_s vdata = {
-		.off = ino->inode_data_index,
-		.len = sizeof(struct lcfs_inode_data_s),
-	};
-	return lcfs_get_vdata(ctx, vdata, buffer);
-}
-
 ssize_t lcfs_list_xattrs(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, char *names, size_t size)
 {
 	const struct lcfs_xattr_header_s *xattrs;
@@ -291,8 +280,6 @@ int lcfs_iterate_dir(struct lcfs_context_s *ctx, loff_t first, struct lcfs_inode
 	entries = dir_ino->u.dir.len / sizeof(struct lcfs_dentry_s);
 
 	for (i = first; i < entries; i++) {
-		struct lcfs_inode_data_s ino_data_buf;
-		struct lcfs_inode_data_s *ino_data;
 		struct lcfs_dentry_s dentry_buf;
 		struct lcfs_dentry_s *dentry;
 		struct lcfs_inode_s ino_buf;
@@ -316,13 +303,9 @@ int lcfs_iterate_dir(struct lcfs_context_s *ctx, loff_t first, struct lcfs_inode
 		if (IS_ERR(ino))
 			return PTR_ERR(ino);
 
-		ino_data = lcfs_inode_data(ctx, ino, &ino_data_buf);
-		if (IS_ERR(ino_data))
-			return PTR_ERR(ino_data);
-
 		if (!cb(private, name, dentry->name.len,
 			lcfs_dentry_ino(dentry),
-			ino_data->st_mode & S_IFMT))
+			ino->st_mode & S_IFMT))
 			break;
 	}
 	return 0;

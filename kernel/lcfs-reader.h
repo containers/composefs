@@ -35,10 +35,6 @@ struct lcfs_inode_s *lcfs_dentry_inode(struct lcfs_context_s *ctx,
 				       struct lcfs_dentry_s *node,
 				       struct lcfs_inode_s *buffer);
 
-struct lcfs_inode_data_s *lcfs_inode_data(struct lcfs_context_s *ctx,
-					  struct lcfs_inode_s *ino,
-					  struct lcfs_inode_data_s *buffer);
-
 const char *lcfs_c_string(struct lcfs_context_s *ctx, struct lcfs_vdata_s vdata,
 			  char *buf, size_t max);
 
