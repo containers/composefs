@@ -132,13 +132,13 @@ int lcfs_append_vdata_opts(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 
 	if (dedup) {
 		struct hasher_vdata_s *ent;
-		struct hasher_vdata_s key = {
+		struct hasher_vdata_s hkey = {
 			.vdata = (const char *const *)&data,
 			.off = 0,
 			.len = len,
 		};
 
-		ent = hash_lookup(ctx->ht, &key);
+		ent = hash_lookup(ctx->ht, &hkey);
 		if (ent) {
 			out->off = ent->off;
 			out->len = ent->len;
