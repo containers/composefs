@@ -280,7 +280,7 @@ static int dump_dentries(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 {
 	struct lcfs_vdata_s out;
 	size_t i;
-	size_t o;
+	size_t o = 0;
 	int r;
 
 	if (node->children_size == 0)
