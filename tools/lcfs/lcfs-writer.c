@@ -303,7 +303,7 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 		ino->inode_data_index = out.off;
 
 		r = lcfs_append_vdata_opts(ctx, &out, ino, sizeof(*ino),
-					   node == ctx->root);
+					   node != ctx->root); /* Don't dedup the root inode, it needs to be last */
 		if (r < 0)
 			return r;
 
