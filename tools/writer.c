@@ -30,23 +30,17 @@
 #include <sys/types.h>
 #include <getopt.h>
 
-static int fill_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
+static int fill_payload(struct lcfs_node_s *node,
 			char *path, size_t len)
 {
 	size_t old_len = len;
-	size_t vdata_len;
-	char *vdata;
 	char *fname;
 	int ret;
 
-	ret = lcfs_get_vdata(ctx, &vdata, &vdata_len);
-	if (ret < 0)
-		return ret;
-
-	if (node->data.name.len == 0)
+	if (node->name == NULL)
 		fname = "";
 	else
-		fname = vdata + node->data.name.off;
+		fname = node->name;
 
 	if (fname[0]) {
 		ret = sprintf(path + len, "/%s", fname);
@@ -59,7 +53,7 @@ static int fill_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
 		size_t i;
 
 		for (i = 0; i < node->children_size; i++) {
-			ret = fill_payload(ctx, node->children[i], path, len);
+			ret = fill_payload(node->children[i], path, len);
 			if (ret < 0)
 				return ret;
 			path[len] = '\0';
@@ -141,8 +135,7 @@ int main(int argc, char **argv)
 	};
 	int buildflags = 0;
 	bool relative_path = false;
-	struct lcfs_node_s *node;
-	struct lcfs_ctx_s *ctx;
+	struct lcfs_node_s *root;
 	const char *out = NULL;
 	char cwd[PATH_MAX];
 	int opt;
@@ -192,30 +185,23 @@ int main(int argc, char **argv)
 	argv += optind;
 	argc -= optind;
 
-	ctx = lcfs_new_ctx();
-	if (ctx == NULL)
-		error(EXIT_FAILURE, errno, "new_ctx");
-
 	fd = open(".", O_RDONLY);
 	if (fd < 0)
 		error(EXIT_FAILURE, errno, "open current directory");
 
-	node = lcfs_build(ctx, NULL, fd, "", "", AT_EMPTY_PATH, buildflags);
-	if (node == NULL)
+	root = lcfs_build(NULL, fd, "", "", AT_EMPTY_PATH, buildflags);
+	if (root == NULL)
 		error(EXIT_FAILURE, errno, "load current directory node");
-
-	lcfs_set_root(ctx, node);
 
 	if (relative_path)
 		strcpy(cwd, ".");
 	else
 		getcwd(cwd, sizeof(cwd));
 
-	fill_payload(ctx, node, cwd, strlen(cwd));
+	fill_payload(root, cwd, strlen(cwd));
 
-	if (lcfs_write_to(ctx, out_file) < 0)
+	if (lcfs_write_to(root, out_file) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
 
-	lcfs_close(ctx);
 	return 0;
 }

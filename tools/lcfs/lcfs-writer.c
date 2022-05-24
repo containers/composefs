@@ -53,6 +53,8 @@ int lcfs_append_vdata_no_dedup(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 int lcfs_append_vdata_opts(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 			   const void *data, size_t len, bool dedup);
 
+static int lcfs_close(struct lcfs_ctx_s *ctx);
+
 static char *memdup(const char *s, size_t len)
 {
 	char *s2 = malloc(len);
@@ -108,7 +110,7 @@ static void vdata_ht_freer(void *data)
 	free(data);
 }
 
-struct lcfs_ctx_s *lcfs_new_ctx()
+static struct lcfs_ctx_s *lcfs_new_ctx(void)
 {
 	struct lcfs_ctx_s *ret;
 
@@ -360,7 +362,7 @@ static int serialize_children(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 	return ret;
 }
 
-int lcfs_write_to(struct lcfs_ctx_s *ctx, FILE *out)
+int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 {
 	struct lcfs_header_s header = {
 		.version = LCFS_VERSION,
@@ -371,36 +373,49 @@ int lcfs_write_to(struct lcfs_ctx_s *ctx, FILE *out)
 		.extend_len = sizeof(struct lcfs_extend_s),
 	};
 	int ret = 0;
+	struct lcfs_ctx_s *ctx;
 
-	if (ctx == NULL)
-		return 0;
+	ctx = lcfs_new_ctx();
+	if (ctx == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
 
 	/* Start with the root node. */
-	ctx->cur = ctx->root;
+	ctx->root = root;
+	ctx->cur = root;
 	ctx->cur->index = 0;
 
 	ret = serialize_children(ctx, ctx->root);
-	if (ret < 0)
+	if (ret < 0) {
+		lcfs_close(ctx);
 		return ret;
+	}
 
 	ret = fwrite(&header, sizeof(header), 1, out);
-	if (ret < 0)
+	if (ret < 0) {
+		lcfs_close(ctx);
 		return ret;
+	}
 
 	ret = dump_dentries(ctx, ctx->root);
-	if (ret < 0)
+	if (ret < 0) {
+		lcfs_close(ctx);
 		return ret;
+	}
 
 	if (ctx->vdata) {
 		ret = fwrite(ctx->vdata, ctx->vdata_len, 1, out);
-		if (ret < 0)
+		if (ret < 0) {
+			lcfs_close(ctx);
 			return ret;
+		}
 	}
 
 	return 0;
 }
 
-int lcfs_close(struct lcfs_ctx_s *ctx)
+static int lcfs_close(struct lcfs_ctx_s *ctx)
 {
 	if (ctx == NULL)
 		return 0;
@@ -411,11 +426,6 @@ int lcfs_close(struct lcfs_ctx_s *ctx)
 	free(ctx);
 
 	return 0;
-}
-
-void lcfs_set_root(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
-{
-	ctx->root = root;
 }
 
 int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
@@ -623,8 +633,7 @@ bool lcfs_node_dirp(struct lcfs_node_s *node)
 	return (node->inode_data.st_mode & S_IFMT) == S_IFDIR;
 }
 
-struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
-			       struct lcfs_node_s *parent, int fd,
+struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int fd,
 			       const char *fname, const char *name,
 			       int flags,
 			       int buildflags)
@@ -678,7 +687,7 @@ struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 			if (subdir_fd < 0)
 				goto fail;
 
-			n = lcfs_build(ctx, node, subdir_fd, "", de->d_name,
+			n = lcfs_build(node, subdir_fd, "", de->d_name,
 				       AT_EMPTY_PATH, buildflags);
 			if (n == NULL)
 				goto fail;
@@ -708,13 +717,6 @@ fail:
 	lcfs_node_free(node);
 	closedir(dir);
 	return NULL;
-}
-
-int lcfs_get_vdata(struct lcfs_ctx_s *ctx, char **vdata, size_t *len)
-{
-	*vdata = ctx->vdata;
-	*len = ctx->vdata_len;
-	return 0;
 }
 
 int lcfs_node_append_xattr(struct lcfs_node_s *node,

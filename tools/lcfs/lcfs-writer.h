@@ -26,8 +26,6 @@
 
 #include "lcfs.h"
 
-struct lcfs_ctx_s;
-
 /* In memory representation used to build the file.  */
 
 struct lcfs_xattr_s {
@@ -73,9 +71,6 @@ enum {
 
 bool lcfs_node_dirp(struct lcfs_node_s *node);
 
-struct lcfs_ctx_s *lcfs_new_ctx(void);
-int lcfs_close(struct lcfs_ctx_s *ctx);
-
 struct lcfs_node_s *lcfs_node_new(void);
 void lcfs_node_free(struct lcfs_node_s *node);
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
@@ -90,18 +85,11 @@ int lcfs_node_append_xattr(struct lcfs_node_s *node,
 int lcfs_node_set_payload(struct lcfs_node_s *node,
 			  const char *payload);
 
-void lcfs_set_root(struct lcfs_ctx_s *ctx, struct lcfs_node_s *parent);
-
-int lcfs_write_to(struct lcfs_ctx_s *ctx, FILE *out);
-
-struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
-			       struct lcfs_node_s *parent, int fd,
+struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int fd,
 			       const char *fname, const char *name, int flags,
 			       int buildflags);
 
-int lcfs_write_to(struct lcfs_ctx_s *ctx, FILE *out);
-
-int lcfs_get_vdata(struct lcfs_ctx_s *ctx, char **vdata, size_t *len);
+int lcfs_write_to(struct lcfs_node_s *root, FILE *out);
 
 
 #endif

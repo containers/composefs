@@ -114,39 +114,22 @@ static yajl_val get_child(yajl_val node, const char *name, int type)
 	return yajl_tree_get(node, path, type);
 }
 
-static inline const char *get_fname(struct lcfs_ctx_s *ctx,
-				    const struct lcfs_dentry_s *d)
-{
-	char *out = NULL;
-	size_t len;
-
-	if (d->name.len == 0)
-		return "";
-
-	if (lcfs_get_vdata(ctx, &out, &len) < 0)
-		return NULL;
-
-	return out + d->name.off;
-}
-
-static struct lcfs_node_s *get_node_child(struct lcfs_ctx_s *ctx,
-					  struct lcfs_node_s *root,
+static struct lcfs_node_s *get_node_child(struct lcfs_node_s *root,
 					  const char *name)
 {
 	size_t i;
 
 	for (i = 0; i < root->children_size; ++i) {
-		const char *v;
+		struct lcfs_node_s *child = root->children[i];
 
-		v = get_fname(ctx, &(root->children[i]->data));
-		if (v && strcmp(v, name) == 0)
-			return root->children[i];
+		if (child->name && strcmp(child->name, name) == 0)
+			return child;
 	}
 	return NULL;
 }
 
 static struct lcfs_node_s *
-append_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *dir, const char *name)
+append_child(struct lcfs_node_s *dir, const char *name)
 {
 	struct lcfs_node_s *child;
 	struct lcfs_node_s *parent;
@@ -176,7 +159,7 @@ append_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *dir, const char *name)
 }
 
 static struct lcfs_node_s *
-fill_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, yajl_val xattrs)
+fill_xattrs(struct lcfs_node_s *node, yajl_val xattrs)
 {
 	size_t i;
 	char v_buffer[4096];
@@ -216,8 +199,7 @@ fill_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, yajl_val xattrs)
 	return node;
 }
 
-static struct lcfs_node_s *get_node(struct lcfs_ctx_s *ctx,
-				    struct lcfs_node_s *root, const char *what)
+static struct lcfs_node_s *get_node(struct lcfs_node_s *root, const char *what)
 {
 	char *path, *dpath, *it;
 	struct lcfs_node_s *node = root;
@@ -230,7 +212,7 @@ static struct lcfs_node_s *get_node(struct lcfs_ctx_s *ctx,
 	while ((it = strsep(&dpath, "/"))) {
 		if (node == root && strcmp(it, "..") == 0)
 			continue;
-		node = get_node_child(ctx, node, it);
+		node = get_node_child(node, it);
 		if (!node)
 			break;
 	}
@@ -239,7 +221,7 @@ static struct lcfs_node_s *get_node(struct lcfs_ctx_s *ctx,
 	return node;
 }
 
-static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
+static struct lcfs_node_s *fill_file(const char *typ,
 				     struct lcfs_node_s *root,
 				     struct lcfs_node_s *node, yajl_val entry)
 {
@@ -290,7 +272,7 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 			return NULL;
 		}
 
-		target = get_node(ctx, root, YAJL_GET_STRING(v));
+		target = get_node(root, YAJL_GET_STRING(v));
 		if (!target) {
  			error(0, 0, "could not find target %s",
 			      YAJL_GET_STRING(v));
@@ -368,13 +350,12 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 
 	v = get_child(entry, "xattrs", yajl_t_object);
 	if (v)
-		return fill_xattrs(ctx, node, v);
+		return fill_xattrs(node, v);
 
 	return node;
 }
 
-static struct lcfs_node_s *get_or_add_node(struct lcfs_ctx_s *ctx,
-					   const char *typ,
+static struct lcfs_node_s *get_or_add_node(const char *typ,
 					   struct lcfs_node_s *root,
 					   yajl_val entry)
 {
@@ -402,13 +383,13 @@ static struct lcfs_node_s *get_or_add_node(struct lcfs_ctx_s *ctx,
 	while ((it = strsep(&dpath, "/"))) {
 		struct lcfs_node_s *c;
 
-		c = get_node_child(ctx, node, it);
+		c = get_node_child(node, it);
 		if (c) {
 			node = c;
 			continue;
 		}
 
-		node = append_child(ctx, node, it);
+		node = append_child(node, it);
 		if (node == NULL) {
 			error(0, errno, "append_child");
 			return NULL;
@@ -416,10 +397,10 @@ static struct lcfs_node_s *get_or_add_node(struct lcfs_ctx_s *ctx,
 	}
 
 	free(path);
-	return fill_file(ctx, typ, root, node, entry);
+	return fill_file(typ, root, node, entry);
 }
 
-static void do_file(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root, FILE *file)
+static void do_file(struct lcfs_node_s *root, FILE *file)
 {
 	yajl_val entries, root_val, tmp;
 	size_t i;
@@ -450,7 +431,7 @@ static void do_file(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root, FILE *file
 		if (typ == NULL || (strcmp(typ, "chunk") == 0))
 			continue;
 
-		n = get_or_add_node(ctx, typ, root, entry);
+		n = get_or_add_node(typ, root, entry);
 		if (n == NULL)
 			error(EXIT_FAILURE, 0, "get_or_add_node");
 	}
@@ -479,7 +460,6 @@ int main(int argc, char **argv)
 		{},
 	};
 	struct lcfs_node_s *root;
-	struct lcfs_ctx_s *ctx;
 	char cwd[PATH_MAX];
 	size_t i;
 	int opt;
@@ -513,10 +493,6 @@ int main(int argc, char **argv)
 		out_file = stdout;
 	}
 
-	ctx = lcfs_new_ctx();
-	if (ctx == NULL)
-		error(EXIT_FAILURE, errno, "new_ctx");
-
 	root = lcfs_node_new();
 	if (root == NULL)
 		error(EXIT_FAILURE, errno, "malloc");
@@ -527,17 +503,14 @@ int main(int argc, char **argv)
 		f = fopen(argv[i], "r");
 		if (f == NULL)
 			error(EXIT_FAILURE, errno, "open `%s`", argv[i]);
-		do_file(ctx, root, f);
+		do_file(root, f);
 		fclose(f);
 	}
 
-	lcfs_set_root(ctx, root);
-
 	getcwd(cwd, sizeof(cwd));
 
-	if (lcfs_write_to(ctx, out_file) < 0)
+	if (lcfs_write_to(root, out_file) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
 
-	lcfs_close(ctx);
 	return 0;
 }
