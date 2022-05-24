@@ -1,6 +1,6 @@
 bin_PROGRAMS = dump writer writer-json
 
-AM_CFLAGS = -I $(abs_top_srcdir)/lcfs
+AM_CFLAGS = -I $(abs_top_srcdir)/lcfs $(WARN_CFLAGS)
 
 LCFS_FILES = lcfs/bitrotate.h lcfs/hash.c lcfs/hash.h lcfs/lcfs.h lcfs/lcfs-writer.c lcfs/lcfs-writer.h lcfs/xalloc-oversized.h
 
