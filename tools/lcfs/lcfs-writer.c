@@ -274,7 +274,6 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 		if ((node->inode_data.st_mode & S_IFMT) == S_IFLNK) {
 			node->inode.u.payload = out;
 		} else if ((node->inode_data.st_mode & S_IFMT) == S_IFREG) {
-			node->extend.src_offset = 0;
 			node->extend.payload = out;
 
 			r = lcfs_append_vdata(ctx, &out, &(node->extend),

@@ -61,7 +61,6 @@ struct lcfs_extend_s {
 	u64 st_size;
 
 	/* Source file.  */
-	u64 src_offset;
 	struct lcfs_vdata_s payload;
 } __attribute__((packed));
 

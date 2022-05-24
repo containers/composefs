@@ -536,7 +536,6 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	char *path_buf = NULL;
 	struct file *real_file;
 	const char *real_path;
-	off_t off;
 
 	if (WARN_ON(file == NULL))
 		return -EIO;
@@ -557,15 +556,10 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	if (!path_buf)
 		return -ENOMEM;
 
-	real_path = lcfs_get_extend(fsi->lcfs_ctx, cfs_ino, 0, &off, path_buf);
+	real_path = lcfs_get_extend(fsi->lcfs_ctx, cfs_ino, 0, path_buf);
 	if (IS_ERR(real_path)) {
 		kfree(path_buf);
 		return PTR_ERR(real_path);
-	}
-
-	if (off != 0) {
-		kfree(path_buf);
-		return -EINVAL;
 	}
 
 	/* FIXME: prevent loops opening files.  */

@@ -419,7 +419,7 @@ char *lcfs_dup_payload_path(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino
 	return link;
 }
 
-const char *lcfs_get_extend(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, size_t n_extend, off_t *off, void *buf)
+const char *lcfs_get_extend(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, size_t n_extend, void *buf)
 {
 	struct lcfs_extend_s extends_buf;
 	struct lcfs_extend_s *extends;
@@ -439,9 +439,6 @@ const char *lcfs_get_extend(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino
 		r = PTR_ERR(extends);
 		return ERR_PTR(r);;
 	}
-
-	if (off)
-		*off = extends[0].src_offset;
 
 	return lcfs_c_string(ctx, extends[0].payload, buf, PATH_MAX);
 }
