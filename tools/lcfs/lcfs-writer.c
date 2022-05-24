@@ -196,7 +196,6 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 
 	if (node->n_xattrs > 0) {
 		size_t i;
-		size_t buffer_len = 0;
 		struct lcfs_xattr_header_s buffer[node->n_xattrs];
 
 		for (i = 0; i < node->n_xattrs; i++) {
