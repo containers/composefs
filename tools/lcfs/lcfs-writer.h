@@ -26,49 +26,11 @@
 
 #include "lcfs.h"
 
-/* In memory representation used to build the file.  */
-
-struct lcfs_xattr_s {
-	char *key;
-	char *value;
-	size_t value_len;
-};
-
-struct lcfs_node_s {
-	struct lcfs_node_s *next;
-
-	struct lcfs_node_s *parent;
-
-	struct lcfs_node_s **children;
-	size_t children_size;
-
-	/* Used to create hard links.  */
-	struct lcfs_node_s *link_to;
-
-	size_t index;
-
-	bool inode_written;
-
-	char *name;
-	char *payload;
-
-	struct lcfs_xattr_s *xattrs;
-	size_t n_xattrs;
-
-	struct lcfs_dentry_s data;
-
-	struct lcfs_inode_s inode;
-	struct lcfs_inode_data_s inode_data;
-
-	struct lcfs_extend_s extend;
-};
-
 enum {
 	BUILD_SKIP_XATTRS = (1 << 0),
 	BUILD_USE_EPOCH = (1 << 1),
 	BUILD_SKIP_DEVICES = (1 << 2),
 };
-
 
 struct lcfs_node_s *lcfs_node_new(void);
 void lcfs_node_free(struct lcfs_node_s *node);
@@ -76,17 +38,23 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 					     const char *fname,
 					     int flags,
 					     int buildflags);
-struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node,
-					   const char *name);
-int lcfs_node_add_child(struct lcfs_node_s *parent,
-			struct lcfs_node_s *child,
-			const char *name);
 int lcfs_node_append_xattr(struct lcfs_node_s *node,
 			   const char *key,
 			   const char *value, size_t value_len);
 int lcfs_node_set_payload(struct lcfs_node_s *node,
 			  const char *payload);
 
+struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node,
+					   const char *name);
+struct lcfs_node_s *lcfs_node_get_parent(struct lcfs_node_s *node);
+int lcfs_node_add_child(struct lcfs_node_s *parent,
+			struct lcfs_node_s *child,
+			const char *name);
+const char *lcfs_node_get_name(struct lcfs_node_s *node);
+size_t lcfs_node_get_n_children(struct lcfs_node_s *node);
+struct lcfs_node_s * lcfs_node_get_child(struct lcfs_node_s *node, size_t i);
+void lcfs_node_make_hardlink(struct lcfs_node_s *node,
+			     struct lcfs_node_s *target);
 
 bool lcfs_node_dirp(struct lcfs_node_s *node);
 uint32_t lcfs_node_get_mode(struct lcfs_node_s *node);

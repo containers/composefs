@@ -120,7 +120,7 @@ append_child(struct lcfs_node_s *dir, const char *name)
 	struct lcfs_node_s *child;
 	struct lcfs_node_s *parent;
 
-	for (parent = dir; parent != NULL; parent = parent->parent) {
+	for (parent = dir; parent != NULL; parent = lcfs_node_get_parent (parent)) {
 		if (lcfs_node_get_mode(parent) == 0) {
 			lcfs_node_set_mode(parent, 0755 | S_IFDIR);
 		}
@@ -259,8 +259,7 @@ static struct lcfs_node_s *fill_file(const char *typ,
 			return NULL;
 		}
 
-		node->link_to = target;
-		lcfs_node_set_nlink(target, lcfs_node_get_nlink(target) + 1);
+		lcfs_node_make_hardlink(node, target);
 	}
 
 	v = get_child(entry, "mode", yajl_t_number);

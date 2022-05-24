@@ -30,6 +30,43 @@
 #include <dirent.h>
 #include <sys/xattr.h>
 
+/* In memory representation used to build the file.  */
+
+struct lcfs_xattr_s {
+	char *key;
+	char *value;
+	size_t value_len;
+};
+
+struct lcfs_node_s {
+	struct lcfs_node_s *next;
+
+	struct lcfs_node_s *parent;
+
+	struct lcfs_node_s **children;
+	size_t children_size;
+
+	/* Used to create hard links.  */
+	struct lcfs_node_s *link_to;
+
+	size_t index;
+
+	bool inode_written;
+
+	char *name;
+	char *payload;
+
+	struct lcfs_xattr_s *xattrs;
+	size_t n_xattrs;
+
+	struct lcfs_dentry_s data;
+
+	struct lcfs_inode_s inode;
+	struct lcfs_inode_data_s inode_data;
+
+	struct lcfs_extend_s extend;
+};
+
 struct lcfs_ctx_s {
 	char *vdata;
 	size_t vdata_len;
@@ -575,6 +612,24 @@ int lcfs_node_set_payload(struct lcfs_node_s *node,
 	return 0;
 }
 
+const char *lcfs_node_get_name(struct lcfs_node_s *node)
+{
+	return node->name;
+}
+
+size_t lcfs_node_get_n_children(struct lcfs_node_s *node)
+{
+	return node->children_size;
+}
+
+struct lcfs_node_s * lcfs_node_get_child(struct lcfs_node_s *node, size_t i)
+{
+	if (i < node->children_size)
+		return node->children[i];
+	return NULL;
+}
+
+
 uint32_t lcfs_node_get_mode(struct lcfs_node_s *node)
 {
 	return node->inode_data.st_mode;
@@ -654,6 +709,18 @@ struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node,
 	}
 
 	return NULL;
+}
+
+struct lcfs_node_s *lcfs_node_get_parent(struct lcfs_node_s *node)
+{
+	return node->parent;
+}
+
+void lcfs_node_make_hardlink(struct lcfs_node_s *node,
+			     struct lcfs_node_s *target)
+{
+	node->link_to = target;
+	target->inode_data.st_nlink++;
 }
 
 int lcfs_node_add_child(struct lcfs_node_s *parent,

@@ -34,15 +34,12 @@ static int fill_payload(struct lcfs_node_s *node,
 			char *path, size_t len)
 {
 	size_t old_len = len;
-	char *fname;
+	const char *fname;
 	int ret;
 
-	if (node->name == NULL)
-		fname = "";
-	else
-		fname = node->name;
+        fname = lcfs_node_get_name(node);
 
-	if (fname[0]) {
+	if (fname) {
 		ret = sprintf(path + len, "/%s", fname);
 		if (ret < 0)
 			return ret;
@@ -50,10 +47,12 @@ static int fill_payload(struct lcfs_node_s *node,
 	}
 
 	if (lcfs_node_dirp(node)) {
-		size_t i;
+		size_t i, n_children;
 
-		for (i = 0; i < node->children_size; i++) {
-			ret = fill_payload(node->children[i], path, len);
+		n_children = lcfs_node_get_n_children(node);
+		for (i = 0; i < n_children; i++) {
+			struct lcfs_node_s *child = lcfs_node_get_child(node, i);
+			ret = fill_payload(child, path, len);
 			if (ret < 0)
 				return ret;
 			path[len] = '\0';
