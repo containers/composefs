@@ -44,6 +44,15 @@ struct lcfs_ctx_s {
 	struct lcfs_node_s *cur;
 };
 
+int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
+		      const void *data, size_t len);
+
+int lcfs_append_vdata_no_dedup(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
+			       const void *data, size_t len);
+
+int lcfs_append_vdata_opts(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
+			   const void *data, size_t len, bool dedup);
+
 static char *memdup(const char *s, size_t len)
 {
 	char *s2 = malloc(len);
