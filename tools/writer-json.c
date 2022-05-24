@@ -148,14 +148,14 @@ static struct lcfs_node_s *get_node_child(struct lcfs_ctx_s *ctx,
 static struct lcfs_node_s *
 append_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *dir, const char *name)
 {
-	struct lcfs_node_s **tmp;
 	struct lcfs_node_s *child;
+	struct lcfs_node_s *parent;
 
-	tmp = realloc(dir->children,
-		      sizeof(struct lcfs_node_s) * (dir->children_size + 1));
-	if (tmp == NULL)
-		return NULL;
-	dir->children = tmp;
+	for (parent = dir; parent != NULL; parent = parent->parent) {
+		if (parent->inode_data.st_mode == 0) {
+			parent->inode_data.st_mode = 0755 | S_IFDIR;
+		}
+	}
 
 	child = lcfs_node_new();
 	if (child == NULL)
@@ -167,14 +167,9 @@ append_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *dir, const char *name)
 		return NULL;
         }
 
-	dir->children[dir->children_size++] = child;
-	child->parent = dir;
-
-	while (dir) {
-		if (dir->inode_data.st_mode == 0) {
-			dir->inode_data.st_mode = 0755 | S_IFDIR;
-		}
-		dir = dir->parent;
+	if (lcfs_node_add_child(dir, child) < 0) {
+		lcfs_node_free(child);
+		return NULL;
 	}
 
 	return child;
