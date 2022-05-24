@@ -77,17 +77,18 @@ struct lcfs_ctx_s *lcfs_new_ctx(void);
 int lcfs_close(struct lcfs_ctx_s *ctx);
 
 struct lcfs_node_s *lcfs_node_new(void);
-struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
+void lcfs_node_free(struct lcfs_node_s *node);
+struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 					     const char *fname,
 					     const char *name, int flags,
 					     int buildflags);
-int lcfs_add_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *parent,
-		   struct lcfs_node_s *child);
-
-int lcfs_free_node(struct lcfs_node_s *node);
-
-int lcfs_set_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
-		     const char *payload);
+int lcfs_node_add_child(struct lcfs_node_s *parent,
+			struct lcfs_node_s *child);
+int lcfs_node_append_xattr(struct lcfs_node_s *node,
+			   const char *key,
+			   const char *value, size_t value_len);
+int lcfs_node_set_payload(struct lcfs_node_s *node,
+			  const char *payload);
 
 void lcfs_set_root(struct lcfs_ctx_s *ctx, struct lcfs_node_s *parent);
 
@@ -102,8 +103,5 @@ int lcfs_write_to(struct lcfs_ctx_s *ctx, FILE *out);
 
 int lcfs_get_vdata(struct lcfs_ctx_s *ctx, char **vdata, size_t *len);
 
-int lcfs_append_xattr(struct lcfs_node_s *node,
-		      const char *key,
-		      const char *value, size_t value_len);
 
 #endif

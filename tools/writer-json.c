@@ -163,7 +163,7 @@ append_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *dir, const char *name)
 
 	child->name = strdup(name);
 	if (child->name == NULL) {
-		lcfs_free_node(child);
+		lcfs_node_free(child);
 		return NULL;
         }
 
@@ -195,7 +195,7 @@ fill_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, yajl_val xattrs)
 		const char *v, *k = YAJL_GET_OBJECT(xattrs)->keys[i];
 
 		if (!YAJL_IS_STRING(YAJL_GET_OBJECT(xattrs)->values[i])) {
-			lcfs_free_node(node);
+			lcfs_node_free(node);
 			error(0, 0, "xattr value is not a string");
 			return NULL;
 		}
@@ -205,14 +205,14 @@ fill_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, yajl_val xattrs)
 		r = base64_decode(v, strlen(v), v_buffer, sizeof(v_buffer),
 				  &written);
 		if (r < 0) {
-			lcfs_free_node(node);
+			lcfs_node_free(node);
 			error(0, 0, "xattr value is not valid b64");
 			return NULL;
 		}
 
-		r = lcfs_append_xattr(node, k, v_buffer, written);
+		r = lcfs_node_append_xattr(node, k, v_buffer, written);
 		if (r < 0) {
-			lcfs_free_node(node);
+			lcfs_node_free(node);
 			error(0, 0, "append xattr");
 			return NULL;
 		}
@@ -278,7 +278,7 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 		v = get_child(entry, "linkName", yajl_t_string);
 		if (!v) {
 			error(0, 0, "linkName not specified");
-			lcfs_free_node(node);
+			lcfs_node_free(node);
 			return NULL;
 		}
 
@@ -291,7 +291,7 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 		v = get_child(entry, "linkName", yajl_t_string);
 		if (!v) {
 			error(0, 0, "linkName not specified");
-			lcfs_free_node(node);
+			lcfs_node_free(node);
 			return NULL;
 		}
 
@@ -299,7 +299,7 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 		if (!target) {
  			error(0, 0, "could not find target %s",
 			      YAJL_GET_STRING(v));
-			lcfs_free_node(node);
+			lcfs_node_free(node);
 			return NULL;
 		}
 
@@ -363,9 +363,9 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 	if (payload) {
 		int r;
 
-		r = lcfs_set_payload(ctx, node, payload);
+		r = lcfs_node_set_payload(node, payload);
 		if (r < 0) {
-			lcfs_free_node(node);
+			lcfs_node_free(node);
 			error(0, 0, "set_payload");
 			return NULL;
 		}

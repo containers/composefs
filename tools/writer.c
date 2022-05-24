@@ -71,11 +71,11 @@ static int fill_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
 			return ret;
 
 		target[s] = '\0';
-		ret = lcfs_set_payload(ctx, node, target);
+		ret = lcfs_node_set_payload(node, target);
 		if (ret < 0)
 			return ret;
 	} else if ((node->inode_data.st_mode & S_IFMT) == S_IFREG) {
-		ret = lcfs_set_payload(ctx, node, path);
+		ret = lcfs_node_set_payload(node, path);
 		if (ret < 0)
 			return ret;
 	}
