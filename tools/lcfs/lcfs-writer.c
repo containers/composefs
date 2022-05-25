@@ -56,6 +56,7 @@ struct lcfs_node_s {
 
 	char *name;
 	char *payload;
+	uint64_t st_size;
 
 	struct lcfs_xattr_s *xattrs;
 	size_t n_xattrs;
@@ -63,8 +64,6 @@ struct lcfs_node_s {
 	struct lcfs_dentry_s data;
 
 	struct lcfs_inode_s inode;
-
-	struct lcfs_extend_s extend;
 };
 
 struct lcfs_ctx_s {
@@ -291,20 +290,35 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 	}
 
         if (node->payload) {
-		r = lcfs_append_vdata(ctx, &out, node->payload, strlen(node->payload) + 1);
-		if (r < 0)
-			return r;
-
 		if ((node->inode.st_mode & S_IFMT) == S_IFLNK) {
-			node->inode.u.payload = out;
-		} else if ((node->inode.st_mode & S_IFMT) == S_IFREG) {
-			node->extend.payload = out;
-
-			r = lcfs_append_vdata(ctx, &out, &(node->extend),
-					      sizeof(node->extend));
+			r = lcfs_append_vdata(ctx, &out, node->payload, strlen(node->payload) + 1);
 			if (r < 0)
 				return r;
-			node->inode.u.extends = out;
+
+			node->inode.u.payload = out;
+		} else if ((node->inode.st_mode & S_IFMT) == S_IFREG) {
+			size_t payload_len = strlen(node->payload);
+			struct lcfs_backing_s *backing;
+
+			if (payload_len > UINT32_MAX) {
+				errno = EINVAL;
+				return -1;
+			}
+
+			backing = calloc(1, lcfs_backing_size(payload_len));
+			if (backing == NULL) {
+				errno = ENOMEM;
+				return -1;
+			}
+			backing->st_size = node->st_size;
+			backing->payload_len = (uint32_t)payload_len;
+			memcpy(&backing->payload[0], node->payload, payload_len);
+
+			r = lcfs_append_vdata(ctx, &out, backing, lcfs_backing_size(payload_len));
+			free(backing);
+			if (r < 0)
+				return r;
+			node->inode.u.backing = out;
 		} else {
 			errno = EINVAL;
 			return -1;
@@ -431,7 +445,6 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 		.unused1 = 0,
 		.unused2 = 0,
 		.inode_len = sizeof(struct lcfs_inode_s),
-		.extend_len = sizeof(struct lcfs_extend_s),
 	};
 	int ret = 0;
 	struct lcfs_ctx_s *ctx;
@@ -605,7 +618,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 	ret->inode.st_rdev = sb.st_rdev;
 
 	if ((sb.st_mode & S_IFMT) == S_IFREG) {
-		ret->extend.st_size = sb.st_size;
+		ret->st_size = sb.st_size;
 	}
 
 	if ((buildflags & BUILD_USE_EPOCH) == 0) {
@@ -711,13 +724,13 @@ void lcfs_node_set_nlink(struct lcfs_node_s *node,
 
 uint64_t lcfs_node_get_size(struct lcfs_node_s *node)
 {
-	return node->extend.st_size;
+	return node->st_size;
 }
 
 void lcfs_node_set_size(struct lcfs_node_s *node,
 			 uint64_t size)
 {
-	node->extend.st_size = size;
+	node->st_size = size;
 }
 
 struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node,

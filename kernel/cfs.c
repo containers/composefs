@@ -113,7 +113,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		case S_IFREG:
 			inode->i_op = &cfs_file_inode_operations;
 			inode->i_fop = &cfs_file_operations;
-			r = lcfs_get_file_size(ctx, ino, &(inode->i_size));
+			r = lcfs_get_backing(ctx, ino, &(inode->i_size), NULL);
 			if (r < 0) {
 				kfree(target_link);
 				kfree(ino_copy);
@@ -527,9 +527,9 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 {
 	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 	struct lcfs_inode_s *cfs_ino = inode->i_private;
-	char *path_buf = NULL;
 	struct file *real_file;
-	const char *real_path;
+	char *real_path;
+        int r;
 
 	if (WARN_ON(file == NULL))
 		return -EIO;
@@ -537,24 +537,14 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	if (file->f_flags & (O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_TRUNC))
 		return -EROFS;
 
-	if (cfs_ino->u.extends.len == 0) {
+	if (cfs_ino->u.backing.len == 0) {
 		file->private_data = &empty_file;
 		return 0;
 	}
 
-	if (cfs_ino->u.extends.len != sizeof(struct lcfs_extend_s)) {
-		return -EFSCORRUPTED;
-	}
-
-	path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!path_buf)
-		return -ENOMEM;
-
-	real_path = lcfs_get_extend(fsi->lcfs_ctx, cfs_ino, 0, path_buf);
-	if (IS_ERR(real_path)) {
-		kfree(path_buf);
-		return PTR_ERR(real_path);
-	}
+	r = lcfs_get_backing(fsi->lcfs_ctx, cfs_ino, NULL, &real_path);
+	if (r < 0)
+		return r;
 
 	/* FIXME: prevent loops opening files.  */
 
@@ -566,7 +556,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 					   file->f_flags, 0);
 	}
 
-	kfree(path_buf);
+	kfree(real_path);
 
 	if (IS_ERR(real_file)) {
 		return PTR_ERR(real_file);

@@ -39,18 +39,21 @@ struct lcfs_header_s {
 	uint16_t unused2;
 
 	uint32_t inode_len;
-	uint32_t extend_len;
 
 	uint64_t unused3[3];
 } __attribute__((packed));
 
-struct lcfs_extend_s {
-	/* Total size of this extend in bytes.  */
+struct lcfs_backing_s {
+	/* Total size of the backing file in bytes.  */
 	uint64_t st_size;
 
 	/* Source file.  */
-	struct lcfs_vdata_s payload;
+	uint32_t payload_len;
+	char payload[];
 } __attribute__((packed));
+
+#define lcfs_backing_size(_payload_len) (sizeof(struct lcfs_backing_s) + (_payload_len))
+
 
 struct lcfs_inode_s {
 	uint32_t st_mode; /* File type and mode.  */
@@ -73,7 +76,7 @@ struct lcfs_inode_s {
 		struct lcfs_vdata_s payload;
 
 		/* Payload used for regular files.  */
-		struct lcfs_vdata_s extends;
+		struct lcfs_vdata_s backing;
 	} u;
 } __attribute__((packed));
 

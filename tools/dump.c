@@ -49,34 +49,32 @@ static const uint8_t *get_vdata(const uint8_t *x)
 
 static uint64_t get_size(bool symlink_p,
 			 const struct lcfs_inode_s *ino,
-			 const struct lcfs_extend_s *extends,
 			 const uint8_t *vdata)
 {
-	off_t res = 0;
-	size_t i;
+	struct lcfs_backing_s *backing;
 
 	if (symlink_p)
 		return 0;
 
-	for (i = 0; i < ino->u.extends.len; i += sizeof(struct lcfs_extend_s)) {
-		res += extends[i / sizeof(struct lcfs_extend_s)].st_size;
-	}
-
-	return res;
+	backing = (struct lcfs_backing_s *)(vdata + ino->u.backing.off);
+	return backing->st_size;
 }
 
-static const char *get_v_payload(bool symlink_p,
-				 const struct lcfs_inode_s *ino,
-				 const struct lcfs_extend_s *extends,
-				 const uint8_t *vdata)
+static char *get_v_payload(bool symlink_p,
+			   const struct lcfs_inode_s *ino,
+			   const uint8_t *vdata)
 {
+	struct lcfs_backing_s *backing;
+
 	if (symlink_p)
-		return (const char *)(vdata + ino->u.payload.off);
+		return strdup((const char *)(vdata + ino->u.payload.off));
 
-	if (ino->u.extends.len == 0)
-		return "";
+	if (ino->u.backing.len == 0)
+		return strdup("");
 
-	return (const char *)(vdata + extends[0].payload.off);
+	backing = (struct lcfs_backing_s *)(vdata + ino->u.backing.off);
+
+	return strndup(backing->payload, backing->payload_len);
 }
 
 static bool is_dir(const struct lcfs_inode_s *d)
@@ -92,13 +90,11 @@ static bool is_symlink(const struct lcfs_inode_s *d)
 static int dump_dentry(const uint8_t *vdata, const char *name, size_t index,
 		       size_t rec, bool extended, bool xattrs, bool recurse)
 {
-	struct lcfs_extend_s *extends;
 	struct lcfs_inode_s *ino;
 	bool dirp;
 	size_t i;
 
 	ino = (struct lcfs_inode_s *)(vdata + index);
-	extends = (struct lcfs_extend_s *)(vdata + ino->u.extends.off);
 	dirp = is_dir(ino);
 
 	putchar('|');
@@ -123,11 +119,13 @@ static int dump_dentry(const uint8_t *vdata, const char *name, size_t index,
 	} else if (!extended)
 		printf("%s\n", name);
 	else {
+		char *payload = dirp ? strdup("") : get_v_payload(is_symlink(ino), ino, vdata);
 		printf("name:%s|ino:%zu|mode:%o|nlinks:%u|uid:%d|gid:%d|size:%lu|payload:%s\n",
 		       name, index, ino->st_mode, ino->st_nlink,
 		       ino->st_uid, ino->st_gid,
-		       dirp ? 0 : get_size(is_symlink(ino), ino, extends, vdata),
-		       dirp ? "" : get_v_payload(is_symlink(ino), ino, extends, vdata));
+		       dirp ? 0 : get_size(is_symlink(ino), ino, vdata),
+		       payload);
+		free(payload);
 	}
 
 	if (dirp && recurse) {
