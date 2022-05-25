@@ -95,10 +95,18 @@ struct lcfs_inode_s {
 struct lcfs_dentry_s {
 	/* Index of struct lcfs_inode_s */
 	lcfs_off_t inode_index;
-
-	/* Variable len data.  */
-	struct lcfs_vdata_s name;
+	uint16_t name_len;
+	uint8_t d_type;
+	uint8_t pad;
 } __attribute__((packed));
+
+struct lcfs_dir_s {
+	/* Index of struct lcfs_inode_s */
+	u32 n_dentries;
+	struct lcfs_dentry_s dentries[];
+} __attribute__((packed));
+
+#define lcfs_dir_size(_n_dentries) (sizeof(struct lcfs_dir_s) + (_n_dentries)*sizeof(struct lcfs_dentry_s))
 
 /* xattr representation.  */
 struct lcfs_xattr_element_s {

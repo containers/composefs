@@ -172,6 +172,55 @@ struct lcfs_inode_s *lcfs_dentry_inode(struct lcfs_context_s *ctx,
 	return lcfs_get_ino_index(ctx, node->inode_index, buffer);
 }
 
+struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
+{
+	struct lcfs_dir_s *dir;
+	u8 *data, *data_end;
+	size_t n_dentries, i;
+
+	if (ino->u.dir.len == 0) {
+		return NULL;
+	}
+
+	/* Gotta be large enought to fit the n_dentries */
+	if (ino->xattrs.len < sizeof(struct lcfs_dir_s))
+		return ERR_PTR(-EFSCORRUPTED);
+
+	dir = lcfs_alloc_vdata(ctx, ino->u.dir);
+	if (IS_ERR(dir))
+		return ERR_CAST(dir);
+
+	n_dentries = dir->n_dentries;
+
+	/* Verify that array fits */
+	if (ino->u.dir.len < lcfs_dir_size(n_dentries))
+		goto corrupted;
+
+	data = ((u8 *)dir) + lcfs_dir_size(n_dentries);
+	data_end = ((u8 *)dir) + ino->u.dir.len;
+
+	/* Verify all dentries upfront */
+	for (i = 0; i < n_dentries; i++) {
+		uint32_t name_len = dir->dentries[i].name_len;
+
+		/* name needs to fit in data */
+		if (data_end - data < name_len)
+			goto corrupted;
+		data += name_len;
+	}
+
+	/* No unexpected data at the end */
+	if (data != data_end)
+		goto corrupted;
+
+	return dir;
+
+ corrupted:
+	kfree(dir);
+	return ERR_PTR(-EFSCORRUPTED);
+}
+
+
 struct lcfs_xattr_header_s *lcfs_get_xattrs(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
 {
 	struct lcfs_xattr_header_s *xattrs;
@@ -308,106 +357,67 @@ int lcfs_get_xattr(struct lcfs_xattr_header_s *xattrs, const char *name, void *v
 	return -ENODATA;
 }
 
-int lcfs_iterate_dir(struct lcfs_context_s *ctx, loff_t first, struct lcfs_inode_s *dir_ino, lcfs_dir_iter_cb cb, void *private)
+int lcfs_iterate_dir(struct lcfs_dir_s *dir, loff_t first, lcfs_dir_iter_cb cb, void *private)
 {
-	size_t i, entries;
-	void *check;
+	size_t i, n_dentries;
+	u8 *data;
 
-	/* Check for overflows.  */
-	check = lcfs_get_vdata(ctx, dir_ino->u.dir, NULL);
-	if (IS_ERR(check))
-		return PTR_ERR(check);
+	if (dir == NULL)
+		return 0;
 
-	entries = dir_ino->u.dir.len / sizeof(struct lcfs_dentry_s);
+	/* dir is validated by lcfs_get_dir(), so we can trust it here. */
 
-	for (i = first; i < entries; i++) {
-		struct lcfs_dentry_s dentry_buf;
-		struct lcfs_dentry_s *dentry;
-		struct lcfs_inode_s ino_buf;
-		struct lcfs_inode_s *ino;
-		char name_buf[NAME_MAX];
-		const char *name;
-		size_t nd;
+	n_dentries = dir->n_dentries;
 
-		nd = i * sizeof(struct lcfs_dentry_s);
+	/* Early exit if guaranteed past end */
+	if (first >= n_dentries)
+		return 0;
 
-		dentry = lcfs_get_dentry(ctx, dir_ino->u.dir.off + nd,
-					 &dentry_buf);
-		if (IS_ERR(dentry))
-			return PTR_ERR(dentry);
+	data = ((u8 *)dir) + lcfs_dir_size(n_dentries);
 
-		name = lcfs_c_string(ctx, dentry->name, name_buf, NAME_MAX);
-		if (IS_ERR(name))
-			return PTR_ERR(name);
+	for (i = 0; i < n_dentries; i++) {
+		char *name = data;
+		u32 name_len = dir->dentries[i].name_len;
 
-		ino = lcfs_dentry_inode(ctx, dentry, &ino_buf);
-		if (IS_ERR(ino))
-			return PTR_ERR(ino);
+		data += name_len;
 
-		if (!cb(private, name, dentry->name.len,
-			lcfs_dentry_ino(dentry),
-			ino->st_mode & S_IFMT))
+		if (i < first)
+			continue;
+
+		if (!cb(private, name, name_len,
+			dir->dentries[i].inode_index,
+			dir->dentries[i].d_type))
 			break;
 	}
 	return 0;
 }
 
-struct bsearch_key_s {
-	const char *name;
-	struct lcfs_context_s *ctx;
-	int err;
-};
-
-/* The first argument is the KEY, so take advantage to pass additional data.  */
-static int compare_names(const void *a, const void *b)
+int lcfs_lookup(struct lcfs_dir_s *dir, const char *name, size_t name_len, lcfs_off_t *index)
 {
-	struct bsearch_key_s *key = (struct bsearch_key_s *) a;
-	const struct lcfs_dentry_s *dentry;
-	struct lcfs_dentry_s dentry_buf;
-	char buf[NAME_MAX];
-	const char *name;
+	size_t i, n_dentries;
+	u8 *data;
 
-	dentry = lcfs_get_dentry(key->ctx, (size_t) b, &dentry_buf);
-	if (IS_ERR(dentry)) {
-		key->err = PTR_ERR(dentry);
+	if (dir == NULL)
 		return 0;
+
+	/* dir is validated by lcfs_get_dir(), so we can trust it here. */
+
+	n_dentries = dir->n_dentries;
+
+	data = ((u8 *)dir) + lcfs_dir_size(n_dentries);
+	for (i = 0; i < n_dentries; i++) {
+		char *entry_name = data;
+		u32 entry_name_len = dir->dentries[i].name_len;
+
+		if (name_len == entry_name_len &&
+		    memcmp(entry_name, name, name_len) == 0) {
+			*index = dir->dentries[i].inode_index;
+			return 1;
+		}
+
+		data += entry_name_len;
 	}
-
-	name = lcfs_c_string(key->ctx, dentry->name, buf, NAME_MAX);
-	if (IS_ERR(name)) {
-		key->err = PTR_ERR(name);
-		return 0;
-	}
-	return strcmp(key->name, name);
-}
-
-int lcfs_lookup(struct lcfs_context_s *ctx, struct lcfs_inode_s *dir, const char *name, lcfs_off_t *index)
-{
-	struct lcfs_dentry_s *found;
-	struct bsearch_key_s key = {
-		.name = name,
-		.ctx = ctx,
-		.err = 0,
-	};
-	size_t size, n_entries;
-	void *check;
-
-	/* Check the entire directory is in the blob.  */
-	check = lcfs_get_vdata(ctx, dir->u.dir, NULL);
-	if (check)
-		return PTR_ERR(check);
-
-	size = sizeof(struct lcfs_dentry_s);
-	n_entries = dir->u.dir.len / size;
-
-	found = bsearch(&key, NULL + dir->u.dir.off, n_entries,
-			size, compare_names);
-	if (found == NULL || key.err)
-		return 0;
-
-	*index = (lcfs_off_t) found;
-
-	return 1;
+	return 0;
 }
 
 const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, void *buf)

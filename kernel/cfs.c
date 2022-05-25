@@ -54,6 +54,7 @@ struct cfs_inode {
 	struct lcfs_inode_s cfs_ino;
 	char *real_path;
 	struct lcfs_xattr_header_s *xattrs;
+	struct lcfs_dir_s *dir;
 };
 
 static inline struct cfs_inode *CFS_I(struct inode *inode)
@@ -90,6 +91,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 	loff_t real_size = 0;
 	struct cfs_inode *cino;
 	struct inode *inode;
+	struct lcfs_dir_s *dirdata;
 	int ret;
 	int r;
 
@@ -106,6 +108,15 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		r = lcfs_get_backing(ctx, ino, &real_size, &real_path);
 		if (r < 0) {
 			ret = r;
+			goto fail;
+		}
+	}
+
+	if ((ino->st_mode & S_IFMT) == S_IFDIR) {
+		dirdata = lcfs_get_dir(ctx, ino);
+		if (IS_ERR(dirdata)) {
+			ret = PTR_ERR(dir);
+			dirdata = NULL;
 			goto fail;
 		}
 	}
@@ -127,6 +138,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		cino = CFS_I(inode);
 		cino->cfs_ino = *ino;
 		cino->xattrs = xattrs;
+		cino->dir = dirdata;
 
 		inode->i_ino = ino_num;
 		set_nlink(inode, ino->st_nlink);
@@ -178,31 +190,11 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		kfree(real_path);
 	if (xattrs)
 		kfree(xattrs);
+	if (dirdata)
+		kfree(dirdata);
 	if (target_link)
 		kfree(target_link);
 	return ERR_PTR(ret);
-}
-
-static struct inode *cfs_get_inode_from_dentry_index(struct super_block *sb,
-						     const struct inode *dir,
-						     size_t index)
-{
-	struct cfs_info *fsi = sb->s_fs_info;
-	struct lcfs_inode_s ino_buf;
-	struct lcfs_inode_s *ino;
-	struct lcfs_dentry_s de_buf;
-	struct lcfs_dentry_s *de;
-
-	de = lcfs_get_dentry(fsi->lcfs_ctx, index, &de_buf);
-	if (IS_ERR(de))
-		return ERR_CAST(de);
-
-	ino = lcfs_dentry_inode(fsi->lcfs_ctx, de, &ino_buf);
-	if (IS_ERR(ino))
-		return ERR_CAST(ino);
-
-	return cfs_make_inode(fsi->lcfs_ctx, sb, de->inode_index,
-			      ino, dir);
 }
 
 static struct inode *cfs_get_root_inode(struct super_block *sb)
@@ -304,8 +296,7 @@ static int cfs_iterate(struct file *file, struct dir_context *ctx)
 
 	fsi = file->f_inode->i_sb->s_fs_info;
 
-	return lcfs_iterate_dir(fsi->lcfs_ctx, ctx->pos - 2, &cino->cfs_ino,
-				cfs_iterate_cb, ctx);
+	return lcfs_iterate_dir(cino->dir, ctx->pos - 2, cfs_iterate_cb, ctx);
 }
 
 static loff_t cfs_dir_llseek(struct file *file, loff_t offset, int origin)
@@ -332,23 +323,27 @@ static loff_t cfs_dir_llseek(struct file *file, loff_t offset, int origin)
 struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 			  unsigned int flags)
 {
-	struct cfs_inode *cino = CFS_I(dir);
 	struct cfs_info *fsi = dir->i_sb->s_fs_info;
+	struct cfs_inode *cino = CFS_I(dir);
+	struct lcfs_inode_s ino_buf;
 	struct inode *inode;
+        struct lcfs_inode_s *ino_s;
 	lcfs_off_t index;
 	int ret;
 
 	if (dentry->d_name.len > NAME_MAX)
 		return ERR_PTR(-ENAMETOOLONG);
 
-	ret = lcfs_lookup(fsi->lcfs_ctx, &cino->cfs_ino, dentry->d_name.name, &index);
+	ret = lcfs_lookup(cino->dir, dentry->d_name.name, dentry->d_name.len, &index);
 	if (ret == 0)
 		goto return_negative;
 
-	inode = cfs_get_inode_from_dentry_index(dir->i_sb, dir, index);
-	if (IS_ERR(inode)) {
-		return ERR_CAST(inode);
-	}
+	ino_s = lcfs_get_ino_index(fsi->lcfs_ctx, index, &ino_buf);
+	if (IS_ERR(ino_s))
+		return ERR_CAST(ino_s);
+
+	inode = cfs_make_inode(fsi->lcfs_ctx, dir->i_sb, index,
+			       ino_s, dir);
 	if (inode)
 		return d_splice_alias(inode, dentry);
 
@@ -419,6 +414,8 @@ static void cfs_destroy_inode(struct inode *inode)
 		kfree(cino->real_path);
 	if (cino->xattrs)
 		kfree(cino->xattrs);
+	if (cino->dir)
+		kfree(cino->dir);
 }
 
 static void cfs_free_inode(struct inode *inode)

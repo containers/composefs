@@ -57,11 +57,11 @@ struct lcfs_node_s {
 	char *name;
 	char *payload;
 	uint64_t st_size;
+	struct lcfs_dentry_s data;
+	lcfs_off_t inode_index;
 
 	struct lcfs_xattr_s *xattrs;
 	size_t n_xattrs;
-
-	struct lcfs_dentry_s data;
 
 	struct lcfs_inode_s inode;
 };
@@ -281,14 +281,6 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 		node->inode.xattrs = out;
 	}
 
-	if (node->name) {
-		r = lcfs_append_vdata(ctx, &out, node->name, strlen(node->name) + 1);
-		if (r < 0) {
-			return 0;
-		}
-		node->data.name = out;
-	}
-
         if (node->payload) {
 		if ((node->inode.st_mode & S_IFMT) == S_IFLNK) {
 			r = lcfs_append_vdata(ctx, &out, node->payload, strlen(node->payload) + 1);
@@ -327,7 +319,7 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 
 	if (node->link_to) {
 		r = dump_inode(ctx, node->link_to);
-		node->data.inode_index = node->link_to->data.inode_index;
+		node->inode_index = node->link_to->inode_index;
 		return r;
 	} else {
 		struct lcfs_inode_s *ino = &(node->inode);
@@ -337,7 +329,7 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 		if (r < 0)
 			return r;
 
-		node->data.inode_index = out.off;
+		node->inode_index = out.off;
 
 		node->inode_written = true;
 	}
@@ -345,36 +337,81 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 	return 0;
 }
 
+static int node_get_dtype(struct lcfs_node_s *node)
+{
+	switch ((node->inode.st_mode & S_IFMT)) {
+	case S_IFLNK:
+		return DT_LNK;
+	case S_IFDIR:
+		return DT_DIR;
+	case S_IFREG:
+		return DT_REG;
+	case S_IFBLK:
+		return DT_BLK;
+	case S_IFCHR:
+		return DT_CHR;
+	case S_IFSOCK:
+		return DT_SOCK;
+	case S_IFIFO:
+		return DT_FIFO;
+	default:
+		return DT_UNKNOWN;
+	}
+}
+
 static int dump_dentries(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 {
 	struct lcfs_vdata_s out;
 	size_t i;
-	size_t o = 0;
 	int r;
+	size_t header_len;
+	size_t names_len;
+	struct lcfs_dir_s *dir;
+	char *data;
 
 	if (node->children_size == 0)
 		return dump_inode(ctx, node);
 
+	names_len = 0;
 	for (i = 0; i < node->children_size; i++) {
-		r = dump_dentries(ctx, node->children[i]);
-		if (r < 0)
-			return r;
-	}
-
-	for (i = 0; i < node->children_size; i++) {
-		r = lcfs_append_vdata_no_dedup(ctx, &out,
-					       &(node->children[i]->data),
-					       sizeof(struct lcfs_dentry_s));
+		struct lcfs_node_s *child = node->children[i];
+		r = dump_dentries(ctx, child);
 		if (r < 0)
 			return r;
 
-		if (i == 0)
-			o = out.off;
+		if (child->name == NULL)
+			return -1; /* Can't have no names */
+		if (strlen(child->name) > UINT16_MAX)
+			return -1; /* Can't fit */
+
+		names_len += strlen(child->name);
 	}
 
-	node->inode.u.dir.off = o;
-	node->inode.u.dir.len =
-		node->children_size * sizeof(struct lcfs_dentry_s);
+	header_len = lcfs_dir_size(node->children_size);
+	dir = calloc(1, header_len + names_len);
+	if (dir == NULL)
+		return -1;
+
+	dir->n_dentries = node->children_size;
+
+	data = (char *)dir + header_len;
+
+	for (i = 0; i < node->children_size; i++) {
+		struct lcfs_node_s *child = node->children[i];
+		dir->dentries[i].inode_index = child->inode_index;
+		dir->dentries[i].name_len = strlen(child->name);
+		dir->dentries[i].d_type = node_get_dtype(child);
+		dir->dentries[i].pad = 0;
+		memcpy(data, child->name, strlen(child->name));
+		data += strlen(child->name);
+	}
+
+	r = lcfs_append_vdata(ctx, &out, dir, header_len + names_len);
+	free(dir);
+	if (r < 0)
+		return r;
+
+	node->inode.u.dir = out;
 
 	return dump_inode(ctx, node);
 }
