@@ -53,6 +53,7 @@ struct cfs_inode {
 	struct inode vfs_inode; /* must be first for clear in otfs_alloc_inode to work */
 	struct lcfs_inode_s cfs_ino;
 	char *real_path;
+	struct lcfs_xattr_header_s *xattrs;
 };
 
 static inline struct cfs_inode *CFS_I(struct inode *inode)
@@ -84,20 +85,40 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 				    const struct inode *dir)
 {
 	char *target_link = NULL;
+	char *real_path = NULL;
+	struct lcfs_xattr_header_s *xattrs = NULL;
+	loff_t real_size = 0;
 	struct cfs_inode *cino;
 	struct inode *inode;
+	int ret;
+	int r;
 
 	if ((ino->st_mode & S_IFMT) == S_IFLNK) {
 		target_link = lcfs_dup_payload_path(ctx, ino);
 		if (IS_ERR(target_link)) {
-			return ERR_CAST(target_link);
+			ret = PTR_ERR(target_link);
+			target_link = NULL;
+			goto fail;
 		}
+	}
+
+	if ((ino->st_mode & S_IFMT) == S_IFREG) {
+		r = lcfs_get_backing(ctx, ino, &real_size, &real_path);
+		if (r < 0) {
+			ret = r;
+			goto fail;
+		}
+	}
+
+	xattrs = lcfs_get_xattrs(ctx, ino);
+	if (IS_ERR(xattrs)) {
+		ret = PTR_ERR(xattrs);
+		xattrs = NULL;
+		goto fail;
 	}
 
 	inode = new_inode(sb);
 	if (inode) {
-		int r;
-
 		inode_init_owner(&init_user_ns, inode, dir, ino->st_mode);
 		inode->i_mapping->a_ops = &cfs_aops;
 		mapping_set_gfp_mask(inode->i_mapping, GFP_HIGHUSER);
@@ -105,6 +126,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 
 		cino = CFS_I(inode);
 		cino->cfs_ino = *ino;
+		cino->xattrs = xattrs;
 
 		inode->i_ino = ino_num;
 		set_nlink(inode, ino->st_nlink);
@@ -115,15 +137,13 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		inode->i_atime = ino->st_mtim;
 		inode->i_mtime = ino->st_mtim;
 		inode->i_ctime = ino->st_ctim;
+
 		switch (ino->st_mode & S_IFMT) {
 		case S_IFREG:
 			inode->i_op = &cfs_file_inode_operations;
 			inode->i_fop = &cfs_file_operations;
-			r = lcfs_get_backing(ctx, ino, &(inode->i_size), &(cino->real_path));
-			if (r < 0) {
-				kfree(target_link);
-				return ERR_PTR(r);
-			}
+			inode->i_size = real_size;
+			cino->real_path = real_path;
 			break;
 		case S_IFLNK:
 			inode->i_link = target_link;
@@ -138,8 +158,8 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		case S_IFCHR:
 		case S_IFBLK:
 			if (current_user_ns() != &init_user_ns) {
-				kfree(target_link);
-				return ERR_PTR(-EPERM);
+				ret = -EPERM;
+				goto fail;
 			}
 			fallthrough;
 		default:
@@ -150,6 +170,17 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		}
 	}
 	return inode;
+
+ fail:
+	if (inode)
+		iput(inode);
+	if (real_path)
+		kfree(real_path);
+	if (xattrs)
+		kfree(xattrs);
+	if (target_link)
+		kfree(target_link);
+	return ERR_PTR(ret);
 }
 
 static struct inode *cfs_get_inode_from_dentry_index(struct super_block *sb,
@@ -386,6 +417,8 @@ static void cfs_destroy_inode(struct inode *inode)
 
 	if (cino->real_path)
 		kfree(cino->real_path);
+	if (cino->xattrs)
+		kfree(cino->xattrs);
 }
 
 static void cfs_free_inode(struct inode *inode)
@@ -773,18 +806,16 @@ static int cfs_getxattr(const struct xattr_handler *handler,
 			const char *name, void *value, size_t size)
 {
 	struct cfs_inode *cino = CFS_I(inode);
-	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 
-	return lcfs_get_xattr(fsi->lcfs_ctx, &cino->cfs_ino, name, value, size);
+	return lcfs_get_xattr(cino->xattrs, name, value, size);
 }
 
 static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size)
 {
 	struct inode *inode = d_inode(dentry);
 	struct cfs_inode *cino = CFS_I(inode);
-	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 
-	return lcfs_list_xattrs(fsi->lcfs_ctx, &cino->cfs_ino, names, size);
+	return lcfs_list_xattrs(cino->xattrs, names, size);
 }
 
 static const struct file_operations cfs_file_operations = {
