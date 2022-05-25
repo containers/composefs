@@ -75,7 +75,7 @@ struct lcfs_inode_s {
 		/* Payload used for symlinks.  */
 		struct lcfs_vdata_s payload;
 
-		/* Payload used for symlinks.  */
+		/* Payload used for regular files.  */
 		struct lcfs_vdata_s extends;
 	} u;
 } __attribute__((packed));
