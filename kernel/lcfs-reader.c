@@ -472,11 +472,8 @@ int lcfs_get_backing(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, loff_
 
 	if (ino->u.backing.len == 0) {
 		size = 0;
-		if (out_path) {
-			path = kstrdup("", GFP_KERNEL);
-			if (path == NULL)
-				return -ENOMEM;
-		}
+		if (out_path)
+			path = NULL;
 	} else {
 		if (ino->u.backing.len < sizeof(struct lcfs_backing_s) ||
 		    ino->u.backing.len > sizeof(struct lcfs_backing_buf_s))

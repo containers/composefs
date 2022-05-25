@@ -52,6 +52,7 @@ struct cfs_info {
 struct cfs_inode {
 	struct inode vfs_inode; /* must be first for clear in otfs_alloc_inode to work */
 	struct lcfs_inode_s cfs_ino;
+	char *real_path;
 };
 
 static inline struct cfs_inode *CFS_I(struct inode *inode)
@@ -118,7 +119,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		case S_IFREG:
 			inode->i_op = &cfs_file_inode_operations;
 			inode->i_fop = &cfs_file_operations;
-			r = lcfs_get_backing(ctx, ino, &(inode->i_size), NULL);
+			r = lcfs_get_backing(ctx, ino, &(inode->i_size), &(cino->real_path));
 			if (r < 0) {
 				kfree(target_link);
 				return ERR_PTR(r);
@@ -378,8 +379,13 @@ static struct inode *cfs_alloc_inode(struct super_block *sb)
 
 static void cfs_destroy_inode(struct inode *inode)
 {
+	struct cfs_inode *cino = CFS_I(inode);
+
 	if (S_ISLNK(inode->i_mode) && inode->i_link)
 		kfree(inode->i_link);
+
+	if (cino->real_path)
+		kfree(cino->real_path);
 }
 
 static void cfs_free_inode(struct inode *inode)
@@ -555,8 +561,6 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	struct cfs_inode *cino = CFS_I(inode);
 	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 	struct file *real_file;
-	char *real_path;
-        int r;
 
 	if (WARN_ON(file == NULL))
 		return -EIO;
@@ -564,26 +568,20 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	if (file->f_flags & (O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_TRUNC))
 		return -EROFS;
 
-	if (cino->cfs_ino.u.backing.len == 0) {
+	if (cino->real_path == NULL) {
 		file->private_data = &empty_file;
 		return 0;
 	}
 
-	r = lcfs_get_backing(fsi->lcfs_ctx, &cino->cfs_ino, NULL, &real_path);
-	if (r < 0)
-		return r;
-
 	/* FIXME: prevent loops opening files.  */
 
-	if (fsi->base == NULL || real_path[0] == '/') {
-		real_file = file_open_root_mnt(fsi->root_mnt, real_path,
+	if (fsi->base == NULL || cino->real_path[0] == '/') {
+		real_file = file_open_root_mnt(fsi->root_mnt, cino->real_path,
 					       file->f_flags, 0);
 	} else {
-		real_file = file_open_root(&(fsi->base->f_path), real_path,
+		real_file = file_open_root(&(fsi->base->f_path), cino->real_path,
 					   file->f_flags, 0);
 	}
-
-	kfree(real_path);
 
 	if (IS_ERR(real_file)) {
 		return PTR_ERR(real_file);
