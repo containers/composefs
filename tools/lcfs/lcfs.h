@@ -86,9 +86,16 @@ struct lcfs_dentry_s {
 } __attribute__((packed));
 
 /* xattr representation.  */
-struct lcfs_xattr_header_s {
-	struct lcfs_vdata_s key;
-	struct lcfs_vdata_s value;
+struct lcfs_xattr_element_s {
+	uint16_t key_length;
+	uint16_t value_length;
 } __attribute__((packed));
+
+struct lcfs_xattr_header_s {
+	uint16_t n_attr;
+	struct lcfs_xattr_element_s attr[0];
+} __attribute__((packed));
+
+#define lcfs_xattr_header_size(_n_element) (sizeof(struct lcfs_xattr_header_s) + (_n_element)*sizeof(struct lcfs_xattr_element_s))
 
 #endif

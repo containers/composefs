@@ -90,7 +90,7 @@ static bool is_symlink(const struct lcfs_inode_s *d)
 }
 
 static int dump_dentry(const uint8_t *vdata, const char *name, size_t index,
-		       size_t rec, bool extended, bool xattrs)
+		       size_t rec, bool extended, bool xattrs, bool recurse)
 {
 	struct lcfs_extend_s *extends;
 	struct lcfs_inode_s *ino;
@@ -106,14 +106,19 @@ static int dump_dentry(const uint8_t *vdata, const char *name, size_t index,
 		putchar('-');
 
 	if (xattrs) {
-		for (i = ino->xattrs.off; i < ino->xattrs.off + ino->xattrs.len;
-		     i += sizeof(struct lcfs_xattr_header_s)) {
-			struct lcfs_xattr_header_s *h =
-				(struct lcfs_xattr_header_s *)(vdata + i);
-			printf("%.*s -> %.*s\n", (int)h->key.len,
-			       (const char *)(vdata + h->key.off),
-			       (int)h->value.len,
-			       (const char *)(vdata + h->value.off));
+		if (ino->xattrs.len != 0) {
+			struct lcfs_xattr_header_s *header = (struct lcfs_xattr_header_s *)(vdata + ino->xattrs.off);
+			uint8_t *data;
+
+			data = ((uint8_t *)header) + lcfs_xattr_header_size(header->n_attr);
+			for (i = 0; i < header->n_attr; i++) {
+				uint32_t key_length = header->attr[i].key_length;
+				uint32_t value_length = header->attr[i].value_length;
+
+				printf("%.*s -> %.*s\n", (int)key_length, data,
+				       (int)value_length, data + key_length);
+				data += key_length + value_length;
+			}
 		}
 	} else if (!extended)
 		printf("%s\n", name);
@@ -125,14 +130,14 @@ static int dump_dentry(const uint8_t *vdata, const char *name, size_t index,
 		       dirp ? "" : get_v_payload(is_symlink(ino), ino, extends, vdata));
 	}
 
-	if (dirp) {
+	if (dirp && recurse) {
 		for (i = ino->u.dir.off; i < ino->u.dir.off + ino->u.dir.len;
 		     i += sizeof(struct lcfs_dentry_s)) {
 			const struct lcfs_dentry_s *de = (const struct lcfs_dentry_s *)(vdata + i);
 
 			dump_dentry(vdata, (char *)(vdata + de->name.off),
                                     de->inode_index,
-				    rec + 1, extended, xattrs);
+				    rec + 1, extended, xattrs, recurse);
 		}
 	}
 
@@ -164,6 +169,7 @@ static size_t find_child(const uint8_t *vdata, size_t current, const char *name)
 		.name = name,
 		.vdata = (void *)vdata,
 	};
+	const struct lcfs_dentry_s *de;
 
 	if (!is_dir(i))
 		return SIZE_MAX;
@@ -173,17 +179,18 @@ static size_t find_child(const uint8_t *vdata, size_t current, const char *name)
 	if (found == NULL)
 		return SIZE_MAX;
 
-	return (found - vdata);
+	de = (const struct lcfs_dentry_s *)found;
+	return de->inode_index;
 }
 
-static const struct lcfs_dentry_s *lookup(const uint8_t *vdata, size_t current,
+static const struct lcfs_inode_s *lookup(const uint8_t *vdata, size_t current,
 					  const void *what)
 {
 	char *it;
 	char *dpath, *path;
 
 	if (strcmp(what, "/") == 0)
-		return (struct lcfs_dentry_s *)what + current;
+		return (struct lcfs_inode_s *)(vdata + current);
 
 	path = strdup(what);
 	if (path == NULL)
@@ -191,6 +198,8 @@ static const struct lcfs_dentry_s *lookup(const uint8_t *vdata, size_t current,
 
 	dpath = path;
 	while ((it = strsep(&dpath, "/"))) {
+		if (strlen(it) == 0)
+			continue; /* Skip initial, terminal or repeated slashes */
 		current = find_child(vdata, current, it);
 		if (current == SIZE_MAX) {
 			errno = ENOENT;
@@ -200,7 +209,7 @@ static const struct lcfs_dentry_s *lookup(const uint8_t *vdata, size_t current,
 	}
 
 	free(path);
-	return (struct lcfs_dentry_s *)(vdata + current);
+	return (struct lcfs_inode_s *)(vdata + current);
 }
 
 #define DUMP 1
@@ -251,29 +260,29 @@ int main(int argc, char *argv[])
 	root_index = size - sizeof(struct lcfs_header_s) -
 		     sizeof(struct lcfs_inode_s);
 	if (mode == DUMP) {
-		dump_dentry(get_vdata(data), "", root_index, 0, false, false);
+		dump_dentry(get_vdata(data), "", root_index, 0, false, false, true);
 	} else if (mode == DUMP_EXTENDED) {
-		dump_dentry(get_vdata(data), "", root_index, 0, true, false);
+		dump_dentry(get_vdata(data), "", root_index, 0, true, false, true);
 	} else if (mode == LOOKUP) {
-		const struct lcfs_dentry_s *dentry;
+		const struct lcfs_inode_s *inode;
 		size_t index;
 
-		dentry = lookup(get_vdata(data), root_index, argv[3]);
-		if (dentry == NULL)
+		inode = lookup(get_vdata(data), root_index, argv[3]);
+		if (inode == NULL)
 			error(EXIT_FAILURE, 0, "file %s not found", argv[3]);
 
-		index = (uint8_t *)dentry - get_vdata(data);
-		dump_dentry(get_vdata(data), "", index, 0, true, false);
+		index = (uint8_t *)inode - get_vdata(data);
+		dump_dentry(get_vdata(data), "", index, 0, true, false, false);
 	} else if (mode == XATTRS) {
-		const struct lcfs_dentry_s *dentry;
+		const struct lcfs_inode_s *inode;
 		size_t index;
 
-		dentry = lookup(get_vdata(data), root_index, argv[3]);
-		if (dentry == NULL)
+		inode = lookup(get_vdata(data), root_index, argv[3]);
+		if (inode == NULL)
 			error(EXIT_FAILURE, 0, "file %s not found", argv[3]);
 
-		index = (uint8_t *)dentry - get_vdata(data);
-		dump_dentry(get_vdata(data), "", index, 0, true, true);
+		index = (uint8_t *)inode - get_vdata(data);
+		dump_dentry(get_vdata(data), "", index, 0, true, true, false);
 	}
 
 	munmap(data, size);

@@ -29,6 +29,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <sys/xattr.h>
+#include <assert.h>
 
 /* In memory representation used to build the file.  */
 
@@ -233,26 +234,50 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 		return 0;
 
 	if (node->n_xattrs > 0) {
+		size_t data_length;
 		size_t i;
-		struct lcfs_xattr_header_s buffer[node->n_xattrs];
+		uint8_t *buffer, *data;
+		size_t header_len;
+		size_t buffer_len;
+		struct lcfs_xattr_header_s *header;
 
+		assert (sizeof (struct lcfs_xattr_header_s) == 2); /* Make sure the 0 element array doesn't count */
+
+		data_length = 0;
 		for (i = 0; i < node->n_xattrs; i++) {
 			struct lcfs_xattr_s *xattr = &node->xattrs[i];
-			struct lcfs_xattr_header_s *header = &buffer[i];
+			data_length += strlen(xattr->key) + xattr->value_len;
+		}
+		header_len = lcfs_xattr_header_size(node->n_xattrs);
+		buffer_len = header_len + data_length;
+		buffer = calloc(1, buffer_len);
+		if (buffer == NULL) {
+			errno = ENOMEM;
+			return -1;
+		}
+		header = (struct lcfs_xattr_header_s *)buffer;
+		header->n_attr = node->n_xattrs;
 
-			r = lcfs_append_vdata(ctx, &(header->key), xattr->key, strlen(xattr->key));
-			if (r < 0) {
-				return r;
-			}
+		data = buffer +  header_len;
+		for (i = 0; i < node->n_xattrs; i++) {
+			struct lcfs_xattr_s *xattr = &node->xattrs[i];
 
-			r = lcfs_append_vdata(ctx, &(header->value), xattr->value, xattr->value_len);
-			if (r < 0)
-				return r;
+			header->attr[i].key_length = strlen(xattr->key);
+			memcpy(data, xattr->key, strlen(xattr->key));
+			data += strlen(xattr->key);
+
+			header->attr[i].value_length = xattr->value_len;
+			memcpy(data, xattr->value, xattr->value_len);
+			data += xattr->value_len;
 		}
 
-		r = lcfs_append_vdata(ctx, &out, buffer, sizeof(buffer));
-		if (r < 0)
+		r = lcfs_append_vdata(ctx, &out, buffer, buffer_len);
+		if (r < 0) {
+			free(buffer);
 			return r;
+		}
+
+		free(buffer);
 
 		node->inode.xattrs = out;
 	}

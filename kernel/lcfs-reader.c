@@ -107,6 +107,23 @@ void *lcfs_get_vdata(struct lcfs_context_s *ctx,
 	return dest;
 }
 
+void *lcfs_alloc_vdata(struct lcfs_context_s *ctx,
+		       const struct lcfs_vdata_s vdata)
+{
+	u8 *buf;
+	void *res;
+
+	buf = kmalloc(vdata.len, GFP_KERNEL);
+	if (!buf)
+		return ERR_PTR(-ENOMEM);
+
+	res = lcfs_get_vdata(ctx, vdata, buf);
+	if (IS_ERR(res))
+		kfree(buf);
+
+	return res;
+}
+
 const char *lcfs_c_string(struct lcfs_context_s *ctx, struct lcfs_vdata_s vdata,
 			  char *buf, size_t max)
 {
@@ -158,51 +175,72 @@ struct lcfs_inode_s *lcfs_dentry_inode(struct lcfs_context_s *ctx,
 ssize_t lcfs_list_xattrs(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, char *names, size_t size)
 {
 	const struct lcfs_xattr_header_s *xattrs;
+	u8 *data, *data_end;
 	size_t n_xattrs = 0, i;
 	ssize_t copied = 0;
+	ssize_t ret;
 
 	if (ino->xattrs.len == 0)
 		return 0;
 
-	/* Check for overflows.  */
-	xattrs = lcfs_get_vdata(ctx, ino->xattrs, NULL);
+	/* Gotta be large enought to fit the n_attr */
+	if (ino->xattrs.len < sizeof(struct lcfs_xattr_header_s))
+		return -EFSCORRUPTED;
+
+	xattrs = lcfs_alloc_vdata(ctx, ino->xattrs);
 	if (IS_ERR(xattrs))
 		return PTR_ERR(xattrs);
 
-	n_xattrs = ino->xattrs.len / sizeof(struct lcfs_xattr_header_s);
+	n_xattrs = xattrs->n_attr;
+
+	/* And the entire array */
+	if (ino->xattrs.len < lcfs_xattr_header_size(n_xattrs)) {
+		ret = -EFSCORRUPTED;
+		goto fail;
+	}
+
+	data = ((u8 *)xattrs) + lcfs_xattr_header_size(n_xattrs);
+	data_end = ((u8 *)xattrs) + ino->xattrs.len;
 
 	for (i = 0; i < n_xattrs; i++) {
-		struct lcfs_xattr_header_s h_buf;
-		struct lcfs_xattr_header_s *h;
-		char xattr_buf[XATTR_NAME_MAX];
-		struct lcfs_vdata_s vdata;
-		const void *xattr;
+		uint16_t key_len = xattrs->attr[i].key_length;
+		uint16_t value_len = xattrs->attr[i].value_length;
 
-		vdata.off = ino->xattrs.off + i * sizeof (*h);
-		vdata.len = sizeof(*h);
+		if (key_len > XATTR_NAME_MAX) {
+			ret = -EFSCORRUPTED;
+			goto fail;
+		}
 
-		/* Read the xattr header.  */
-		h = lcfs_get_vdata(ctx, vdata, &h_buf);
-		if (IS_ERR(h))
-			return PTR_ERR(h);
-
-		if (h->key.len > XATTR_NAME_MAX)
-			return -EFSCORRUPTED;
-
-		xattr = lcfs_get_vdata(ctx, h->key, xattr_buf);
-		if (IS_ERR(xattr))
-			return PTR_ERR(xattr);
+		/* key needs to fit in data */
+		if (data_end - data < key_len) {
+			ret = -EFSCORRUPTED;
+			goto fail;
+		}
 
 		if (size) {
-			if (size - copied < h->key.len + 1)
-				return -E2BIG;
+			if (size - copied < key_len + 1) {
+				ret = -E2BIG;
+				goto fail;
+			}
 
-			memcpy(names + copied, xattr, h->key.len);
-			names[copied + h->key.len] = '\0';
+			memcpy(names + copied, data, key_len);
+			names[copied + key_len] = '\0';
 		}
-		copied += h->key.len + 1;
+		data += key_len;
+		copied += key_len + 1;
+
+		/* Skip value, but ensure if fits in data */
+		if (data_end - data < value_len)
+			return -EFSCORRUPTED;
+		data += value_len;
 	}
+
+	kfree(xattrs);
 	return copied;
+
+ fail:
+	kfree(xattrs);
+	return ret;
 }
 
 int lcfs_get_xattr(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, const char *name, void *value, size_t size)
@@ -210,61 +248,84 @@ int lcfs_get_xattr(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, const c
 	const struct lcfs_xattr_header_s *xattrs;
 	size_t name_len = strlen(name);
 	size_t n_xattrs = 0, i;
-	ssize_t copied = 0;
+	u8 *data, *data_end;
+	int ret;
 
 	if (ino->xattrs.len == 0)
-		return 0;
+		return -ENODATA;
 
 	if (name_len > XATTR_NAME_MAX)
-		return 0;
+		return -ENODATA;
 
-	/* Check for overflows.  */
-	xattrs = lcfs_get_vdata(ctx, ino->xattrs, NULL);
+	/* Gotta be large enought to fit the n_attr */
+	if (ino->xattrs.len < sizeof(struct lcfs_xattr_header_s))
+		return -EFSCORRUPTED;
+
+	xattrs = lcfs_alloc_vdata(ctx, ino->xattrs);
 	if (IS_ERR(xattrs))
 		return PTR_ERR(xattrs);
 
-	n_xattrs = ino->xattrs.len / sizeof(struct lcfs_xattr_header_s);
+	n_xattrs = xattrs->n_attr;
+	/* And the entire array */
+	if (ino->xattrs.len < lcfs_xattr_header_size(n_xattrs)) {
+		ret = -EFSCORRUPTED;
+		goto fail;
+	}
+
+	data = ((u8 *)xattrs) + lcfs_xattr_header_size(n_xattrs);
+	data_end = ((u8 *)xattrs) + ino->xattrs.len;
 
 	for (i = 0; i < n_xattrs; i++) {
-		struct lcfs_xattr_header_s h_buf;
-		struct lcfs_xattr_header_s *h;
-		char xattr_buf[XATTR_NAME_MAX];
-		struct lcfs_vdata_s vdata;
-		const void *v, *xattr;
+		char *this_key;
+		u8 *this_value;
+		uint16_t key_len = xattrs->attr[i].key_length;
+		uint16_t value_len = xattrs->attr[i].value_length;
 
-		vdata.off = ino->xattrs.off + i * sizeof (*h);
-		vdata.len = sizeof(*h);
+		if (key_len > XATTR_NAME_MAX) {
+			ret = -EFSCORRUPTED;
+			goto fail;
+		}
 
-		/* Read the xattr header.  */
-		h = lcfs_get_vdata(ctx, vdata, &h_buf);
-		if (IS_ERR(h))
-			return PTR_ERR(h);
+		/* key needs to fit in data */
+		if (data_end - data < key_len) {
+			ret = -EFSCORRUPTED;
+			goto fail;
+		}
 
-		if (h->key.len != name_len)
+		this_key = data;
+		data += key_len;
+
+		if (data_end - data < value_len) {
+			ret = -EFSCORRUPTED;
+			goto fail;
+		}
+		this_value = data;
+		data += value_len;
+
+		if (key_len != name_len)
 			continue;
 
-		/* Read the name.  */
-		xattr = lcfs_get_vdata(ctx, h->key, xattr_buf);
-		if (IS_ERR(xattr))
-			return PTR_ERR(xattr);
-
-		if (memcmp(xattr, name, name_len) != 0)
+		if (memcmp(this_key, name, name_len) != 0)
 			continue;
 
-		if (size == 0)
-			return h->value.len;
+		if (size > 0) {
+			if (size < value_len) {
+				ret = -E2BIG;
+				goto fail;
+			}
+			memcpy(value, this_value, value_len);
+		}
 
-		if (size - copied < h->value.len + 1)
-			return -E2BIG;
-
-		/* Read its value directly into VALUE.  */
-		v = lcfs_get_vdata(ctx, h->value, value);
-		if (IS_ERR(v))
-			return PTR_ERR(v);
-
-		return h->key.len;
+		kfree(xattrs);
+		return value_len;
 	}
+
+	kfree(xattrs);
 	return -ENODATA;
+
+ fail:
+	kfree(xattrs);
+	return ret;
 }
 
 int lcfs_iterate_dir(struct lcfs_context_s *ctx, loff_t first, struct lcfs_inode_s *dir_ino, lcfs_dir_iter_cb cb, void *private)
