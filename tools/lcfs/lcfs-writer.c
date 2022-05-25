@@ -29,6 +29,42 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <sys/xattr.h>
+#include <assert.h>
+
+/* In memory representation used to build the file.  */
+
+struct lcfs_xattr_s {
+	char *key;
+	char *value;
+	size_t value_len;
+};
+
+struct lcfs_node_s {
+	struct lcfs_node_s *next;
+
+	struct lcfs_node_s *parent;
+
+	struct lcfs_node_s **children;
+	size_t children_size;
+
+	/* Used to create hard links.  */
+	struct lcfs_node_s *link_to;
+
+	size_t index;
+
+	bool inode_written;
+
+	char *name;
+	char *payload;
+	uint64_t st_size;
+	struct lcfs_dentry_s data;
+	lcfs_off_t inode_index;
+
+	struct lcfs_xattr_s *xattrs;
+	size_t n_xattrs;
+
+	struct lcfs_inode_s inode;
+};
 
 struct lcfs_ctx_s {
 	char *vdata;
@@ -43,6 +79,29 @@ struct lcfs_ctx_s {
 	/* Used by serialize_children.  */
 	struct lcfs_node_s *cur;
 };
+
+int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
+		      const void *data, size_t len);
+
+int lcfs_append_vdata_no_dedup(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
+			       const void *data, size_t len);
+
+int lcfs_append_vdata_opts(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
+			   const void *data, size_t len, bool dedup);
+
+static int lcfs_close(struct lcfs_ctx_s *ctx);
+
+static char *memdup(const char *s, size_t len)
+{
+	char *s2 = malloc(len);
+	if (s2 == NULL) {
+		errno = ENOMEM;
+		return NULL;
+	}
+	memcpy(s2, s, len);
+	return s2;
+}
+
 
 struct hasher_vdata_s {
 	const char *const *vdata;
@@ -87,10 +146,9 @@ static void vdata_ht_freer(void *data)
 	free(data);
 }
 
-struct lcfs_ctx_s *lcfs_new_ctx()
+static struct lcfs_ctx_s *lcfs_new_ctx(void)
 {
 	struct lcfs_ctx_s *ret;
-	struct lcfs_vdata_s tmp;
 
 	ret = calloc(1, sizeof *ret);
 	if (ret == NULL)
@@ -98,11 +156,6 @@ struct lcfs_ctx_s *lcfs_new_ctx()
 
 	ret->ht = hash_initialize(0, NULL, vdata_ht_hasher, vdata_ht_comparator,
 				  vdata_ht_freer);
-
-	if (lcfs_append_vdata(ret, &tmp, "\0", 1) < 0) {
-		free(ret);
-		return NULL;
-	}
 
 	return ret;
 }
@@ -117,13 +170,14 @@ int lcfs_append_vdata_opts(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 
 	if (dedup) {
 		struct hasher_vdata_s *ent;
-		struct hasher_vdata_s key = {
-			.vdata = (const char *const *)&data,
+		const char *_data = data;
+		struct hasher_vdata_s hkey = {
+			.vdata = (const char *const *)&_data,
 			.off = 0,
 			.len = len,
 		};
 
-		ent = hash_lookup(ctx->ht, &key);
+		ent = hash_lookup(ctx->ht, &hkey);
 		if (ent) {
 			out->off = ent->off;
 			out->len = ent->len;
@@ -178,26 +232,104 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 	if (node->inode_written)
 		return 0;
 
+	if (node->n_xattrs > 0) {
+		size_t data_length;
+		size_t i;
+		uint8_t *buffer, *data;
+		size_t header_len;
+		size_t buffer_len;
+		struct lcfs_xattr_header_s *header;
+
+		assert (sizeof (struct lcfs_xattr_header_s) == 2); /* Make sure the 0 element array doesn't count */
+
+		data_length = 0;
+		for (i = 0; i < node->n_xattrs; i++) {
+			struct lcfs_xattr_s *xattr = &node->xattrs[i];
+			data_length += strlen(xattr->key) + xattr->value_len;
+		}
+		header_len = lcfs_xattr_header_size(node->n_xattrs);
+		buffer_len = header_len + data_length;
+		buffer = calloc(1, buffer_len);
+		if (buffer == NULL) {
+			errno = ENOMEM;
+			return -1;
+		}
+		header = (struct lcfs_xattr_header_s *)buffer;
+		header->n_attr = node->n_xattrs;
+
+		data = buffer +  header_len;
+		for (i = 0; i < node->n_xattrs; i++) {
+			struct lcfs_xattr_s *xattr = &node->xattrs[i];
+
+			header->attr[i].key_length = strlen(xattr->key);
+			memcpy(data, xattr->key, strlen(xattr->key));
+			data += strlen(xattr->key);
+
+			header->attr[i].value_length = xattr->value_len;
+			memcpy(data, xattr->value, xattr->value_len);
+			data += xattr->value_len;
+		}
+
+		r = lcfs_append_vdata(ctx, &out, buffer, buffer_len);
+		if (r < 0) {
+			free(buffer);
+			return r;
+		}
+
+		free(buffer);
+
+		node->inode.xattrs = out;
+	}
+
+        if (node->payload) {
+		if ((node->inode.st_mode & S_IFMT) == S_IFLNK) {
+			r = lcfs_append_vdata(ctx, &out, node->payload, strlen(node->payload) + 1);
+			if (r < 0)
+				return r;
+
+			node->inode.u.payload = out;
+		} else if ((node->inode.st_mode & S_IFMT) == S_IFREG) {
+			size_t payload_len = strlen(node->payload);
+			struct lcfs_backing_s *backing;
+
+			if (payload_len > UINT32_MAX) {
+				errno = EINVAL;
+				return -1;
+			}
+
+			backing = calloc(1, lcfs_backing_size(payload_len));
+			if (backing == NULL) {
+				errno = ENOMEM;
+				return -1;
+			}
+			backing->st_size = node->st_size;
+			backing->payload_len = (uint32_t)payload_len;
+			memcpy(&backing->payload[0], node->payload, payload_len);
+
+			r = lcfs_append_vdata(ctx, &out, backing, lcfs_backing_size(payload_len));
+			free(backing);
+			if (r < 0)
+				return r;
+			node->inode.u.backing = out;
+		} else {
+			errno = EINVAL;
+			return -1;
+		}
+	}
+
 	if (node->link_to) {
 		r = dump_inode(ctx, node->link_to);
-		node->data.inode_index = node->link_to->data.inode_index;
+		node->inode_index = node->link_to->inode_index;
 		return r;
 	} else {
 		struct lcfs_inode_s *ino = &(node->inode);
 
-		r = lcfs_append_vdata(ctx, &out, &(node->inode_data),
-				      sizeof(node->inode_data));
-		if (r < 0)
-			return r;
-
-		ino->inode_data_index = out.off;
-
 		r = lcfs_append_vdata_opts(ctx, &out, ino, sizeof(*ino),
-					   node == ctx->root);
+					   node != ctx->root); /* Don't dedup the root inode, it needs to be last */
 		if (r < 0)
 			return r;
 
-		node->data.inode_index = out.off;
+		node->inode_index = out.off;
 
 		node->inode_written = true;
 	}
@@ -205,36 +337,81 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 	return 0;
 }
 
+static int node_get_dtype(struct lcfs_node_s *node)
+{
+	switch ((node->inode.st_mode & S_IFMT)) {
+	case S_IFLNK:
+		return DT_LNK;
+	case S_IFDIR:
+		return DT_DIR;
+	case S_IFREG:
+		return DT_REG;
+	case S_IFBLK:
+		return DT_BLK;
+	case S_IFCHR:
+		return DT_CHR;
+	case S_IFSOCK:
+		return DT_SOCK;
+	case S_IFIFO:
+		return DT_FIFO;
+	default:
+		return DT_UNKNOWN;
+	}
+}
+
 static int dump_dentries(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 {
 	struct lcfs_vdata_s out;
 	size_t i;
-	size_t o;
 	int r;
+	size_t header_len;
+	size_t names_len;
+	struct lcfs_dir_s *dir;
+	char *data;
 
 	if (node->children_size == 0)
 		return dump_inode(ctx, node);
 
+	names_len = 0;
 	for (i = 0; i < node->children_size; i++) {
-		r = dump_dentries(ctx, node->children[i]);
-		if (r < 0)
-			return r;
-	}
-
-	for (i = 0; i < node->children_size; i++) {
-		r = lcfs_append_vdata_no_dedup(ctx, &out,
-					       &(node->children[i]->data),
-					       sizeof(struct lcfs_dentry_s));
+		struct lcfs_node_s *child = node->children[i];
+		r = dump_dentries(ctx, child);
 		if (r < 0)
 			return r;
 
-		if (i == 0)
-			o = out.off;
+		if (child->name == NULL)
+			return -1; /* Can't have no names */
+		if (strlen(child->name) > UINT16_MAX)
+			return -1; /* Can't fit */
+
+		names_len += strlen(child->name);
 	}
 
-	node->inode.u.dir.off = o;
-	node->inode.u.dir.len =
-		node->children_size * sizeof(struct lcfs_dentry_s);
+	header_len = lcfs_dir_size(node->children_size);
+	dir = calloc(1, header_len + names_len);
+	if (dir == NULL)
+		return -1;
+
+	dir->n_dentries = node->children_size;
+
+	data = (char *)dir + header_len;
+
+	for (i = 0; i < node->children_size; i++) {
+		struct lcfs_node_s *child = node->children[i];
+		dir->dentries[i].inode_index = child->inode_index;
+		dir->dentries[i].name_len = strlen(child->name);
+		dir->dentries[i].d_type = node_get_dtype(child);
+		dir->dentries[i].pad = 0;
+		memcpy(data, child->name, strlen(child->name));
+		data += strlen(child->name);
+	}
+
+	r = lcfs_append_vdata(ctx, &out, dir, header_len + names_len);
+	free(dir);
+	if (r < 0)
+		return r;
+
+	node->inode.u.dir = out;
 
 	return dump_inode(ctx, node);
 }
@@ -253,15 +430,20 @@ static void append_to_next(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 	}
 }
 
-int cmp_nodes(const void *a, const void *b, void *r)
+static int cmp_nodes(const void *a, const void *b)
 {
-	struct lcfs_ctx_s *ctx = r;
 	const struct lcfs_node_s *na = *((const struct lcfs_node_s **)a);
 	const struct lcfs_node_s *nb = *((const struct lcfs_node_s **)b);
-	const char *name_a = ctx->vdata + na->data.name.off;
-	const char *name_b = ctx->vdata + nb->data.name.off;
 
-	return strcmp(name_a, name_b);
+	return strcmp(na->name, nb->name);
+}
+
+static int cmp_xattr(const void *a, const void *b)
+{
+	const struct lcfs_xattr_s *na = a;
+	const struct lcfs_xattr_s *nb = b;
+
+	return strcmp(na->key, nb->key);
 }
 
 static int serialize_children(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
@@ -272,8 +454,9 @@ static int serialize_children(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 	if (node->children_size == 0)
 		return 0;
 
-	qsort_r(node->children, node->children_size, sizeof(node->children[0]),
-		cmp_nodes, ctx);
+	qsort(node->children, node->children_size, sizeof(node->children[0]), cmp_nodes);
+
+	qsort(node->xattrs, node->n_xattrs, sizeof(node->xattrs[0]), cmp_xattr);
 
 	for (i = 0; i < node->children_size; i++)
 		append_to_next(ctx, node->children[i]);
@@ -292,62 +475,68 @@ static int serialize_children(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 	return ret;
 }
 
-int lcfs_write_to(struct lcfs_ctx_s *ctx, FILE *out)
+int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 {
 	struct lcfs_header_s header = {
 		.version = LCFS_VERSION,
 		.unused1 = 0,
 		.unused2 = 0,
 		.inode_len = sizeof(struct lcfs_inode_s),
-		.inode_data_len = sizeof(struct lcfs_inode_data_s),
-		.extend_len = sizeof(struct lcfs_extend_s),
 	};
 	int ret = 0;
+	struct lcfs_ctx_s *ctx;
 
-	if (ctx == NULL)
-		return 0;
+	ctx = lcfs_new_ctx();
+	if (ctx == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
 
 	/* Start with the root node. */
-	ctx->cur = ctx->root;
+	ctx->root = root;
+	ctx->cur = root;
 	ctx->cur->index = 0;
 
 	ret = serialize_children(ctx, ctx->root);
-	if (ret < 0)
+	if (ret < 0) {
+		lcfs_close(ctx);
 		return ret;
+	}
 
 	ret = fwrite(&header, sizeof(header), 1, out);
-	if (ret < 0)
+	if (ret < 0) {
+		lcfs_close(ctx);
 		return ret;
+	}
 
 	ret = dump_dentries(ctx, ctx->root);
-	if (ret < 0)
+	if (ret < 0) {
+		lcfs_close(ctx);
 		return ret;
+	}
 
 	if (ctx->vdata) {
 		ret = fwrite(ctx->vdata, ctx->vdata_len, 1, out);
-		if (ret < 0)
+		if (ret < 0) {
+			lcfs_close(ctx);
 			return ret;
+		}
 	}
 
 	return 0;
 }
 
-int lcfs_close(struct lcfs_ctx_s *ctx)
+static int lcfs_close(struct lcfs_ctx_s *ctx)
 {
 	if (ctx == NULL)
 		return 0;
 
 	hash_free(ctx->ht);
 	free(ctx->vdata);
-	lcfs_free_node(ctx->root);
+	lcfs_node_free(ctx->root);
 	free(ctx);
 
 	return 0;
-}
-
-void lcfs_set_root(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
-{
-	ctx->root = root;
 }
 
 int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
@@ -362,11 +551,9 @@ int lcfs_append_vdata_no_dedup(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 	return lcfs_append_vdata_opts(ctx, out, data, len, false);
 }
 
-static int read_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *ret,
+static int read_xattrs(struct lcfs_node_s *ret,
 		       int dirfd, const char *fname, int flags)
 {
-	size_t buffer_len = 0;
-	char *buffer = NULL;
 	char path[PATH_MAX];
 	ssize_t list_size;
 	char *list, *it;
@@ -397,14 +584,12 @@ static int read_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *ret,
 		value_size = lgetxattr(path, it, NULL, 0);
 		if (value_size < 0) {
 			free(list);
-			free(buffer);
 			return value_size;
 		}
 
 		value = malloc(value_size);
 		if (value == NULL) {
 			free(list);
-			free(buffer);
 			return -1;
 		}
 
@@ -412,16 +597,13 @@ static int read_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *ret,
 		if (r < 0) {
 			free(list);
 			free(value);
-			free(buffer);
 			return r;
 		}
 
-		r = lcfs_append_xattr_to_buffer(ctx, &buffer, &buffer_len, it,
-						len, value, value_size);
+		r = lcfs_node_append_xattr(ret, it, value, value_size);
 		if (r < 0) {
 			free(list);
 			free(value);
-			free(buffer);
 			return r;
 		}
 
@@ -431,19 +613,19 @@ static int read_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *ret,
 
 	free(list);
 
-	r = lcfs_set_xattrs(ctx, ret, buffer, buffer_len);
-
-	free(buffer);
-
 	return r;
 }
 
-struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
+struct lcfs_node_s *lcfs_node_new(void)
+{
+	return calloc(1, sizeof(struct lcfs_node_s));
+}
+
+struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 					     const char *fname,
-					     const char *name, int flags,
+					     int flags,
 					     int buildflags)
 {
-	struct lcfs_vdata_s tmp_vdata;
 	struct lcfs_node_s *ret;
 	struct stat sb;
 	int r;
@@ -462,18 +644,18 @@ struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
 	if (r < 0)
 		return NULL;
 
-	ret = calloc(1, sizeof(*ret));
+	ret = lcfs_node_new();
 	if (ret == NULL)
 		return NULL;
 
-	ret->inode_data.st_nlink = sb.st_nlink;
-	ret->inode_data.st_mode = sb.st_mode;
-	ret->inode_data.st_uid = sb.st_uid;
-	ret->inode_data.st_gid = sb.st_gid;
-	ret->inode_data.st_rdev = sb.st_rdev;
+	ret->inode.st_nlink = sb.st_nlink;
+	ret->inode.st_mode = sb.st_mode;
+	ret->inode.st_uid = sb.st_uid;
+	ret->inode.st_gid = sb.st_gid;
+	ret->inode.st_rdev = sb.st_rdev;
 
 	if ((sb.st_mode & S_IFMT) == S_IFREG) {
-		ret->extend.st_size = sb.st_size;
+		ret->st_size = sb.st_size;
 	}
 
 	if ((buildflags & BUILD_USE_EPOCH) == 0) {
@@ -482,75 +664,166 @@ struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
 	}
 
 	if ((buildflags & BUILD_SKIP_XATTRS) == 0) {
-		r = read_xattrs(ctx, ret, dirfd, fname, flags);
+		r = read_xattrs(ret, dirfd, fname, flags);
 		if (r < 0) {
 			free(ret);
 			return NULL;
 		}
-	}
-
-	if (name[0]) {
-		r = lcfs_append_vdata(ctx, &tmp_vdata, name, strlen(name) + 1);
-		if (r < 0) {
-			free(ret);
-			return NULL;
-		}
-		ret->data.name = tmp_vdata;
 	}
 
 	return ret;
 }
 
-int lcfs_set_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
-		     const char *payload, size_t len)
+int lcfs_node_set_payload(struct lcfs_node_s *node,
+                          const char *payload)
 {
-	struct lcfs_vdata_s tmp_vdata;
-	int r;
-
-	r = lcfs_append_vdata(ctx, &tmp_vdata, payload, len);
-	if (r < 0)
-		return r;
-
-	if ((node->inode_data.st_mode & S_IFMT) == S_IFLNK) {
-		node->inode.u.payload = tmp_vdata;
-	} else if ((node->inode_data.st_mode & S_IFMT) == S_IFREG) {
-		node->extend.src_offset = 0;
-		node->extend.payload = tmp_vdata;
-
-		r = lcfs_append_vdata(ctx, &tmp_vdata, &(node->extend),
-				      sizeof(node->extend));
-		if (r < 0)
-			return r;
-		node->inode.u.extends = tmp_vdata;
-	} else {
-		errno = EINVAL;
+	node->payload = strdup(payload);
+	if (node->payload == NULL) {
+		errno = ENOMEM;
 		return -1;
 	}
 
 	return 0;
 }
 
-int lcfs_set_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
-		    const char *xattrs, size_t len)
+const char *lcfs_node_get_name(struct lcfs_node_s *node)
 {
-	struct lcfs_vdata_s tmp_vdata;
-	int r;
-
-	r = lcfs_append_vdata(ctx, &tmp_vdata, xattrs, len);
-	if (r < 0)
-		return r;
-
-	node->inode.xattrs = tmp_vdata;
-	return 0;
+	return node->name;
 }
 
-int lcfs_add_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *parent,
-		   struct lcfs_node_s *child)
+size_t lcfs_node_get_n_children(struct lcfs_node_s *node)
+{
+	return node->children_size;
+}
+
+struct lcfs_node_s * lcfs_node_get_child(struct lcfs_node_s *node, size_t i)
+{
+	if (i < node->children_size)
+		return node->children[i];
+	return NULL;
+}
+
+
+uint32_t lcfs_node_get_mode(struct lcfs_node_s *node)
+{
+	return node->inode.st_mode;
+}
+
+void lcfs_node_set_mode(struct lcfs_node_s *node,
+			uint32_t mode)
+{
+	node->inode.st_mode = mode;
+}
+
+uint32_t lcfs_node_get_uid(struct lcfs_node_s *node)
+{
+	return node->inode.st_uid;
+}
+
+void lcfs_node_set_uid(struct lcfs_node_s *node,
+                       uint32_t uid)
+{
+	node->inode.st_uid = uid;
+}
+
+uint32_t lcfs_node_get_gid(struct lcfs_node_s *node)
+{
+	return node->inode.st_gid;
+}
+
+void lcfs_node_set_gid(struct lcfs_node_s *node,
+                      uint32_t gid)
+{
+	node->inode.st_gid = gid;
+}
+
+uint32_t lcfs_node_get_rdev(struct lcfs_node_s *node)
+{
+	return node->inode.st_rdev;
+}
+
+void lcfs_node_set_rdev(struct lcfs_node_s *node,
+                       uint32_t rdev)
+{
+	node->inode.st_rdev = rdev;
+}
+
+uint32_t lcfs_node_get_nlink(struct lcfs_node_s *node)
+{
+	return node->inode.st_nlink;
+}
+
+void lcfs_node_set_nlink(struct lcfs_node_s *node,
+			 uint32_t nlink)
+{
+	node->inode.st_nlink = nlink;
+}
+
+uint64_t lcfs_node_get_size(struct lcfs_node_s *node)
+{
+	return node->st_size;
+}
+
+void lcfs_node_set_size(struct lcfs_node_s *node,
+			 uint64_t size)
+{
+	node->st_size = size;
+}
+
+struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node,
+					   const char *name)
+{
+	size_t i;
+
+	for (i = 0; i < node->children_size; ++i) {
+		struct lcfs_node_s *child = node->children[i];
+
+		if (child->name && strcmp(child->name, name) == 0)
+			return child;
+	}
+
+	return NULL;
+}
+
+struct lcfs_node_s *lcfs_node_get_parent(struct lcfs_node_s *node)
+{
+	return node->parent;
+}
+
+void lcfs_node_make_hardlink(struct lcfs_node_s *node,
+			     struct lcfs_node_s *target)
+{
+	node->link_to = target;
+	target->inode.st_nlink++;
+}
+
+int lcfs_node_add_child(struct lcfs_node_s *parent,
+                        struct lcfs_node_s *child,
+			const char *name)
 {
 	struct lcfs_node_s **new_children;
 	size_t new_size;
-	if ((parent->inode_data.st_mode & S_IFMT) != S_IFDIR) {
+	char *name_copy;
+
+	if ((parent->inode.st_mode & S_IFMT) != S_IFDIR) {
 		errno = ENOTDIR;
+		return -1;
+	}
+
+	/* Each node can only be added once */
+	if (child->name != NULL) {
+		errno = EMLINK;
+		return -1;
+	}
+
+	if (lcfs_node_lookup_child(parent, name) != NULL) {
+		errno = EEXIST;
+		return -1;
+	}
+
+	name_copy = strdup(name);
+	if (name_copy == NULL) {
+		errno = ENOMEM;
 		return -1;
 	}
 
@@ -558,37 +831,47 @@ int lcfs_add_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *parent,
 
 	new_children = reallocarray(parent->children, sizeof(*parent->children),
 				    new_size);
-	if (new_children == NULL)
+	if (new_children == NULL) {
+		errno = ENOMEM;
+		free(name_copy);
 		return -1;
+	}
 
 	parent->children = new_children;
 
 	parent->children[parent->children_size] = child;
 	parent->children_size = new_size;
 	child->parent = parent;
+	child->name = name_copy;
 
 	return 0;
 }
 
-int lcfs_free_node(struct lcfs_node_s *node)
+void lcfs_node_free(struct lcfs_node_s *node)
 {
 	size_t i;
 
 	for (i = 0; i < node->children_size; i++)
-		lcfs_free_node(node->children[i]);
+		lcfs_node_free(node->children[i]);
 	free(node->children);
-	free(node);
+	free(node->name);
+	free(node->payload);
 
-	return 0;
+	for (i = 0; i < node->n_xattrs; i++) {
+		free (node->xattrs[i].key);
+		free (node->xattrs[i].value);
+	}
+	free(node->xattrs);
+
+	free(node);
 }
 
 bool lcfs_node_dirp(struct lcfs_node_s *node)
 {
-	return (node->inode_data.st_mode & S_IFMT) == S_IFDIR;
+	return (node->inode.st_mode & S_IFMT) == S_IFDIR;
 }
 
-struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
-			       struct lcfs_node_s *parent, int fd,
+struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int fd,
 			       const char *fname, const char *name,
 			       int flags,
 			       int buildflags)
@@ -598,7 +881,7 @@ struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 	DIR *dir;
 	int dfd;
 
-	node = lcfs_load_node_from_file(ctx, fd, fname, name, flags,
+	node = lcfs_load_node_from_file(fd, fname, flags,
 					buildflags);
 	if (node == NULL) {
 		close(fd);
@@ -613,7 +896,7 @@ struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 	dir = fdopendir(fd);
 	if (dir == NULL) {
 		close(fd);
-		lcfs_free_node(node);
+		lcfs_node_free(node);
 		return NULL;
 	}
 
@@ -636,13 +919,13 @@ struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 			continue;
 
 		if (de->d_type == DT_DIR) {
-			int fd;
+			int subdir_fd;
 
-			fd = openat(dfd, de->d_name, O_RDONLY | O_NOFOLLOW);
-			if (fd < 0)
+			subdir_fd = openat(dfd, de->d_name, O_RDONLY | O_NOFOLLOW);
+			if (subdir_fd < 0)
 				goto fail;
 
-			n = lcfs_build(ctx, node, fd, "", de->d_name,
+			n = lcfs_build(node, subdir_fd, "", de->d_name,
 				       AT_EMPTY_PATH, buildflags);
 			if (n == NULL)
 				goto fail;
@@ -653,14 +936,13 @@ struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 					continue;
 			}
 
-			n = lcfs_load_node_from_file(ctx, dfd, de->d_name,
-						     de->d_name, 0,
-						     buildflags);
+			n = lcfs_load_node_from_file(dfd, de->d_name,
+						     0, buildflags);
 			if (n == NULL)
 				goto fail;
 		}
 
-		r = lcfs_add_child(ctx, node, n);
+		r = lcfs_node_add_child(node, n, de->d_name);
 		if (r < 0)
 			goto fail;
 	}
@@ -669,41 +951,38 @@ struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
 	return node;
 
 fail:
-	lcfs_free_node(node);
+	lcfs_node_free(node);
 	closedir(dir);
 	return NULL;
 }
 
-int lcfs_get_vdata(struct lcfs_ctx_s *ctx, char **vdata, size_t *len)
+int lcfs_node_append_xattr(struct lcfs_node_s *node,
+			   const char *key,
+			   const char *value, size_t value_len)
 {
-	*vdata = ctx->vdata;
-	*len = ctx->vdata_len;
-	return 0;
-}
+	struct lcfs_xattr_s *xattrs;
+	char *k, *v;
 
-int lcfs_append_xattr_to_buffer(struct lcfs_ctx_s *ctx, char **buffer,
-				size_t *len, const char *key, size_t key_len,
-				const char *value, size_t value_len)
-{
-	struct lcfs_xattr_header_s header;
-	char *tmp;
-	int r;
-
-	r = lcfs_append_vdata(ctx, &(header.key), key, key_len);
-	if (r < 0)
-		return r;
-
-	r = lcfs_append_vdata(ctx, &(header.value), value, value_len);
-	if (r < 0)
-		return r;
-
-	tmp = realloc(*buffer, *len + sizeof(struct lcfs_xattr_header_s));
-	if (tmp == NULL)
+	xattrs = realloc(node->xattrs, (node->n_xattrs + 1) * sizeof(struct lcfs_xattr_s));
+	if (xattrs == NULL) {
+		errno = ENOMEM;
 		return -1;
+	}
+	node->xattrs = xattrs;
 
-	*buffer = tmp;
-	memcpy(*buffer + *len, &header, sizeof(header));
-	*len = *len + sizeof(struct lcfs_xattr_header_s);
+	k = strdup (key);
+	v = memdup (value, value_len);
+	if (k == NULL || v == NULL) {
+		free(k);
+		free(v);
+		errno = ENOMEM;
+		return -1;
+	}
+
+	xattrs[node->n_xattrs].key = k;
+	xattrs[node->n_xattrs].value = v;
+	xattrs[node->n_xattrs].value_len = value_len;
+	node->n_xattrs++;
 
 	return 0;
 }

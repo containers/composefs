@@ -26,79 +26,61 @@
 
 #include "lcfs.h"
 
-struct lcfs_ctx_s;
-
-/* In memory representation used to build the file.  */
-
-struct lcfs_node_s {
-	struct lcfs_node_s *next;
-
-	struct lcfs_node_s *parent;
-
-	struct lcfs_node_s **children;
-	size_t children_size;
-
-	/* Used to create hard links.  */
-	struct lcfs_node_s *link_to;
-
-	size_t index;
-
-	bool inode_written;
-
-	struct lcfs_dentry_s data;
-	struct lcfs_inode_s inode;
-	struct lcfs_inode_data_s inode_data;
-
-	struct lcfs_extend_s extend;
-};
-
 enum {
 	BUILD_SKIP_XATTRS = (1 << 0),
 	BUILD_USE_EPOCH = (1 << 1),
 	BUILD_SKIP_DEVICES = (1 << 2),
 };
 
-bool lcfs_node_dirp(struct lcfs_node_s *node);
-
-struct lcfs_ctx_s *lcfs_new_ctx();
-int lcfs_close(struct lcfs_ctx_s *ctx);
-
-struct lcfs_node_s *lcfs_load_node_from_file(struct lcfs_ctx_s *ctx, int dirfd,
+struct lcfs_node_s *lcfs_node_new(void);
+void lcfs_node_free(struct lcfs_node_s *node);
+struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 					     const char *fname,
-					     const char *name, int flags,
+					     int flags,
 					     int buildflags);
-int lcfs_add_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *parent,
-		   struct lcfs_node_s *child);
+int lcfs_node_append_xattr(struct lcfs_node_s *node,
+			   const char *key,
+			   const char *value, size_t value_len);
+int lcfs_node_set_payload(struct lcfs_node_s *node,
+			  const char *payload);
 
-int lcfs_free_node(struct lcfs_node_s *node);
+struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node,
+					   const char *name);
+struct lcfs_node_s *lcfs_node_get_parent(struct lcfs_node_s *node);
+int lcfs_node_add_child(struct lcfs_node_s *parent,
+			struct lcfs_node_s *child,
+			const char *name);
+const char *lcfs_node_get_name(struct lcfs_node_s *node);
+size_t lcfs_node_get_n_children(struct lcfs_node_s *node);
+struct lcfs_node_s * lcfs_node_get_child(struct lcfs_node_s *node, size_t i);
+void lcfs_node_make_hardlink(struct lcfs_node_s *node,
+			     struct lcfs_node_s *target);
 
-int lcfs_set_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
-		     const char *payload, size_t len);
+bool lcfs_node_dirp(struct lcfs_node_s *node);
+uint32_t lcfs_node_get_mode(struct lcfs_node_s *node);
+void lcfs_node_set_mode(struct lcfs_node_s *node,
+			uint32_t mode);
+uint32_t lcfs_node_get_uid(struct lcfs_node_s *node);
+void lcfs_node_set_uid(struct lcfs_node_s *node,
+		       uint32_t uid);
+uint32_t lcfs_node_get_gid(struct lcfs_node_s *node);
+void lcfs_node_set_gid(struct lcfs_node_s *node,
+		       uint32_t gid);
+uint32_t lcfs_node_get_rdev(struct lcfs_node_s *node);
+void lcfs_node_set_rdev(struct lcfs_node_s *node,
+			uint32_t rdev);
+uint32_t lcfs_node_get_nlink(struct lcfs_node_s *node);
+void lcfs_node_set_nlink(struct lcfs_node_s *node,
+			 uint32_t nlink);
+uint64_t lcfs_node_get_size(struct lcfs_node_s *node);
+void lcfs_node_set_size(struct lcfs_node_s *node,
+			uint64_t size);
 
-int lcfs_set_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
-		    const char *xattrs, size_t len);
-
-void lcfs_set_root(struct lcfs_ctx_s *ctx, struct lcfs_node_s *parent);
-
-int lcfs_write_to(struct lcfs_ctx_s *ctx, FILE *out);
-
-struct lcfs_node_s *lcfs_build(struct lcfs_ctx_s *ctx,
-			       struct lcfs_node_s *parent, int fd,
+struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int fd,
 			       const char *fname, const char *name, int flags,
 			       int buildflags);
 
-int lcfs_write_to(struct lcfs_ctx_s *ctx, FILE *out);
+int lcfs_write_to(struct lcfs_node_s *root, FILE *out);
 
-int lcfs_get_vdata(struct lcfs_ctx_s *ctx, char **vdata, size_t *len);
-
-int lcfs_append_xattr_to_buffer(struct lcfs_ctx_s *ctx, char **buffer,
-				size_t *len, const char *key, size_t key_len,
-				const char *value, size_t value_len);
-
-int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-		      const void *data, size_t len);
-
-int lcfs_append_vdata_no_dedup(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-			       const void *data, size_t len);
 
 #endif

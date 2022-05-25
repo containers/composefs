@@ -42,32 +42,37 @@ struct lcfs_header_s {
 	u16 unused2;
 
 	u32 inode_len;
-	u32 inode_data_len;
-	u32 extend_len;
 
 	u64 unused3[3];
 } __attribute__((packed));
 
-struct lcfs_inode_data_s {
+struct lcfs_backing_s {
+	/* Total size of the backing file in bytes.  */
+	u64 st_size;
+
+	/* Source file.  */
+	u32 payload_len;
+	char payload[];
+} __attribute__((packed));
+
+#define lcfs_backing_size(_payload_len) (sizeof(struct lcfs_backing_s) + (_payload_len))
+
+/* Same as lcfs_backing_s, but with PATH_MAX elements */
+struct lcfs_backing_buf_s {
+	/* Total size of the backing file in bytes.  */
+	u64 st_size;
+
+	/* Source file.  */
+	u32 payload_len;
+	char payload[PATH_MAX];
+} __attribute__((packed));
+
+struct lcfs_inode_s {
 	u32 st_mode; /* File type and mode.  */
 	u32 st_nlink; /* Number of hard links.  */
 	u32 st_uid; /* User ID of owner.  */
 	u32 st_gid; /* Group ID of owner.  */
 	u32 st_rdev; /* Device ID (if special file).  */
-} __attribute__((packed));
-
-struct lcfs_extend_s {
-	/* Total size of this extend in bytes.  */
-	u64 st_size;
-
-	/* Source file.  */
-	u64 src_offset;
-	struct lcfs_vdata_s payload;
-} __attribute__((packed));
-
-struct lcfs_inode_s {
-	/* Index of struct lcfs_inode_data_s. */
-	lcfs_off_t inode_data_index;
 
 	struct timespec64 st_mtim; /* Time of last modification.  */
 	struct timespec64 st_ctim; /* Time of last status change.  */
@@ -82,23 +87,38 @@ struct lcfs_inode_s {
 		/* Payload used for symlinks.  */
 		struct lcfs_vdata_s payload;
 
-		/* Payload used for symlinks.  */
-		struct lcfs_vdata_s extends;
+		/* Payload used for regular files.  */
+		struct lcfs_vdata_s backing;
 	} u;
 } __attribute__((packed));
 
 struct lcfs_dentry_s {
 	/* Index of struct lcfs_inode_s */
 	lcfs_off_t inode_index;
-
-	/* Variable len data.  */
-	struct lcfs_vdata_s name;
+	uint16_t name_len;
+	uint8_t d_type;
+	uint8_t pad;
 } __attribute__((packed));
+
+struct lcfs_dir_s {
+	/* Index of struct lcfs_inode_s */
+	u32 n_dentries;
+	struct lcfs_dentry_s dentries[];
+} __attribute__((packed));
+
+#define lcfs_dir_size(_n_dentries) (sizeof(struct lcfs_dir_s) + (_n_dentries)*sizeof(struct lcfs_dentry_s))
 
 /* xattr representation.  */
-struct lcfs_xattr_header_s {
-	struct lcfs_vdata_s key;
-	struct lcfs_vdata_s value;
+struct lcfs_xattr_element_s {
+	uint16_t key_length;
+	uint16_t value_length;
 } __attribute__((packed));
+
+struct lcfs_xattr_header_s {
+	uint16_t n_attr;
+	struct lcfs_xattr_element_s attr[0];
+} __attribute__((packed));
+
+#define lcfs_xattr_header_size(_n_element) (sizeof(struct lcfs_xattr_header_s) + (_n_element)*sizeof(struct lcfs_xattr_element_s))
 
 #endif

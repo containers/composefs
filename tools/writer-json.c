@@ -31,6 +31,7 @@
 #include <sys/types.h>
 #include <sys/sysmacros.h>
 #include <yajl/yajl_tree.h>
+#include <getopt.h>
 
 /* Adapted from mailutils 0.6.91(distributed under LGPL 2.0+)  */
 static int b64_input(char c)
@@ -113,78 +114,34 @@ static yajl_val get_child(yajl_val node, const char *name, int type)
 	return yajl_tree_get(node, path, type);
 }
 
-static inline const char *get_fname(struct lcfs_ctx_s *ctx,
-				    const struct lcfs_dentry_s *d)
-{
-	char *out = NULL;
-	size_t len;
-
-	if (d->name.len == 0)
-		return "";
-
-	if (lcfs_get_vdata(ctx, &out, &len) < 0)
-		return NULL;
-
-	return out + d->name.off;
-}
-
-static struct lcfs_node_s *get_node_child(struct lcfs_ctx_s *ctx,
-					  struct lcfs_node_s *root,
-					  const char *name)
-{
-	size_t i;
-
-	for (i = 0; i < root->children_size; ++i) {
-		const char *v;
-
-		v = get_fname(ctx, &(root->children[i]->data));
-		if (v && strcmp(v, name) == 0)
-			return root->children[i];
-	}
-	return NULL;
-}
-
 static struct lcfs_node_s *
-append_child(struct lcfs_ctx_s *ctx, struct lcfs_node_s *dir, const char *name)
+append_child(struct lcfs_node_s *dir, const char *name)
 {
-	struct lcfs_node_s **tmp;
 	struct lcfs_node_s *child;
-	struct lcfs_vdata_s out;
+	struct lcfs_node_s *parent;
 
-	if (lcfs_append_vdata(ctx, &out, name, strlen(name) + 1) < 0)
-		return NULL;
+	for (parent = dir; parent != NULL; parent = lcfs_node_get_parent (parent)) {
+		if (lcfs_node_get_mode(parent) == 0) {
+			lcfs_node_set_mode(parent, 0755 | S_IFDIR);
+		}
+	}
 
-	tmp = realloc(dir->children,
-		      sizeof(struct lcfs_node_s) * (dir->children_size + 1));
-	if (tmp == NULL)
-		return NULL;
-	dir->children = tmp;
-
-	child = calloc(1, sizeof(*child));
+	child = lcfs_node_new();
 	if (child == NULL)
 		return NULL;
 
-	child->data.name = out;
-
-	dir->children[dir->children_size++] = child;
-	child->parent = dir;
-
-	while (dir) {
-		if (dir->inode_data.st_mode == 0) {
-			dir->inode_data.st_mode = 0755 | S_IFDIR;
-		}
-		dir = dir->parent;
+	if (lcfs_node_add_child(dir, child, name) < 0) {
+		lcfs_node_free(child);
+		return NULL;
 	}
 
 	return child;
 }
 
 static struct lcfs_node_s *
-fill_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, yajl_val xattrs)
+fill_xattrs(struct lcfs_node_s *node, yajl_val xattrs)
 {
 	size_t i;
-	size_t buffer_len = 0;
-	char *buffer = NULL;
 	char v_buffer[4096];
 
 	if (!YAJL_IS_OBJECT(xattrs))
@@ -196,8 +153,7 @@ fill_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, yajl_val xattrs)
 		const char *v, *k = YAJL_GET_OBJECT(xattrs)->keys[i];
 
 		if (!YAJL_IS_STRING(YAJL_GET_OBJECT(xattrs)->values[i])) {
-			free(node);
-			free(buffer);
+			lcfs_node_free(node);
 			error(0, 0, "xattr value is not a string");
 			return NULL;
 		}
@@ -207,34 +163,23 @@ fill_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, yajl_val xattrs)
 		r = base64_decode(v, strlen(v), v_buffer, sizeof(v_buffer),
 				  &written);
 		if (r < 0) {
-			free(node);
-			free(buffer);
+			lcfs_node_free(node);
 			error(0, 0, "xattr value is not valid b64");
 			return NULL;
 		}
 
-		r = lcfs_append_xattr_to_buffer(ctx, &buffer, &buffer_len, k,
-						strlen(k), v_buffer, written);
+		r = lcfs_node_append_xattr(node, k, v_buffer, written);
 		if (r < 0) {
-			free(node);
-			free(buffer);
+			lcfs_node_free(node);
 			error(0, 0, "append xattr");
 			return NULL;
 		}
 	}
 
-	if (lcfs_set_xattrs(ctx, node, buffer, buffer_len) < 0) {
-		free(node);
-		free(buffer);
-		error(0, 0, "set xattrs");
-		return NULL;
-	}
-	free(buffer);
 	return node;
 }
 
-static struct lcfs_node_s *get_node(struct lcfs_ctx_s *ctx,
-				    struct lcfs_node_s *root, const char *what)
+static struct lcfs_node_s *get_node(struct lcfs_node_s *root, const char *what)
 {
 	char *path, *dpath, *it;
 	struct lcfs_node_s *node = root;
@@ -247,7 +192,7 @@ static struct lcfs_node_s *get_node(struct lcfs_ctx_s *ctx,
 	while ((it = strsep(&dpath, "/"))) {
 		if (node == root && strcmp(it, "..") == 0)
 			continue;
-		node = get_node_child(ctx, node, it);
+		node = lcfs_node_lookup_child(node, it);
 		if (!node)
 			break;
 	}
@@ -256,17 +201,16 @@ static struct lcfs_node_s *get_node(struct lcfs_ctx_s *ctx,
 	return node;
 }
 
-static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
+static struct lcfs_node_s *fill_file(const char *typ,
 				     struct lcfs_node_s *root,
 				     struct lcfs_node_s *node, yajl_val entry)
 {
 	const char *payload = NULL;
 	char payload_buffer[128];
-	uint16_t min, maj;
+	uint16_t min = 0, maj = 0;
 	mode_t mode = 0;
 	yajl_val v;
 	bool is_regular_file = false;
-	bool is_hardlink = false;
 
 	if (node == NULL) {
 		error(0, 0, "node is NULL");
@@ -290,7 +234,7 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 		v = get_child(entry, "linkName", yajl_t_string);
 		if (!v) {
 			error(0, 0, "linkName not specified");
-			free(node);
+			lcfs_node_free(node);
 			return NULL;
 		}
 
@@ -303,45 +247,39 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 		v = get_child(entry, "linkName", yajl_t_string);
 		if (!v) {
 			error(0, 0, "linkName not specified");
-			free(node);
+			lcfs_node_free(node);
 			return NULL;
 		}
 
-		target = get_node(ctx, root, YAJL_GET_STRING(v));
+		target = get_node(root, YAJL_GET_STRING(v));
 		if (!target) {
  			error(0, 0, "could not find target %s",
 			      YAJL_GET_STRING(v));
-			free(node);
+			lcfs_node_free(node);
 			return NULL;
 		}
 
-		is_hardlink = true;
-
-		node->link_to = target;
-		target->inode_data.st_nlink++;
+		lcfs_node_make_hardlink(node, target);
 	}
-
-	if (!is_hardlink)
-		node->inode_data.st_nlink = 1;
 
 	v = get_child(entry, "mode", yajl_t_number);
 	if (v)
 		mode |= (YAJL_GET_INTEGER(v));
 
-	node->inode_data.st_mode = mode;
+	lcfs_node_set_mode(node, mode);
 
 	v = get_child(entry, "uid", yajl_t_number);
 	if (v)
-		node->inode_data.st_uid = YAJL_GET_INTEGER(v);
+		lcfs_node_set_uid(node, YAJL_GET_INTEGER(v));
 
 	v = get_child(entry, "gid", yajl_t_number);
 	if (v)
-		node->inode_data.st_uid = YAJL_GET_INTEGER(v);
+		lcfs_node_set_gid(node, YAJL_GET_INTEGER(v));
 
 	if ((mode & S_IFMT) != S_IFDIR) {
 		v = get_child(entry, "size", yajl_t_number);
 		if (v)
-			node->extend.st_size = YAJL_GET_INTEGER(v);
+			lcfs_node_set_size(node, YAJL_GET_INTEGER(v));
 	}
 
 	v = get_child(entry, "devMinor", yajl_t_number);
@@ -351,7 +289,7 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 	if (v)
 		maj = YAJL_GET_INTEGER(v);
 
-	node->inode_data.st_rdev = makedev(maj, min);
+	lcfs_node_set_rdev(node, makedev(maj, min));
 
 	/* custom extension to the CRFS format.  */
 	v = get_child(entry, "x-payload", yajl_t_string);
@@ -374,41 +312,23 @@ static struct lcfs_node_s *fill_file(struct lcfs_ctx_s *ctx, const char *typ,
 
 	if (payload) {
 		int r;
-		struct lcfs_vdata_s out;
 
-		r = lcfs_append_vdata(ctx, &out, payload, strlen(payload) + 1);
+		r = lcfs_node_set_payload(node, payload);
 		if (r < 0) {
-			free(node);
-			error(0, 0, "append vdata");
+			lcfs_node_free(node);
+			error(0, 0, "set_payload");
 			return NULL;
-		}
-
-		if (is_regular_file) {
-			node->extend.src_offset = 0;
-			node->extend.payload = out;
-
-			r = lcfs_append_vdata(ctx, &out, &(node->extend),
-					      sizeof (node->extend));
-			if (r < 0) {
-				free(node);
-				error(0, 0, "append vdata");
-				return NULL;
-			}
-			node->inode.u.extends = out;
-		} else {
-			node->inode.u.payload = out;
 		}
 	}
 
 	v = get_child(entry, "xattrs", yajl_t_object);
 	if (v)
-		return fill_xattrs(ctx, node, v);
+		return fill_xattrs(node, v);
 
 	return node;
 }
 
-static struct lcfs_node_s *get_or_add_node(struct lcfs_ctx_s *ctx,
-					   const char *typ,
+static struct lcfs_node_s *get_or_add_node(const char *typ,
 					   struct lcfs_node_s *root,
 					   yajl_val entry)
 {
@@ -436,13 +356,13 @@ static struct lcfs_node_s *get_or_add_node(struct lcfs_ctx_s *ctx,
 	while ((it = strsep(&dpath, "/"))) {
 		struct lcfs_node_s *c;
 
-		c = get_node_child(ctx, node, it);
+		c = lcfs_node_lookup_child(node, it);
 		if (c) {
 			node = c;
 			continue;
 		}
 
-		node = append_child(ctx, node, it);
+		node = append_child(node, it);
 		if (node == NULL) {
 			error(0, errno, "append_child");
 			return NULL;
@@ -450,10 +370,10 @@ static struct lcfs_node_s *get_or_add_node(struct lcfs_ctx_s *ctx,
 	}
 
 	free(path);
-	return fill_file(ctx, typ, root, node, entry);
+	return fill_file(typ, root, node, entry);
 }
 
-static void do_file(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root, FILE *file)
+static void do_file(struct lcfs_node_s *root, FILE *file)
 {
 	yajl_val entries, root_val, tmp;
 	size_t i;
@@ -484,7 +404,7 @@ static void do_file(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root, FILE *file
 		if (typ == NULL || (strcmp(typ, "chunk") == 0))
 			continue;
 
-		n = get_or_add_node(ctx, typ, root, entry);
+		n = get_or_add_node(typ, root, entry);
 		if (n == NULL)
 			error(EXIT_FAILURE, 0, "get_or_add_node");
 	}
@@ -492,42 +412,78 @@ static void do_file(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root, FILE *file
 	yajl_tree_free(root_val);
 }
 
+#define OPT_OUT 100
+
+static void usage(const char *argv0)
+{
+	fprintf(stderr,
+		"usage: %s [--out=filedname] jsonfile...\n",
+		argv0);
+}
+
 int main(int argc, char **argv)
 {
+	const struct option longopts[] = {
+		{
+			name: "out",
+			has_arg: required_argument,
+			flag: NULL,
+			val: OPT_OUT
+		},
+		{},
+	};
 	struct lcfs_node_s *root;
-	struct lcfs_ctx_s *ctx;
 	char cwd[PATH_MAX];
 	size_t i;
+	int opt;
+	const char *out = NULL;
+	FILE *out_file;
 
-	if (isatty(1))
-		error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
+	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
+		switch (opt) {
+		case OPT_OUT:
+			out = optarg;
+			break;
+		case ':':
+			fprintf(stderr, "option needs a value\n");
+			exit(EXIT_FAILURE);
+		default:
+			usage(argv[0]);
+			exit(1);
+		}
+	}
 
-	ctx = lcfs_new_ctx();
-	if (ctx == NULL)
-		error(EXIT_FAILURE, errno, "new_ctx");
+	argv += optind;
+	argc -= optind;
 
-	root = malloc(sizeof(struct lcfs_node_s));
+	if (out != NULL) {
+		out_file = fopen(out, "w");
+		if (out_file == NULL)
+			error(EXIT_FAILURE, errno, "Failed to open output file");
+	} else {
+		if (isatty(1))
+			error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
+		out_file = stdout;
+	}
+
+	root = lcfs_node_new();
 	if (root == NULL)
 		error(EXIT_FAILURE, errno, "malloc");
-	memset(root, 0, sizeof(*root));
 
-	for (i = 1; i < argc; i++) {
+	for (i = 0; i < argc; i++) {
 		FILE *f;
 
 		f = fopen(argv[i], "r");
 		if (f == NULL)
 			error(EXIT_FAILURE, errno, "open `%s`", argv[i]);
-		do_file(ctx, root, f);
+		do_file(root, f);
 		fclose(f);
 	}
 
-	lcfs_set_root(ctx, root);
-
 	getcwd(cwd, sizeof(cwd));
 
-	if (lcfs_write_to(ctx, stdout) < 0)
+	if (lcfs_write_to(root, out_file) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
 
-	lcfs_close(ctx);
 	return 0;
 }

@@ -30,52 +30,48 @@
 #include <sys/types.h>
 #include <getopt.h>
 
-static int fill_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
+static int fill_payload(struct lcfs_node_s *node,
 			char *path, size_t len)
 {
 	size_t old_len = len;
-	size_t vdata_len;
-	char *vdata;
-	char *fname;
+	const char *fname;
 	int ret;
 
-	ret = lcfs_get_vdata(ctx, &vdata, &vdata_len);
-	if (ret < 0)
-		return ret;
+        fname = lcfs_node_get_name(node);
 
-	if (node->data.name.len == 0)
-		fname = "";
-	else
-		fname = vdata + node->data.name.off;
-
-	if (fname[0]) {
-		ret = sprintf(path + len, "/%s", fname);
+	if (fname) {
+		if (len == 0)
+			ret = sprintf(path + len, "%s", fname);
+		else
+			ret = sprintf(path + len, "/%s", fname);
 		if (ret < 0)
 			return ret;
 		len += ret;
 	}
 
 	if (lcfs_node_dirp(node)) {
-		size_t i;
+		size_t i, n_children;
 
-		for (i = 0; i < node->children_size; i++) {
-			ret = fill_payload(ctx, node->children[i], path, len);
+		n_children = lcfs_node_get_n_children(node);
+		for (i = 0; i < n_children; i++) {
+			struct lcfs_node_s *child = lcfs_node_get_child(node, i);
+			ret = fill_payload(child, path, len);
 			if (ret < 0)
 				return ret;
 			path[len] = '\0';
 		}
-	} else if ((node->inode_data.st_mode & S_IFMT) == S_IFLNK) {
+	} else if ((lcfs_node_get_mode(node) & S_IFMT) == S_IFLNK) {
 		char target[PATH_MAX + 1];
 		ssize_t s = readlink(path, target, sizeof(target));
 		if (s < 0)
 			return ret;
 
 		target[s] = '\0';
-		ret = lcfs_set_payload(ctx, node, target, s + 1);
+		ret = lcfs_node_set_payload(node, target);
 		if (ret < 0)
 			return ret;
-	} else if ((node->inode_data.st_mode & S_IFMT) == S_IFREG) {
-		ret = lcfs_set_payload(ctx, node, path, len + 1);
+	} else if ((lcfs_node_get_mode(node) & S_IFMT) == S_IFREG) {
+		ret = lcfs_node_set_payload(node, path);
 		if (ret < 0)
 			return ret;
 	}
@@ -87,7 +83,7 @@ static int fill_payload(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage: %s [--chdir=/dir] [--use-epoch] [--skip-xattrs] [--relative] [--skip-devices]\n",
+		"usage: %s [--chdir=/dir] [--use-epoch] [--skip-xattrs] [--relative] [--skip-devices] [--out=filedname]\n",
 		argv0);
 }
 
@@ -96,6 +92,7 @@ static void usage(const char *argv0)
 #define OPT_SKIP_XATTRS 102
 #define OPT_USE_EPOCH 103
 #define OPT_SKIP_DEVICES 104
+#define OPT_OUT 105
 
 int main(int argc, char **argv)
 {
@@ -130,15 +127,23 @@ int main(int argc, char **argv)
 			flag: NULL,
 			val: OPT_CHDIR
 		},
+		{
+			name: "out",
+			has_arg: required_argument,
+			flag: NULL,
+			val: OPT_OUT
+		},
 		{},
 	};
 	int buildflags = 0;
 	bool relative_path = false;
-	struct lcfs_node_s *node;
-	struct lcfs_ctx_s *ctx;
+	struct lcfs_node_s *root;
+	const char *out = NULL;
+	const char *chdir_path = NULL;
 	char cwd[PATH_MAX];
 	int opt;
 	int fd;
+	FILE *out_file;
 
 	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
 		switch (opt) {
@@ -155,8 +160,10 @@ int main(int argc, char **argv)
 			relative_path = true;
 			break;
 		case OPT_CHDIR:
-			if (chdir(optarg) < 0)
-				error(EXIT_FAILURE, errno, "chdir");
+			chdir_path = optarg;
+			break;
+		case OPT_OUT:
+			out = optarg;
 			break;
 		case ':':
 			fprintf(stderr, "option needs a value\n");
@@ -167,36 +174,40 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (isatty(1))
-		error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
+	if (out != NULL) {
+		out_file = fopen(out, "w");
+		if (out_file == NULL)
+			error(EXIT_FAILURE, errno, "Failed to open output file");
+	} else {
+		if (isatty(1))
+			error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
+		out_file = stdout;
+	}
+
+	if (chdir_path &&
+	    chdir(chdir_path) < 0)
+		error(EXIT_FAILURE, errno, "chdir");
 
 	argv += optind;
 	argc -= optind;
-
-	ctx = lcfs_new_ctx();
-	if (ctx == NULL)
-		error(EXIT_FAILURE, errno, "new_ctx");
 
 	fd = open(".", O_RDONLY);
 	if (fd < 0)
 		error(EXIT_FAILURE, errno, "open current directory");
 
-	node = lcfs_build(ctx, NULL, fd, "", "", AT_EMPTY_PATH, buildflags);
-	if (node == NULL)
+	root = lcfs_build(NULL, fd, "", "", AT_EMPTY_PATH, buildflags);
+	if (root == NULL)
 		error(EXIT_FAILURE, errno, "load current directory node");
 
-	lcfs_set_root(ctx, node);
-
 	if (relative_path)
-		strcpy(cwd, ".");
+		strcpy(cwd, "");
 	else
 		getcwd(cwd, sizeof(cwd));
 
-	fill_payload(ctx, node, cwd, strlen(cwd));
+	fill_payload(root, cwd, strlen(cwd));
 
-	if (lcfs_write_to(ctx, stdout) < 0)
+	if (lcfs_write_to(root, out_file) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
 
-	lcfs_close(ctx);
 	return 0;
 }

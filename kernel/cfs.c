@@ -26,6 +26,7 @@
 #include <linux/namei.h>
 #include <linux/mount.h>
 #include <linux/exportfs.h>
+#include <linux/version.h>
 
 #include "lcfs-reader.h"
 
@@ -47,6 +48,19 @@ struct cfs_info {
 	char *base_path;
 	struct file *base;
 };
+
+struct cfs_inode {
+	struct inode vfs_inode; /* must be first for clear in otfs_alloc_inode to work */
+	struct lcfs_inode_s cfs_ino;
+	char *real_path;
+	struct lcfs_xattr_header_s *xattrs;
+	struct lcfs_dir_s *dir;
+};
+
+static inline struct cfs_inode *CFS_I(struct inode *inode)
+{
+	return container_of(inode, struct cfs_inode, vfs_inode);
+}
 
 static struct file empty_file;
 
@@ -71,60 +85,77 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 				    struct lcfs_inode_s *ino,
 				    const struct inode *dir)
 {
-	struct lcfs_inode_data_s ino_data_buf;
-	struct lcfs_inode_data_s *ino_data;
-	struct lcfs_inode_s *ino_copy = NULL;
 	char *target_link = NULL;
+	char *real_path = NULL;
+	struct lcfs_xattr_header_s *xattrs = NULL;
+	loff_t real_size = 0;
+	struct cfs_inode *cino;
 	struct inode *inode;
+	struct lcfs_dir_s *dirdata;
+	int ret;
+	int r;
 
-	ino_data = lcfs_inode_data(ctx, ino, &ino_data_buf);
-	if (IS_ERR(ino_data))
-		return ERR_CAST(ino_data);
-
-	if ((ino_data->st_mode & S_IFMT) == S_IFLNK) {
+	if ((ino->st_mode & S_IFMT) == S_IFLNK) {
 		target_link = lcfs_dup_payload_path(ctx, ino);
 		if (IS_ERR(target_link)) {
-			return ERR_CAST(target_link);
+			ret = PTR_ERR(target_link);
+			target_link = NULL;
+			goto fail;
 		}
 	}
 
-	ino_copy = kmalloc(sizeof(*ino_copy), GFP_KERNEL);
-	if (!ino_copy) {
-		kfree(target_link);
-		return ERR_PTR(-ENOMEM);
+	if ((ino->st_mode & S_IFMT) == S_IFREG) {
+		r = lcfs_get_backing(ctx, ino, &real_size, &real_path);
+		if (r < 0) {
+			ret = r;
+			goto fail;
+		}
 	}
-	memcpy(ino_copy, ino, sizeof(*ino));
+
+	if ((ino->st_mode & S_IFMT) == S_IFDIR) {
+		dirdata = lcfs_get_dir(ctx, ino);
+		if (IS_ERR(dirdata)) {
+			ret = PTR_ERR(dir);
+			dirdata = NULL;
+			goto fail;
+		}
+	}
+
+	xattrs = lcfs_get_xattrs(ctx, ino);
+	if (IS_ERR(xattrs)) {
+		ret = PTR_ERR(xattrs);
+		xattrs = NULL;
+		goto fail;
+	}
 
 	inode = new_inode(sb);
 	if (inode) {
-		int r;
-
-		inode_init_owner(&init_user_ns, inode, dir, ino_data->st_mode);
+		inode_init_owner(&init_user_ns, inode, dir, ino->st_mode);
 		inode->i_mapping->a_ops = &cfs_aops;
 		mapping_set_gfp_mask(inode->i_mapping, GFP_HIGHUSER);
 		mapping_set_unevictable(inode->i_mapping);
 
-		inode->i_private = ino_copy;
+		cino = CFS_I(inode);
+		cino->cfs_ino = *ino;
+		cino->xattrs = xattrs;
+		cino->dir = dirdata;
 
 		inode->i_ino = ino_num;
-		set_nlink(inode, ino_data->st_nlink);
-		inode->i_rdev = ino_data->st_rdev;
-		inode->i_uid = make_kuid(current_user_ns(), ino_data->st_uid);
-		inode->i_gid = make_kgid(current_user_ns(), ino_data->st_gid);
-		inode->i_mode = ino_data->st_mode;
+		set_nlink(inode, ino->st_nlink);
+		inode->i_rdev = ino->st_rdev;
+		inode->i_uid = make_kuid(current_user_ns(), ino->st_uid);
+		inode->i_gid = make_kgid(current_user_ns(), ino->st_gid);
+		inode->i_mode = ino->st_mode;
 		inode->i_atime = ino->st_mtim;
 		inode->i_mtime = ino->st_mtim;
 		inode->i_ctime = ino->st_ctim;
-		switch (ino_data->st_mode & S_IFMT) {
+
+		switch (ino->st_mode & S_IFMT) {
 		case S_IFREG:
 			inode->i_op = &cfs_file_inode_operations;
 			inode->i_fop = &cfs_file_operations;
-			r = lcfs_get_file_size(ctx, ino, &(inode->i_size));
-			if (r < 0) {
-				kfree(target_link);
-				kfree(ino_copy);
-				return ERR_PTR(r);
-			}
+			inode->i_size = real_size;
+			cino->real_path = real_path;
 			break;
 		case S_IFLNK:
 			inode->i_link = target_link;
@@ -139,41 +170,31 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		case S_IFCHR:
 		case S_IFBLK:
 			if (current_user_ns() != &init_user_ns) {
-				kfree(target_link);
-				kfree(ino_copy);
-				return ERR_PTR(-EPERM);
+				ret = -EPERM;
+				goto fail;
 			}
 			fallthrough;
 		default:
 			inode->i_op = &cfs_file_inode_operations;
-			init_special_inode(inode, ino_data->st_mode,
-					   ino_data->st_rdev);
+			init_special_inode(inode, ino->st_mode,
+					   ino->st_rdev);
 			break;
 		}
 	}
 	return inode;
-}
 
-static struct inode *cfs_get_inode_from_dentry_index(struct super_block *sb,
-						     const struct inode *dir,
-						     size_t index)
-{
-	struct cfs_info *fsi = sb->s_fs_info;
-	struct lcfs_inode_s ino_buf;
-	struct lcfs_inode_s *ino;
-	struct lcfs_dentry_s de_buf;
-	struct lcfs_dentry_s *de;
-
-	de = lcfs_get_dentry(fsi->lcfs_ctx, index, &de_buf);
-	if (IS_ERR(de))
-		return ERR_CAST(de);
-
-	ino = lcfs_dentry_inode(fsi->lcfs_ctx, de, &ino_buf);
-	if (IS_ERR(ino))
-		return ERR_CAST(ino);
-
-	return cfs_make_inode(fsi->lcfs_ctx, sb, de->inode_index,
-			      ino, dir);
+ fail:
+	if (inode)
+		iput(inode);
+	if (real_path)
+		kfree(real_path);
+	if (xattrs)
+		kfree(xattrs);
+	if (dirdata)
+		kfree(dirdata);
+	if (target_link)
+		kfree(target_link);
+	return ERR_PTR(ret);
 }
 
 static struct inode *cfs_get_root_inode(struct super_block *sb)
@@ -267,17 +288,15 @@ static bool cfs_iterate_cb(void *private, const char *name, int name_len, u64 in
 
 static int cfs_iterate(struct file *file, struct dir_context *ctx)
 {
-	struct lcfs_inode_s *ino;
+	struct cfs_inode *cino = CFS_I(file->f_inode);
 	struct cfs_info *fsi;
 
 	if (!dir_emit_dots(file, ctx))
 		return 0;
 
 	fsi = file->f_inode->i_sb->s_fs_info;
-	ino = file->f_inode->i_private;
 
-	return lcfs_iterate_dir(fsi->lcfs_ctx, ctx->pos - 2, ino,
-				cfs_iterate_cb, ctx);
+	return lcfs_iterate_dir(cino->dir, ctx->pos - 2, cfs_iterate_cb, ctx);
 }
 
 static loff_t cfs_dir_llseek(struct file *file, loff_t offset, int origin)
@@ -304,23 +323,27 @@ static loff_t cfs_dir_llseek(struct file *file, loff_t offset, int origin)
 struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 			  unsigned int flags)
 {
-	struct lcfs_inode_s *cfs_ino = dir->i_private;
 	struct cfs_info *fsi = dir->i_sb->s_fs_info;
+	struct cfs_inode *cino = CFS_I(dir);
+	struct lcfs_inode_s ino_buf;
 	struct inode *inode;
+        struct lcfs_inode_s *ino_s;
 	lcfs_off_t index;
 	int ret;
 
 	if (dentry->d_name.len > NAME_MAX)
 		return ERR_PTR(-ENAMETOOLONG);
 
-	ret = lcfs_lookup(fsi->lcfs_ctx, cfs_ino, dentry->d_name.name, &index);
+	ret = lcfs_lookup(cino->dir, dentry->d_name.name, dentry->d_name.len, &index);
 	if (ret == 0)
 		goto return_negative;
 
-	inode = cfs_get_inode_from_dentry_index(dir->i_sb, dir, index);
-	if (IS_ERR(inode)) {
-		return ERR_CAST(inode);
-	}
+	ino_s = lcfs_get_ino_index(fsi->lcfs_ctx, index, &ino_buf);
+	if (IS_ERR(ino_s))
+		return ERR_CAST(ino_s);
+
+	inode = cfs_make_inode(fsi->lcfs_ctx, dir->i_sb, index,
+			       ino_s, dir);
 	if (inode)
 		return d_splice_alias(inode, dentry);
 
@@ -362,12 +385,44 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 	return 0;
 }
 
+static struct kmem_cache *cfs_inode_cachep;
+
+static struct inode *cfs_alloc_inode(struct super_block *sb)
+{
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0))
+	struct cfs_inode *cino = kmem_cache_alloc(cfs_inode_cachep, GFP_KERNEL);
+#else
+	struct cfs_inode *cino = alloc_inode_sb(sb, cfs_inode_cachep, GFP_KERNEL);
+#endif
+
+	if (!cino)
+		return NULL;
+
+	memset((u8*)cino + sizeof(struct inode), 0, sizeof(struct cfs_inode) - sizeof(struct inode));
+
+	return &cino->vfs_inode;
+}
+
+static void cfs_destroy_inode(struct inode *inode)
+{
+	struct cfs_inode *cino = CFS_I(inode);
+
+	if (S_ISLNK(inode->i_mode) && inode->i_link)
+		kfree(inode->i_link);
+
+	if (cino->real_path)
+		kfree(cino->real_path);
+	if (cino->xattrs)
+		kfree(cino->xattrs);
+	if (cino->dir)
+		kfree(cino->dir);
+}
+
 static void cfs_free_inode(struct inode *inode)
 {
-	if (S_ISLNK(inode->i_mode))
-		kfree(inode->i_link);
-	kfree(inode->i_private);
-	free_inode_nonrcu(inode);
+	struct cfs_inode *cino = CFS_I(inode);
+
+	kmem_cache_free(cfs_inode_cachep, cino);
 }
 
 static void cfs_put_super(struct super_block *sb)
@@ -393,6 +448,8 @@ static const struct super_operations cfs_ops = {
 	.drop_inode = generic_delete_inode,
 	.show_options = cfs_show_options,
 	.put_super = cfs_put_super,
+	.destroy_inode = cfs_destroy_inode,
+	.alloc_inode = cfs_alloc_inode,
 	.free_inode = cfs_free_inode,
 };
 
@@ -448,7 +505,12 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	if (sb->s_root)
 		return -EINVAL;
 
-        sb->s_d_op = &simple_dentry_operations;
+	/* Set up the inode allocator early */
+	sb->s_op = &cfs_ops;
+	sb->s_flags |= SB_RDONLY;
+	sb->s_magic = CFS_MAGIC;
+	sb->s_xattr = cfs_xattr_handlers;
+	sb->s_export_op = &cfs_export_operations;
 
 	ret = kern_path("/", LOOKUP_DIRECTORY, &rootpath);
 	if (ret) {
@@ -496,12 +558,7 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	sb->s_maxbytes = MAX_LFS_FILESIZE;
 	sb->s_blocksize = PAGE_SIZE;
 	sb->s_blocksize_bits = PAGE_SHIFT;
-	sb->s_flags |= SB_RDONLY;
-	sb->s_magic = CFS_MAGIC;
-	sb->s_xattr = cfs_xattr_handlers;
-	sb->s_export_op = &cfs_export_operations;
 
-	sb->s_op = &cfs_ops;
 	sb->s_time_gran = 1;
 
 	fsi->root_mnt = root_mnt;
@@ -531,12 +588,9 @@ static const struct fs_context_operations cfs_context_ops = {
 
 static int cfs_open_file(struct inode *inode, struct file *file)
 {
+	struct cfs_inode *cino = CFS_I(inode);
 	struct cfs_info *fsi = inode->i_sb->s_fs_info;
-	struct lcfs_inode_s *cfs_ino = inode->i_private;
-	char *path_buf = NULL;
 	struct file *real_file;
-	const char *real_path;
-	off_t off;
 
 	if (WARN_ON(file == NULL))
 		return -EIO;
@@ -544,41 +598,20 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	if (file->f_flags & (O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_TRUNC))
 		return -EROFS;
 
-	if (cfs_ino->u.extends.len == 0) {
+	if (cino->real_path == NULL) {
 		file->private_data = &empty_file;
 		return 0;
 	}
 
-	if (cfs_ino->u.extends.len != sizeof(struct lcfs_extend_s)) {
-		return -EFSCORRUPTED;
-	}
-
-	path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!path_buf)
-		return -ENOMEM;
-
-	real_path = lcfs_get_extend(fsi->lcfs_ctx, cfs_ino, 0, &off, path_buf);
-	if (IS_ERR(real_path)) {
-		kfree(path_buf);
-		return PTR_ERR(real_path);
-	}
-
-	if (off != 0) {
-		kfree(path_buf);
-		return -EINVAL;
-	}
-
 	/* FIXME: prevent loops opening files.  */
 
-	if (fsi->base == NULL || real_path[0] == '/') {
-		real_file = file_open_root_mnt(fsi->root_mnt, real_path,
+	if (fsi->base == NULL || cino->real_path[0] == '/') {
+		real_file = file_open_root_mnt(fsi->root_mnt, cino->real_path,
 					       file->f_flags, 0);
 	} else {
-		real_file = file_open_root(&(fsi->base->f_path), real_path,
+		real_file = file_open_root(&(fsi->base->f_path), cino->real_path,
 					   file->f_flags, 0);
 	}
-
-	kfree(path_buf);
 
 	if (IS_ERR(real_file)) {
 		return PTR_ERR(real_file);
@@ -769,19 +802,17 @@ static int cfs_getxattr(const struct xattr_handler *handler,
 			struct dentry *unused2, struct inode *inode,
 			const char *name, void *value, size_t size)
 {
-	struct lcfs_inode_s *cfs_ino = inode->i_private;
-	struct cfs_info *fsi = inode->i_sb->s_fs_info;
+	struct cfs_inode *cino = CFS_I(inode);
 
-	return lcfs_get_xattr(fsi->lcfs_ctx, cfs_ino, name, value, size);
+	return lcfs_get_xattr(cino->xattrs, name, value, size);
 }
 
 static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size)
 {
 	struct inode *inode = d_inode(dentry);
-	struct lcfs_inode_s *cfs_ino = inode->i_private;
-	struct cfs_info *fsi = inode->i_sb->s_fs_info;
+	struct cfs_inode *cino = CFS_I(inode);
 
-	return lcfs_list_xattrs(fsi->lcfs_ctx, cfs_ino, names, size);
+	return lcfs_list_xattrs(cino->xattrs, names, size);
 }
 
 static const struct file_operations cfs_file_operations = {
@@ -835,15 +866,35 @@ static struct file_system_type cfs_type = {
 	.kill_sb = kill_anon_super,
 };
 
+static void cfs_inode_init_once(void *foo)
+{
+	struct cfs_inode *cino = foo;
+
+	inode_init_once(&cino->vfs_inode);
+}
+
 #ifdef STANDALONE_COMPOSEFS
 static int __init init_cfs(void)
 {
+	cfs_inode_cachep = kmem_cache_create("cfs_inode",
+					      sizeof(struct cfs_inode), 0,
+					      (SLAB_RECLAIM_ACCOUNT|
+					       SLAB_MEM_SPREAD|SLAB_ACCOUNT),
+					      cfs_inode_init_once);
+	if (cfs_inode_cachep == NULL)
+		return -ENOMEM;
+
 	return register_filesystem(&cfs_type);
 }
 
 static void __exit exit_cfs(void)
 {
 	unregister_filesystem(&cfs_type);
+
+	/* Ensure all RCU free inodes are safe to be destroyed. */
+	rcu_barrier();
+
+	kmem_cache_destroy(cfs_inode_cachep);
 }
 
 module_init(init_cfs);
