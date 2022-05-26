@@ -29,8 +29,8 @@ typedef uint64_t lcfs_off_t;
 typedef lcfs_off_t lcfs_c_str_t;
 
 struct lcfs_vdata_s {
-	lcfs_off_t off;
-	lcfs_off_t len;
+	uint32_t off;
+	uint32_t len;
 } __attribute__((packed));
 
 struct lcfs_header_s {
@@ -39,6 +39,7 @@ struct lcfs_header_s {
 	uint16_t unused2;
 
 	uint32_t inode_len;
+	lcfs_off_t data_offset;
 
 	uint64_t unused3[3];
 } __attribute__((packed));
@@ -54,7 +55,6 @@ struct lcfs_backing_s {
 
 #define lcfs_backing_size(_payload_len) (sizeof(struct lcfs_backing_s) + (_payload_len))
 
-
 struct lcfs_inode_s {
 	uint32_t st_mode; /* File type and mode.  */
 	uint32_t st_nlink; /* Number of hard links.  */
@@ -68,16 +68,16 @@ struct lcfs_inode_s {
 	/* Variable len data.  */
 	struct lcfs_vdata_s xattrs;
 
-	union {
-		/* Offset and length to the content of the directory.  */
-		struct lcfs_vdata_s dir;
-
-		/* Payload used for symlinks.  */
-		struct lcfs_vdata_s payload;
-
-		/* Payload used for regular files.  */
-		struct lcfs_vdata_s backing;
-	} u;
+	/* This is the size of the type specific data that comes directly after
+	   the inode in the file. Of this type:
+	   *
+	   * directory: lcfs_dir_s
+	   * regular file: lcfs_backing_s
+	   * symlink: the target link
+	   *
+	   * Canonically payload_length is 0 for empty dir/file/symlink.
+	   */
+	uint32_t payload_length;
 } __attribute__((packed));
 
 struct lcfs_dentry_s {

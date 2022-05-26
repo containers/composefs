@@ -25,25 +25,56 @@ struct lcfs_context_s
 	struct lcfs_header_s header;
 	struct file *descriptor;
 
-	size_t descriptor_len;
+	u64 descriptor_len;
 };
+
+static void *lcfs_read_data(struct lcfs_context_s *ctx,
+			    u64 offset,
+			    u64 size,
+			    u8 *dest)
+{
+	size_t copied;
+	loff_t pos = offset;
+
+	if (offset > ctx->descriptor_len)
+		return ERR_PTR(-EFSCORRUPTED);
+
+	if ((offset + size < offset) ||
+	    (offset + size > ctx->descriptor_len))
+		return ERR_PTR(-EFSCORRUPTED);
+
+	copied = 0;
+	while (copied < size) {
+		ssize_t bytes;
+
+		bytes = kernel_read(ctx->descriptor, dest + copied,
+				    size - copied, &pos);
+		if (bytes < 0)
+			return ERR_PTR(bytes);
+		if (bytes == 0)
+			return ERR_PTR(-EINVAL);
+
+		copied += bytes;
+	}
+
+	if (copied != size)
+		return ERR_PTR(-EFSCORRUPTED);
+	return dest;
+}
 
 struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
 {
+	struct lcfs_header_s *header;
 	struct lcfs_context_s *ctx;
 	struct file *descriptor;
 	loff_t i_size;
-
-	if (sizeof(void *) != sizeof(lcfs_off_t)) {
-		return ERR_PTR(-ENOTSUPP);
-	}
 
 	descriptor = filp_open(descriptor_path, O_RDONLY, 0);
 	if (IS_ERR(descriptor))
 		return ERR_CAST(descriptor);
 
 	i_size = i_size_read(file_inode(descriptor));
-	if (i_size <= 0 || i_size > SIZE_MAX) {
+	if (i_size <= (sizeof(struct lcfs_header_s) + sizeof(struct lcfs_inode_s))) {
 		fput(descriptor);
 		return ERR_PTR(-EINVAL);
 	}
@@ -55,7 +86,14 @@ struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
 	}
 
 	ctx->descriptor = descriptor;
-	ctx->descriptor_len = (size_t) i_size;
+	ctx->descriptor_len = i_size;
+
+	header = lcfs_read_data(ctx, 0, sizeof(struct lcfs_header_s), (u8 *)&ctx->header);
+	if (IS_ERR(header)) {
+		fput(descriptor);
+		kfree(ctx);
+		return ERR_CAST(header);
+	}
 
 	return ctx;
 }
@@ -68,47 +106,64 @@ void lcfs_destroy_ctx(struct lcfs_context_s *ctx)
 	kfree(ctx);
 }
 
-struct lcfs_dentry_s *lcfs_get_dentry(struct lcfs_context_s *ctx, size_t index,
-				      struct lcfs_dentry_s *buffer)
+static void *lcfs_get_inode_data(struct lcfs_context_s *ctx,
+				 u64 offset,
+				 u64 size,
+				 u8 *dest)
 {
-	struct lcfs_vdata_s vdata = {
-		.off = index,
-		.len = sizeof(struct lcfs_dentry_s),
-	};
-	return lcfs_get_vdata(ctx, vdata, buffer);
+	return lcfs_read_data(ctx,
+			      offset + sizeof(struct lcfs_header_s),
+			      size, dest);
 }
 
-void *lcfs_get_vdata(struct lcfs_context_s *ctx,
-		     const struct lcfs_vdata_s vdata,
-		     void *dest)
+static void *lcfs_alloc_inode_data(struct lcfs_context_s *ctx,
+			    u64 offset,
+			    u64 size)
 {
-	size_t copied;
-	loff_t pos = vdata.off + sizeof(struct lcfs_header_s);
+	u8 *buf;
+	void *res;
 
+	buf = kmalloc(size, GFP_KERNEL);
+	if (!buf)
+		return ERR_PTR(-ENOMEM);
+
+	res = lcfs_get_inode_data(ctx, offset, size, buf);
+	if (IS_ERR(res))
+		kfree(buf);
+
+	return res;
+}
+
+static void *lcfs_get_inode_payload(struct lcfs_context_s *ctx,
+				    struct lcfs_inode_s *ino,
+				    lcfs_off_t index,
+				    u8 *dest)
+{
+	return lcfs_get_inode_data(ctx, index + sizeof(struct lcfs_inode_s), ino->payload_length, dest);
+}
+
+static void *lcfs_alloc_inode_payload(struct lcfs_context_s *ctx,
+				      struct lcfs_inode_s *ino,
+				      lcfs_off_t index)
+{
+	return lcfs_alloc_inode_data(ctx, index + sizeof(struct lcfs_inode_s), ino->payload_length);
+}
+
+
+static void *lcfs_get_vdata(struct lcfs_context_s *ctx,
+			    const struct lcfs_vdata_s vdata,
+			    void *dest)
+{
 	if (!dest)
 		return NULL;
 
-	copied = 0;
-	while (copied < vdata.len) {
-		ssize_t bytes;
-
-		bytes = kernel_read(ctx->descriptor, dest + copied,
-				    vdata.len - copied, &pos);
-		if (bytes < 0)
-			return ERR_PTR(bytes);
-		if (bytes == 0)
-			return ERR_PTR(-EINVAL);
-
-		copied += bytes;
-	}
-
-	if (copied != vdata.len)
-		return ERR_PTR(-EFSCORRUPTED);
-	return dest;
+	return lcfs_read_data(ctx,
+			      vdata.off + ctx->header.data_offset,
+			      vdata.len, dest);
 }
 
-void *lcfs_alloc_vdata(struct lcfs_context_s *ctx,
-		       const struct lcfs_vdata_s vdata)
+static void *lcfs_alloc_vdata(struct lcfs_context_s *ctx,
+			      const struct lcfs_vdata_s vdata)
 {
 	u8 *buf;
 	void *res;
@@ -124,45 +179,11 @@ void *lcfs_alloc_vdata(struct lcfs_context_s *ctx,
 	return res;
 }
 
-const char *lcfs_c_string(struct lcfs_context_s *ctx, struct lcfs_vdata_s vdata,
-			  char *buf, size_t max)
-{
-	char *cstr;
-
-	if (vdata.len == 0)
-		return "";
-
-	if (vdata.len > max)
-		return ERR_PTR(-EINVAL);
-
-	cstr = lcfs_get_vdata(ctx, vdata, buf);
-	if (IS_ERR(cstr))
-		return ERR_CAST(cstr);
-
-	/* Make sure the string is NUL terminated.  */
-	if (cstr[vdata.len - 1] != '\0')
-		return ERR_PTR(-EFSCORRUPTED);
-
-	return cstr;
-}
-
 struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 					lcfs_off_t index,
 					struct lcfs_inode_s *buffer)
 {
-	const struct lcfs_vdata_s vdata = {
-		.off = index,
-		.len = sizeof(struct lcfs_inode_s),
-	};
-	return lcfs_get_vdata(ctx, vdata, buffer);
-}
-
-lcfs_off_t lcfs_get_root_index(struct lcfs_context_s *ctx)
-{
-	lcfs_off_t payload_len;
-
-	payload_len = ctx->descriptor_len - sizeof(struct lcfs_header_s);
-	return payload_len - sizeof(struct lcfs_inode_s);
+	return lcfs_get_inode_data(ctx, index, sizeof(struct lcfs_inode_s), (u8 *)buffer);
 }
 
 struct lcfs_inode_s *lcfs_dentry_inode(struct lcfs_context_s *ctx,
@@ -172,32 +193,35 @@ struct lcfs_inode_s *lcfs_dentry_inode(struct lcfs_context_s *ctx,
 	return lcfs_get_ino_index(ctx, node->inode_index, buffer);
 }
 
-struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
+struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx,
+				struct lcfs_inode_s *ino,
+				lcfs_off_t index)
 {
 	struct lcfs_dir_s *dir;
 	u8 *data, *data_end;
 	size_t n_dentries, i;
 
-	if (ino->u.dir.len == 0) {
+	if ((ino->st_mode & S_IFMT) != S_IFDIR ||
+	    ino->payload_length == 0) {
 		return NULL;
 	}
 
-	/* Gotta be large enought to fit the n_dentries */
-	if (ino->xattrs.len < sizeof(struct lcfs_dir_s))
+	/* Gotta be large enough to fit the n_dentries */
+	if (ino->payload_length < sizeof(struct lcfs_dir_s))
 		return ERR_PTR(-EFSCORRUPTED);
 
-	dir = lcfs_alloc_vdata(ctx, ino->u.dir);
+	dir = lcfs_alloc_inode_payload(ctx, ino, index);
 	if (IS_ERR(dir))
 		return ERR_CAST(dir);
 
 	n_dentries = dir->n_dentries;
 
 	/* Verify that array fits */
-	if (ino->u.dir.len < lcfs_dir_size(n_dentries))
+	if (ino->payload_length < lcfs_dir_size(n_dentries))
 		goto corrupted;
 
 	data = ((u8 *)dir) + lcfs_dir_size(n_dentries);
-	data_end = ((u8 *)dir) + ino->u.dir.len;
+	data_end = ((u8 *)dir) + ino->payload_length;
 
 	/* Verify all dentries upfront */
 	for (i = 0; i < n_dentries; i++) {
@@ -420,63 +444,60 @@ int lcfs_lookup(struct lcfs_dir_s *dir, const char *name, size_t name_len, lcfs_
 	return 0;
 }
 
-const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, void *buf)
-{
-	if (ino->u.payload.len == 0)
-		return ERR_PTR(-EINVAL);
-
-	return lcfs_c_string(ctx, ino->u.payload, buf, PATH_MAX);
-}
-
-char *lcfs_dup_payload_path(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
+char *lcfs_dup_payload_path(struct lcfs_context_s *ctx,
+			    struct lcfs_inode_s *ino,
+			    lcfs_off_t index)
 {
 	const char *v;
 	char *link;
 
-	if (ino->u.payload.len == 0)
-		return ERR_PTR(-EINVAL);
+	if (ino->payload_length == 0 ||
+	    ino->payload_length > PATH_MAX)
+		return ERR_PTR(-EFSCORRUPTED);
 
-	if (ino->u.payload.len > PATH_MAX)
-		return ERR_PTR(-EINVAL);
-
-	link = kmalloc(ino->u.payload.len, GFP_KERNEL);
+	link = kmalloc(ino->payload_length + 1, GFP_KERNEL);
 	if (!link)
 		return ERR_PTR(-ENOMEM);
 
-	v = lcfs_c_string(ctx, ino->u.payload, link,
-			  ino->u.payload.len);
+	v = lcfs_get_inode_payload(ctx, ino, index, link);
 	if (IS_ERR(v)) {
 		kfree(link);
 		return ERR_CAST(v);
 	}
 
+	/* zero terminate */
+	link[ino->payload_length] = 0;
+
 	return link;
 }
 
-int lcfs_get_backing(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, loff_t *out_size, char **out_path)
+int lcfs_get_backing(struct lcfs_context_s *ctx,
+		     struct lcfs_inode_s *ino,
+		     lcfs_off_t index,
+		     loff_t *out_size,
+		     char **out_path)
 {
 	struct lcfs_backing_s *backing;
 	char *path = NULL;
 	size_t size;
 	u32 payload_len;
 
-	if (ino->u.backing.len == 0) {
+	if (ino->payload_length == 0) {
 		size = 0;
-		if (out_path)
-			path = NULL;
+		path = NULL;
 	} else {
-		if (ino->u.backing.len < sizeof(struct lcfs_backing_s) ||
-		    ino->u.backing.len > sizeof(struct lcfs_backing_buf_s))
+		if (ino->payload_length < sizeof(struct lcfs_backing_s) ||
+		    ino->payload_length > sizeof(struct lcfs_backing_buf_s))
 			return -EFSCORRUPTED;
 
-		backing = lcfs_alloc_vdata(ctx, ino->u.backing);
+		backing = lcfs_alloc_inode_payload(ctx, ino, index);
 		if (IS_ERR(backing))
 			return PTR_ERR(backing);
 
 		size = backing->st_size;
 		payload_len = backing->payload_len;
 
-		if (lcfs_backing_size(payload_len) != ino->u.backing.len ||
+		if (lcfs_backing_size(payload_len) != ino->payload_length ||
 		    /* Make sure we fit in the PATH_MAX bytes in out_buf, including zero (which is not in the file) */
 		    payload_len >= PATH_MAX) {
 			kfree(backing);

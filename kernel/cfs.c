@@ -96,7 +96,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 	int r;
 
 	if ((ino->st_mode & S_IFMT) == S_IFLNK) {
-		target_link = lcfs_dup_payload_path(ctx, ino);
+		target_link = lcfs_dup_payload_path(ctx, ino, ino_num);
 		if (IS_ERR(target_link)) {
 			ret = PTR_ERR(target_link);
 			target_link = NULL;
@@ -105,7 +105,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 	}
 
 	if ((ino->st_mode & S_IFMT) == S_IFREG) {
-		r = lcfs_get_backing(ctx, ino, &real_size, &real_path);
+		r = lcfs_get_backing(ctx, ino, ino_num, &real_size, &real_path);
 		if (r < 0) {
 			ret = r;
 			goto fail;
@@ -113,7 +113,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 	}
 
 	if ((ino->st_mode & S_IFMT) == S_IFDIR) {
-		dirdata = lcfs_get_dir(ctx, ino);
+		dirdata = lcfs_get_dir(ctx, ino, ino_num);
 		if (IS_ERR(dirdata)) {
 			ret = PTR_ERR(dir);
 			dirdata = NULL;
@@ -200,15 +200,14 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 static struct inode *cfs_get_root_inode(struct super_block *sb)
 {
 	struct cfs_info *fsi = sb->s_fs_info;
-	lcfs_off_t index = lcfs_get_root_index(fsi->lcfs_ctx);
 	struct lcfs_inode_s ino_buf;
 	struct lcfs_inode_s *ino;
 
-	ino = lcfs_get_ino_index(fsi->lcfs_ctx, index, &ino_buf);
+	ino = lcfs_get_ino_index(fsi->lcfs_ctx, 0, &ino_buf);
 	if (IS_ERR(ino))
 		return ERR_CAST(ino);
 
-	return cfs_make_inode(fsi->lcfs_ctx, sb, index, ino, NULL);
+	return cfs_make_inode(fsi->lcfs_ctx, sb, 0, ino, NULL);
 }
 
 static int cfs_rmdir(struct inode *ino, struct dentry *dir)
@@ -743,12 +742,8 @@ static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 	if (!ino) {
 		struct lcfs_inode_s inode_buf;
 		struct lcfs_inode_s *inode;
-		struct lcfs_vdata_s vdata = {
-			.off = inode_index,
-			.len = sizeof(struct lcfs_inode_s),
-		};
 
-		inode = lcfs_get_vdata(fsi->lcfs_ctx, vdata, &inode_buf);
+		inode = lcfs_get_ino_index(fsi->lcfs_ctx, inode_index, &inode_buf);
 		if (IS_ERR(inode))
 			return ERR_CAST(inode);
 
