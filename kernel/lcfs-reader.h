@@ -18,15 +18,6 @@ struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path);
 
 void lcfs_destroy_ctx(struct lcfs_context_s *ctx);
 
-struct lcfs_dentry_s *lcfs_get_dentry(struct lcfs_context_s *ctx, size_t index,
-				      struct lcfs_dentry_s *buffer);
-
-/* Copy the specified VDATA to DEST.  DEST must be preallocated and must be at least
-   vdata.len bytes.  */
-void *lcfs_get_vdata(struct lcfs_context_s *ctx,
-		     const struct lcfs_vdata_s vdata,
-		     void *dest);
-
 struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 					lcfs_off_t index,
 					struct lcfs_inode_s *buffer);
@@ -35,17 +26,12 @@ struct lcfs_inode_s *lcfs_dentry_inode(struct lcfs_context_s *ctx,
 				       struct lcfs_dentry_s *node,
 				       struct lcfs_inode_s *buffer);
 
-const char *lcfs_c_string(struct lcfs_context_s *ctx, struct lcfs_vdata_s vdata,
-			  char *buf, size_t max);
-
 static inline u64 lcfs_dentry_ino(struct lcfs_dentry_s *d)
 {
 	return d->inode_index;
 }
 
-lcfs_off_t lcfs_get_root_index(struct lcfs_context_s *ctx);
-
-struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino);
+struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, lcfs_off_t index);
 
 struct lcfs_xattr_header_s *lcfs_get_xattrs(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino);
 ssize_t lcfs_list_xattrs(struct lcfs_xattr_header_s *xattrs, char *names, size_t size);
@@ -57,10 +43,8 @@ int lcfs_iterate_dir(struct lcfs_dir_s *dir, loff_t first, lcfs_dir_iter_cb cb, 
 
 int lcfs_lookup(struct lcfs_dir_s *dir, const char *name, size_t name_len, lcfs_off_t *index);
 
-const char *lcfs_get_payload(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, void *buf);
+char *lcfs_dup_payload_path(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, lcfs_off_t index);
 
-char *lcfs_dup_payload_path(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino);
-
-int lcfs_get_backing(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, loff_t *out_size, char **out_path);
+int lcfs_get_backing(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, lcfs_off_t index, loff_t *out_size, char **out_path);
 
 #endif

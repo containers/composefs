@@ -40,7 +40,7 @@ struct lcfs_xattr_s {
 };
 
 struct lcfs_node_s {
-	struct lcfs_node_s *next;
+	struct lcfs_node_s *next; /* Use for the queue in compute_tree */
 
 	struct lcfs_node_s *parent;
 
@@ -50,9 +50,7 @@ struct lcfs_node_s {
 	/* Used to create hard links.  */
 	struct lcfs_node_s *link_to;
 
-	size_t index;
-
-	bool inode_written;
+	bool in_tree;
 
 	char *name;
 	char *payload;
@@ -76,8 +74,9 @@ struct lcfs_ctx_s {
 	/* User for dedup.  */
 	Hash_table *ht;
 
-	/* Used by serialize_children.  */
-	struct lcfs_node_s *cur;
+	/* Used by compute_tree.  */
+	struct lcfs_node_s *queue_end;
+	loff_t inode_table_size;
 };
 
 int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
@@ -224,23 +223,171 @@ int lcfs_append_vdata_opts(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 	return 0;
 }
 
-static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
+static int node_get_dtype(struct lcfs_node_s *node)
 {
-	int r;
+	switch ((node->inode.st_mode & S_IFMT)) {
+	case S_IFLNK:
+		return DT_LNK;
+	case S_IFDIR:
+		return DT_DIR;
+	case S_IFREG:
+		return DT_REG;
+	case S_IFBLK:
+		return DT_BLK;
+	case S_IFCHR:
+		return DT_CHR;
+	case S_IFSOCK:
+		return DT_SOCK;
+	case S_IFIFO:
+		return DT_FIFO;
+	default:
+		return DT_UNKNOWN;
+	}
+}
+
+static int cmp_nodes(const void *a, const void *b)
+{
+	const struct lcfs_node_s *na = *((const struct lcfs_node_s **)a);
+	const struct lcfs_node_s *nb = *((const struct lcfs_node_s **)b);
+
+	return strcmp(na->name, nb->name);
+}
+
+static int cmp_xattr(const void *a, const void *b)
+{
+	const struct lcfs_xattr_s *na = a;
+	const struct lcfs_xattr_s *nb = b;
+
+	return strcmp(na->key, nb->key);
+}
+
+static ssize_t compute_payload_size(struct lcfs_node_s *node)
+{
+	ssize_t payload_size = 0;
+	size_t i;
+
+	if ((node->inode.st_mode & S_IFMT) == S_IFLNK) {
+		if (node->payload && strlen(node->payload) != 0) {
+			payload_size = strlen(node->payload);
+		}
+	} else if ((node->inode.st_mode & S_IFMT) == S_IFREG) {
+		if (node->payload && strlen(node->payload) != 0 && node->st_size != 0) {
+			payload_size = lcfs_backing_size(strlen(node->payload));
+		}
+	} else if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
+		if (node->children_size > 0) {
+			size_t names_len = 0;
+
+			for (i = 0; i < node->children_size; i++) {
+				struct lcfs_node_s *child = node->children[i];
+				/* Need valid names for all children */
+				if (child->name == NULL ||
+				    strlen(child->name) > UINT16_MAX) {
+					errno = EINVAL;
+					return -1;
+				}
+				names_len += strlen(child->name);
+			}
+			payload_size = lcfs_dir_size(node->children_size) + names_len;
+		}
+	}
+
+	return payload_size;
+}
+
+/* This ensures that the tree is in a well defined order, with
+   children sorted by name, and the nodes visited in breadth-first
+   order.  It also updates the payload length of the nodes and using
+   that, their inode offset. */
+static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
+{
+	size_t i;
+	ssize_t payload_length;
+	struct lcfs_node_s *node;
+
+	/* Start with the root node. */
+
+	ctx->queue_end = root;
+	root->in_tree = true;
+
+	node = root;
+
+	for (node = root; node != NULL; node = node->next) {
+		if ((node->inode.st_mode & S_IFMT) != S_IFDIR &&
+		    node->children_size != 0) {
+			/* Only dirs can have children */
+			errno = EINVAL;
+			return -1;
+		}
+
+		/* Fix up directory n_links counts, they are 2 + nr of subdirs */
+		if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
+			size_t n_link = 2;
+			for (i = 0; i < node->children_size; i++) {
+				struct lcfs_node_s *child = node->children[i];
+				if ((child->inode.st_mode & S_IFMT) == S_IFDIR) {
+					n_link++;
+				}
+			}
+			node->inode.st_nlink = n_link;
+		}
+
+		/* Canonical order */
+		qsort(node->children, node->children_size, sizeof(node->children[0]), cmp_nodes);
+		qsort(node->xattrs, node->n_xattrs, sizeof(node->xattrs[0]), cmp_xattr);
+
+		/* Compute payload length */
+		payload_length = compute_payload_size(node);
+		if (payload_length < 0)
+			return payload_length;
+		if (payload_length > UINT32_MAX) {
+			errno = EINVAL;
+			return -1;
+		}
+		node->inode.payload_length = payload_length;
+
+		/* Assign inode index */
+		node->inode_index = ctx->inode_table_size;
+		ctx->inode_table_size += sizeof(struct lcfs_inode_s) + payload_length;
+
+		node->in_tree = true;
+		/* Append to queue for more work */
+		for (i = 0; i < node->children_size; i++) {
+			struct lcfs_node_s *child = node->children[i];
+
+			/* Skip hardlinks, they will not be serialized separately */
+			if (node->link_to != NULL) {
+				continue;
+			}
+
+			/* Avoid recursion */
+			assert(!child->in_tree);
+
+			ctx->queue_end->next = child;
+			ctx->queue_end = child;
+		}
+	}
+
+	return 0;
+}
+
+/* Canonicalizes and computes xattrs, sharing equal vdatas */
+static int compute_xattrs(struct lcfs_ctx_s *ctx) {
+	struct lcfs_node_s *node;
+	size_t data_length;
+	size_t i;
+	uint8_t *buffer, *data;
+	size_t header_len;
+	size_t buffer_len;
+	struct lcfs_xattr_header_s *header;
 	struct lcfs_vdata_s out;
+	int r;
 
-	if (node->inode_written)
-		return 0;
+	for (node = ctx->root; node != NULL; node = node->next) {
+		qsort(node->xattrs, node->n_xattrs, sizeof(node->xattrs[0]), cmp_xattr);
 
-	if (node->n_xattrs > 0) {
-		size_t data_length;
-		size_t i;
-		uint8_t *buffer, *data;
-		size_t header_len;
-		size_t buffer_len;
-		struct lcfs_xattr_header_s *header;
-
-		assert (sizeof (struct lcfs_xattr_header_s) == 2); /* Make sure the 0 element array doesn't count */
+		if (node->n_xattrs == 0)
+			continue;
 
 		data_length = 0;
 		for (i = 0; i < node->n_xattrs; i++) {
@@ -281,198 +428,72 @@ static int dump_inode(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 		node->inode.xattrs = out;
 	}
 
-        if (node->payload) {
-		if ((node->inode.st_mode & S_IFMT) == S_IFLNK) {
-			r = lcfs_append_vdata(ctx, &out, node->payload, strlen(node->payload) + 1);
-			if (r < 0)
-				return r;
-
-			node->inode.u.payload = out;
-		} else if ((node->inode.st_mode & S_IFMT) == S_IFREG) {
-			size_t payload_len = strlen(node->payload);
-			struct lcfs_backing_s *backing;
-
-			if (payload_len > UINT32_MAX) {
-				errno = EINVAL;
-				return -1;
-			}
-
-			backing = calloc(1, lcfs_backing_size(payload_len));
-			if (backing == NULL) {
-				errno = ENOMEM;
-				return -1;
-			}
-			backing->st_size = node->st_size;
-			backing->payload_len = (uint32_t)payload_len;
-			memcpy(&backing->payload[0], node->payload, payload_len);
-
-			r = lcfs_append_vdata(ctx, &out, backing, lcfs_backing_size(payload_len));
-			free(backing);
-			if (r < 0)
-				return r;
-			node->inode.u.backing = out;
-		} else {
-			errno = EINVAL;
-			return -1;
-		}
-	}
-
-	if (node->link_to) {
-		r = dump_inode(ctx, node->link_to);
-		node->inode_index = node->link_to->inode_index;
-		return r;
-	} else {
-		struct lcfs_inode_s *ino = &(node->inode);
-
-		r = lcfs_append_vdata_opts(ctx, &out, ino, sizeof(*ino),
-					   node != ctx->root); /* Don't dedup the root inode, it needs to be last */
-		if (r < 0)
-			return r;
-
-		node->inode_index = out.off;
-
-		node->inode_written = true;
-	}
-
 	return 0;
 }
 
-static int node_get_dtype(struct lcfs_node_s *node)
-{
-	switch ((node->inode.st_mode & S_IFMT)) {
-	case S_IFLNK:
-		return DT_LNK;
-	case S_IFDIR:
-		return DT_DIR;
-	case S_IFREG:
-		return DT_REG;
-	case S_IFBLK:
-		return DT_BLK;
-	case S_IFCHR:
-		return DT_CHR;
-	case S_IFSOCK:
-		return DT_SOCK;
-	case S_IFIFO:
-		return DT_FIFO;
-	default:
-		return DT_UNKNOWN;
-	}
+static struct lcfs_node_s *follow_links(struct lcfs_node_s *node) {
+	if (node->link_to)
+		return follow_links(node->link_to);
+	return node;
 }
 
-static int dump_dentries(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
-{
-	struct lcfs_vdata_s out;
+static int write_inodes(struct lcfs_ctx_s *ctx, FILE *out) {
+	struct lcfs_node_s *node;
 	size_t i;
-	int r;
-	size_t header_len;
-	size_t names_len;
-	struct lcfs_dir_s *dir;
-	char *data;
+	int ret;
 
-	if (node->children_size == 0)
-		return dump_inode(ctx, node);
+	for (node = ctx->root; node != NULL; node = node->next) {
+		struct lcfs_inode_s *ino = &(node->inode);
 
-	names_len = 0;
-	for (i = 0; i < node->children_size; i++) {
-		struct lcfs_node_s *child = node->children[i];
-		r = dump_dentries(ctx, child);
-		if (r < 0)
-			return r;
+		ret = fwrite(ino, sizeof(struct lcfs_inode_s), 1, out);
+		if (ret < 0)
+			return ret;
 
-		if (child->name == NULL)
-			return -1; /* Can't have no names */
-		if (strlen(child->name) > UINT16_MAX)
-			return -1; /* Can't fit */
+		if (ino->payload_length == 0)
+			continue;
 
-		names_len += strlen(child->name);
+		if ((node->inode.st_mode & S_IFMT) == S_IFLNK) {
+			ret = fwrite(node->payload, strlen(node->payload), 1, out);
+			if (ret < 0)
+				return ret;
+		} else if ((node->inode.st_mode & S_IFMT) == S_IFREG) {
+			struct lcfs_backing_s backing = { node->st_size };
+			backing.payload_len = strlen(node->payload);
+
+			ret = fwrite(&backing, sizeof(backing), 1, out);
+			if (ret < 0)
+				return ret;
+			ret = fwrite(node->payload, strlen(node->payload), 1, out);
+			if (ret < 0)
+				return ret;
+		} else if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
+			struct lcfs_dir_s dir = { node->children_size };
+			ret = fwrite(&dir, sizeof(dir), 1, out);
+			if (ret < 0)
+				return ret;
+			for (i = 0; i < node->children_size; i++) {
+				struct lcfs_node_s *dirent_child = node->children[i];
+				struct lcfs_node_s *target_child = follow_links(dirent_child);
+				struct lcfs_dentry_s dentry;
+
+				dentry.inode_index = target_child->inode_index;
+				dentry.name_len = strlen(dirent_child->name);
+				dentry.d_type = node_get_dtype(target_child);
+				dentry.pad = 0;
+				ret = fwrite(&dentry, sizeof(dentry), 1, out);
+				if (ret < 0)
+					return ret;
+			}
+			for (i = 0; i < node->children_size; i++) {
+				struct lcfs_node_s *dirent_child = node->children[i];
+				ret = fwrite(dirent_child->name, strlen(dirent_child->name), 1, out);
+				if (ret < 0)
+					return ret;
+			}
+		}
 	}
 
-	header_len = lcfs_dir_size(node->children_size);
-	dir = calloc(1, header_len + names_len);
-	if (dir == NULL)
-		return -1;
-
-	dir->n_dentries = node->children_size;
-
-	data = (char *)dir + header_len;
-
-	for (i = 0; i < node->children_size; i++) {
-		struct lcfs_node_s *child = node->children[i];
-		dir->dentries[i].inode_index = child->inode_index;
-		dir->dentries[i].name_len = strlen(child->name);
-		dir->dentries[i].d_type = node_get_dtype(child);
-		dir->dentries[i].pad = 0;
-		memcpy(data, child->name, strlen(child->name));
-		data += strlen(child->name);
-	}
-
-	r = lcfs_append_vdata(ctx, &out, dir, header_len + names_len);
-	free(dir);
-	if (r < 0)
-		return r;
-
-	node->inode.u.dir = out;
-
-	return dump_inode(ctx, node);
-}
-
-static void append_to_next(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
-{
-	ctx->cur->next = node;
-	node->index = ctx->cur->index + 1;
-	ctx->cur = node;
-
-	if (node->parent) {
-		if (node->parent->inode.u.dir.off == 0)
-			node->parent->inode.u.dir.off = node->index;
-
-		node->parent->inode.u.dir.len++;
-	}
-}
-
-static int cmp_nodes(const void *a, const void *b)
-{
-	const struct lcfs_node_s *na = *((const struct lcfs_node_s **)a);
-	const struct lcfs_node_s *nb = *((const struct lcfs_node_s **)b);
-
-	return strcmp(na->name, nb->name);
-}
-
-static int cmp_xattr(const void *a, const void *b)
-{
-	const struct lcfs_xattr_s *na = a;
-	const struct lcfs_xattr_s *nb = b;
-
-	return strcmp(na->key, nb->key);
-}
-
-static int serialize_children(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
-{
-	size_t ret = 0;
-	size_t i;
-
-	if (node->children_size == 0)
-		return 0;
-
-	qsort(node->children, node->children_size, sizeof(node->children[0]), cmp_nodes);
-
-	qsort(node->xattrs, node->n_xattrs, sizeof(node->xattrs[0]), cmp_xattr);
-
-	for (i = 0; i < node->children_size; i++)
-		append_to_next(ctx, node->children[i]);
-
-	ret = node->children_size;
-
-	for (i = 0; i < node->children_size; i++) {
-		int r;
-
-		r = serialize_children(ctx, node->children[i]);
-		if (r < 0)
-			return r;
-		ret += r;
-	}
-
-	return ret;
+	return 0;
 }
 
 int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
@@ -492,12 +513,17 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 		return -1;
 	}
 
-	/* Start with the root node. */
 	ctx->root = root;
-	ctx->cur = root;
-	ctx->cur->index = 0;
 
-	ret = serialize_children(ctx, ctx->root);
+	ret = compute_tree(ctx, root);
+	if (ret < 0) {
+		lcfs_close(ctx);
+		return ret;
+	}
+
+	header.data_offset = sizeof(struct lcfs_header_s) + ctx->inode_table_size;
+
+	ret = compute_xattrs(ctx);
 	if (ret < 0) {
 		lcfs_close(ctx);
 		return ret;
@@ -509,7 +535,7 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 		return ret;
 	}
 
-	ret = dump_dentries(ctx, ctx->root);
+	ret = write_inodes(ctx, out);
 	if (ret < 0) {
 		lcfs_close(ctx);
 		return ret;
@@ -648,7 +674,6 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 	if (ret == NULL)
 		return NULL;
 
-	ret->inode.st_nlink = sb.st_nlink;
 	ret->inode.st_mode = sb.st_mode;
 	ret->inode.st_uid = sb.st_uid;
 	ret->inode.st_gid = sb.st_gid;

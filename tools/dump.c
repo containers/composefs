@@ -29,6 +29,16 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 
+static bool is_dir(const struct lcfs_inode_s *d)
+{
+	return (d->st_mode & S_IFMT) == S_IFDIR;
+}
+
+static bool is_symlink(const struct lcfs_inode_s *d)
+{
+	return (d->st_mode & S_IFMT) == S_IFLNK;
+}
+
 static int get_file_size(int fd, off_t *out)
 {
 	struct stat sb;
@@ -42,59 +52,44 @@ static int get_file_size(int fd, off_t *out)
 	return 0;
 }
 
-static const uint8_t *get_vdata(const uint8_t *x)
-{
-	return x + sizeof(struct lcfs_header_s);
-}
 
-static uint64_t get_size(bool symlink_p,
-			 const struct lcfs_inode_s *ino,
-			 const uint8_t *vdata)
+static uint64_t get_size(const struct lcfs_inode_s *ino)
 {
+	size_t payload_len = ino->payload_length;
+	const uint8_t *payload_data = (uint8_t *)ino + sizeof(struct lcfs_inode_s);
 	struct lcfs_backing_s *backing;
 
-	if (symlink_p)
+	if (is_dir(ino) || is_symlink(ino) || payload_len == 0)
 		return 0;
 
-	backing = (struct lcfs_backing_s *)(vdata + ino->u.backing.off);
+	backing = (struct lcfs_backing_s *)payload_data;
 	return backing->st_size;
 }
 
-static char *get_v_payload(bool symlink_p,
-			   const struct lcfs_inode_s *ino,
-			   const uint8_t *vdata)
+static char *get_v_payload(const struct lcfs_inode_s *ino)
 {
+	size_t payload_len = ino->payload_length;
+	const uint8_t *payload_data = (uint8_t *)ino + sizeof(struct lcfs_inode_s);
 	struct lcfs_backing_s *backing;
 
-	if (symlink_p)
-		return strdup((const char *)(vdata + ino->u.payload.off));
-
-	if (ino->u.backing.len == 0)
+	if (is_dir(ino) || payload_len == 0)
 		return strdup("");
 
-	backing = (struct lcfs_backing_s *)(vdata + ino->u.backing.off);
+	if (is_symlink(ino))
+		return strndup((char *)payload_data, payload_len);
 
+	backing = (struct lcfs_backing_s *)payload_data;
 	return strndup(backing->payload, backing->payload_len);
 }
 
-static bool is_dir(const struct lcfs_inode_s *d)
-{
-	return (d->st_mode & S_IFMT) == S_IFDIR;
-}
-
-static bool is_symlink(const struct lcfs_inode_s *d)
-{
-	return (d->st_mode & S_IFMT) == S_IFLNK;
-}
-
-static int dump_dentry(const uint8_t *vdata, const char *name, size_t name_len, size_t index,
+static int dump_inode(uint8_t *inode_data, const uint8_t *vdata, const char *name, size_t name_len, size_t index,
 		       size_t rec, bool extended, bool xattrs, bool recurse)
 {
 	struct lcfs_inode_s *ino;
 	bool dirp;
 	size_t i;
 
-	ino = (struct lcfs_inode_s *)(vdata + index);
+	ino = (struct lcfs_inode_s *)(inode_data + index);
 	dirp = is_dir(ino);
 
 	putchar('|');
@@ -119,29 +114,29 @@ static int dump_dentry(const uint8_t *vdata, const char *name, size_t name_len, 
 	} else if (!extended)
 		printf("%.*s\n", (int)name_len, name);
 	else {
-		char *payload = dirp ? strdup("") : get_v_payload(is_symlink(ino), ino, vdata);
+		char *payload = get_v_payload(ino);
 		printf("name:%.*s|ino:%zu|mode:%o|nlinks:%u|uid:%d|gid:%d|size:%lu|payload:%s\n",
 		       (int)name_len, name, index, ino->st_mode, ino->st_nlink,
 		       ino->st_uid, ino->st_gid,
-		       dirp ? 0 : get_size(is_symlink(ino), ino, vdata),
-		       payload);
+		       get_size(ino), payload);
 		free(payload);
 	}
 
-	if (dirp && recurse && ino->u.dir.len != 0) {
+	if (dirp && recurse && ino->payload_length != 0) {
+		const uint8_t *payload_data = (uint8_t *)ino + sizeof(struct lcfs_inode_s);
 		const char *namedata;
 		const struct lcfs_dir_s *dir;
 		size_t n_dentries, child_name_len;
 
-		dir = (const struct lcfs_dir_s *)(vdata + ino->u.dir.off);
+		dir = (const struct lcfs_dir_s *)payload_data;
 		n_dentries = dir->n_dentries;
 
 		namedata = (char *)dir + lcfs_dir_size(n_dentries);
 		for (i = 0; i < n_dentries; i++) {
 			child_name_len = dir->dentries[i].name_len;
-			dump_dentry(vdata, namedata, child_name_len,
-                                    dir->dentries[i].inode_index,
-				    rec + 1, extended, xattrs, recurse);
+			dump_inode(inode_data, vdata, namedata, child_name_len,
+				   dir->dentries[i].inode_index,
+				   rec + 1, extended, xattrs, recurse);
 			namedata += child_name_len;
 		}
 	}
@@ -149,9 +144,10 @@ static int dump_dentry(const uint8_t *vdata, const char *name, size_t name_len, 
 	return 0;
 }
 
-static size_t find_child(const uint8_t *vdata, size_t current, const char *name)
+static size_t find_child(const uint8_t *inode_data, size_t current, const char *name)
 {
-	const struct lcfs_inode_s *ino = (const struct lcfs_inode_s *)(vdata + current);
+	const struct lcfs_inode_s *ino = (const struct lcfs_inode_s *)(inode_data + current);
+	const uint8_t *payload_data = (uint8_t *)ino + sizeof(struct lcfs_inode_s);
 	const char *namedata;
 	const struct lcfs_dir_s *dir;
 	size_t i, n_dentries, name_len;
@@ -159,10 +155,10 @@ static size_t find_child(const uint8_t *vdata, size_t current, const char *name)
 	if (!is_dir(ino))
 		return SIZE_MAX;
 
-	if (ino->u.dir.len == 0)
+	if (ino->payload_length == 0)
 		return SIZE_MAX;
 
-	dir = (const struct lcfs_dir_s *)(vdata + ino->u.dir.off);
+	dir = (const struct lcfs_dir_s *)payload_data;
 	n_dentries = dir->n_dentries;
 
 	name_len = strlen(name);
@@ -178,14 +174,14 @@ static size_t find_child(const uint8_t *vdata, size_t current, const char *name)
 	return SIZE_MAX;
 }
 
-static const struct lcfs_inode_s *lookup(const uint8_t *vdata, size_t current,
+static const struct lcfs_inode_s *lookup(const uint8_t *inode_data, size_t current,
 					  const void *what)
 {
 	char *it;
 	char *dpath, *path;
 
 	if (strcmp(what, "/") == 0)
-		return (struct lcfs_inode_s *)(vdata + current);
+		return (struct lcfs_inode_s *)(inode_data + current);
 
 	path = strdup(what);
 	if (path == NULL)
@@ -195,7 +191,7 @@ static const struct lcfs_inode_s *lookup(const uint8_t *vdata, size_t current,
 	while ((it = strsep(&dpath, "/"))) {
 		if (strlen(it) == 0)
 			continue; /* Skip initial, terminal or repeated slashes */
-		current = find_child(vdata, current, it);
+		current = find_child(inode_data, current, it);
 		if (current == SIZE_MAX) {
 			errno = ENOENT;
 			free(path);
@@ -204,7 +200,7 @@ static const struct lcfs_inode_s *lookup(const uint8_t *vdata, size_t current,
 	}
 
 	free(path);
-	return (struct lcfs_inode_s *)(vdata + current);
+	return (struct lcfs_inode_s *)(inode_data + current);
 }
 
 #define DUMP 1
@@ -219,7 +215,10 @@ int main(int argc, char *argv[])
 	int ret;
 	int fd;
 	int mode;
+	uint8_t *inode_data;
+	uint8_t *vdata;
 	size_t root_index;
+	struct lcfs_header_s *header;
 
 	if (argc < 3)
 		error(EXIT_FAILURE, errno, "argument not specified");
@@ -252,32 +251,35 @@ int main(int argc, char *argv[])
 	if (data == NULL)
 		error(EXIT_FAILURE, errno, "fstat %s", argv[1]);
 
-	root_index = size - sizeof(struct lcfs_header_s) -
-		     sizeof(struct lcfs_inode_s);
+	header = (struct lcfs_header_s *)data;
+	inode_data = data + sizeof(struct lcfs_header_s);
+	vdata = data + header->data_offset;
+	root_index = 0;
+
 	if (mode == DUMP) {
-		dump_dentry(get_vdata(data), "", 0, root_index, 0, false, false, true);
+		dump_inode(inode_data, vdata, "", 0, root_index, 0, false, false, true);
 	} else if (mode == DUMP_EXTENDED) {
-		dump_dentry(get_vdata(data), "", 0, root_index, 0, true, false, true);
+		dump_inode(inode_data, vdata, "", 0, root_index, 0, true, false, true);
 	} else if (mode == LOOKUP) {
 		const struct lcfs_inode_s *inode;
 		size_t index;
 
-		inode = lookup(get_vdata(data), root_index, argv[3]);
+		inode = lookup(inode_data, root_index, argv[3]);
 		if (inode == NULL)
 			error(EXIT_FAILURE, 0, "file %s not found", argv[3]);
 
-		index = (uint8_t *)inode - get_vdata(data);
-		dump_dentry(get_vdata(data), "", 0, index, 0, true, false, false);
+		index = (uint8_t *)inode - inode_data;
+		dump_inode(inode_data, vdata, "", 0, index, 0, true, false, false);
 	} else if (mode == XATTRS) {
 		const struct lcfs_inode_s *inode;
 		size_t index;
 
-		inode = lookup(get_vdata(data), root_index, argv[3]);
+		inode = lookup(inode_data, root_index, argv[3]);
 		if (inode == NULL)
 			error(EXIT_FAILURE, 0, "file %s not found", argv[3]);
 
-		index = (uint8_t *)inode - get_vdata(data);
-		dump_dentry(get_vdata(data), "", 0, index, 0, true, true, false);
+		index = (uint8_t *)inode - inode_data;
+		dump_inode(inode_data, vdata, "", 0, index, 0, true, true, false);
 	}
 
 	munmap(data, size);
