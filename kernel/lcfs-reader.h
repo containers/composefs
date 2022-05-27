@@ -22,10 +22,6 @@ struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 					lcfs_off_t index,
 					struct lcfs_inode_s *buffer);
 
-struct lcfs_inode_s *lcfs_dentry_inode(struct lcfs_context_s *ctx,
-				       struct lcfs_dentry_s *node,
-				       struct lcfs_inode_s *buffer);
-
 static inline u64 lcfs_dentry_ino(struct lcfs_dentry_s *d)
 {
 	return d->inode_index;

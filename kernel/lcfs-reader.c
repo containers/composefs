@@ -186,13 +186,6 @@ struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 	return lcfs_get_inode_data(ctx, index, sizeof(struct lcfs_inode_s), (u8 *)buffer);
 }
 
-struct lcfs_inode_s *lcfs_dentry_inode(struct lcfs_context_s *ctx,
-				       struct lcfs_dentry_s *node,
-				       struct lcfs_inode_s *buffer)
-{
-	return lcfs_get_ino_index(ctx, node->inode_index, buffer);
-}
-
 struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx,
 				struct lcfs_inode_s *ino,
 				lcfs_off_t index)
