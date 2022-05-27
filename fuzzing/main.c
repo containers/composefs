@@ -26,97 +26,46 @@ int LLVMFuzzerInitialize(int *argc, char ***argv)
 bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int dtype)
 {
 	struct test_context_s *test_ctx = private;
-	struct lcfs_context_s *ctx = test_ctx->ctx;
-	struct lcfs_inode_s cfs_ino_buf;
-	struct lcfs_inode_s *cfs_ino;
-	struct lcfs_inode_data_s cfs_ino_data_buf;
-	struct lcfs_inode_data_s *cfs_ino_data;
-	struct lcfs_dentry_s dentry_buf;
-	ssize_t i, size_xattrs;
-	char xattrs[256+1];
-	const char *cstr;
+	struct lcfs_xattr_header_s *xattrs;
+	struct lcfs_inode_s *s_ino;
+	struct lcfs_inode_s buffer;
+	struct lcfs_dir_s *dir;
+	ssize_t xattrs_len;
+	char names[512];
+	loff_t out_size;
+	char *out_path;
 	char *payload;
-	int ret;
 
-	if (test_ctx->recursion_left <= 0)
+	s_ino = lcfs_get_ino_index(test_ctx->ctx, ino, &buffer);
+	if (IS_ERR(s_ino))
 		return true;
 
-	cstr = name;
-	/* Consume the C string.  */
-	while (*cstr)
-		cstr++;
+	if (lcfs_get_backing(test_ctx->ctx, s_ino, 0, &out_size, &out_path) == 0) {
+		free(out_path);
+	}
 
-	cfs_ino = lcfs_get_ino_index(ctx, ino, &cfs_ino_buf);
-	if (IS_ERR(cfs_ino))
-		return true;
-
-
-	cfs_ino_data = lcfs_inode_data(ctx, cfs_ino, &cfs_ino_data_buf);
-	if (IS_ERR(cfs_ino_data))
-		return true;
-
-	payload = lcfs_dup_payload_path(ctx, cfs_ino);
+	payload = lcfs_dup_payload_path(test_ctx->ctx, s_ino, 0);
 	if (!IS_ERR(payload))
 		free(payload);
 
-	if ((dtype & S_IFMT) == S_IFDIR) {
-		lcfs_off_t index;
+	xattrs = lcfs_get_xattrs(test_ctx->ctx, s_ino);
+	if (!IS_ERR(xattrs)) {
+		char value[512];
 
-		lcfs_lookup(ctx, cfs_ino, name, &index);
-		lcfs_get_dentry(ctx, index, &dentry_buf);
-	} else {
-		char *path_buf = malloc(PATH_MAX);
-		loff_t size;
-		off_t off;
-
-		if (path_buf == NULL)
+		xattrs_len = lcfs_list_xattrs(xattrs, names, sizeof(names));
+		if (xattrs_len < 0)
 			return true;
 
-		lcfs_get_extend(ctx, cfs_ino, 0, &off, path_buf);
-		lcfs_get_extend(ctx, cfs_ino, 1, &off, path_buf);
-		lcfs_get_extend(ctx, cfs_ino, -1, &off, path_buf);
-		lcfs_get_extend(ctx, cfs_ino, 0, NULL, path_buf);
-		lcfs_get_extend(ctx, cfs_ino, 1, NULL, path_buf);
-		lcfs_get_extend(ctx, cfs_ino, -1, NULL, path_buf);
-
-		lcfs_get_file_size(ctx, cfs_ino, &size);
-
-		lcfs_get_payload(ctx, cfs_ino, path_buf);
-
-		if (cfs_ino->u.payload.len <= PATH_MAX)
-			lcfs_get_vdata(ctx, cfs_ino->u.payload, path_buf);
-
-		cstr = lcfs_c_string(ctx, cfs_ino->u.payload, path_buf, PATH_MAX);
-		if (!IS_ERR(cstr)) {
-			/* Consume the C string.  */
-			while (*cstr)
-				cstr++;
-		}
-		free(path_buf);
+		/* just retrieve the first name.  */
+		lcfs_get_xattr(xattrs, names, value, sizeof(value));
 	}
 
-	size_xattrs = lcfs_list_xattrs(ctx, cfs_ino, xattrs, sizeof(xattrs)-1);
-	if (size_xattrs < 0)
-		return true;
-	xattrs[size_xattrs] = '\0';
-
-	for (i = 0; i < size_xattrs;) {
-		char value[256];
-		char *xattr = &(xattrs[i]);
-		size_t len = strlen(xattr) ? : 1;
-
-		lcfs_get_xattr(ctx, cfs_ino, xattr, value, sizeof(value));
-
-		i += len;
-	}
-
-	if ((dtype & S_IFMT) == S_IFDIR) {
+	dir = lcfs_get_dir(test_ctx->ctx, s_ino, 0);
+	if (test_ctx->recursion_left > 0 && !IS_ERR(dir)) {
 		test_ctx->recursion_left--;
-		lcfs_iterate_dir(ctx, 0, cfs_ino, iter_cb, test_ctx);
+		lcfs_iterate_dir(dir, 0, iter_cb, test_ctx);
 		test_ctx->recursion_left++;
-		return false;
 	}
-
 	return true;
 }
 
@@ -168,12 +117,14 @@ static struct lcfs_context_s *create_ctx(uint8_t *buf, size_t len)
 
 int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 {
-	const size_t max_recursion = 2;
+	const size_t max_recursion = 4;
 	struct test_context_s test_ctx;
 	struct lcfs_context_s *ctx;
 	struct lcfs_inode_s ino_buf;
 	struct lcfs_inode_s *ino;
+	struct lcfs_dir_s *dir;
 	char name[NAME_MAX];
+	char value[256];
 	lcfs_off_t index;
 	lcfs_off_t off;
 	int fd;
@@ -186,41 +137,36 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 		off = *((lcfs_off_t *) buf);
 		lcfs_get_ino_index(ctx, off, &ino_buf);
 	}
-	if (len >= sizeof (size_t)) {
-		size_t s;
-		struct lcfs_inode_data_s ino_data_buf;
-		struct lcfs_dentry_s d_buf;
-		struct lcfs_dentry_s* d;
 
-		s = *((size_t *) buf);
+	for (off = 0; off < 4; off++) {
+		ino = lcfs_get_ino_index(ctx, off, &ino_buf);
+		if (!IS_ERR(ino)) {
+			struct lcfs_dir_s *dir;
 
-		d = lcfs_get_dentry(ctx, s, &d_buf);
-		if (!IS_ERR(d)) {
-			lcfs_dentry_ino(d);
-			ino = lcfs_dentry_inode(ctx, d, &ino_buf);
-			if (!IS_ERR(ino))
-				lcfs_inode_data(ctx, ino, &ino_data_buf);
+			dir = lcfs_get_dir(ctx, ino, off);
+			if (!IS_ERR(dir))
+				free(dir);
 		}
 	}
 
-	off = lcfs_get_root_index(ctx);
-
-	ino = lcfs_get_ino_index(ctx, off, &ino_buf);
-	if (IS_ERR (ino))
-		return 0;
-
-	memcpy(name, buf, min(len, NAME_MAX - 1));
-	name[min(len, NAME_MAX - 1)] = '\0';
-
-	lcfs_list_xattrs(ctx, ino, NULL, 0);
-	lcfs_get_xattr(ctx, ino, name, NULL, 0);
-	lcfs_lookup(ctx, ino, name, &index);
+	ino = lcfs_get_ino_index(ctx, 0, &ino_buf);
+	if (IS_ERR(ino))
+		goto cleanup;
 
 	test_ctx.ctx = ctx;
 	test_ctx.recursion_left = max_recursion;
 
-	lcfs_iterate_dir(ctx, 0, ino, iter_cb, &test_ctx);
+	dir = lcfs_get_dir(ctx, ino, 0);
+	if (IS_ERR(dir))
+		goto cleanup;
 
+	memcpy(name, buf, min(len, NAME_MAX - 1));
+	name[min(len, NAME_MAX - 1)] = '\0';
+	lcfs_lookup(dir, name, strlen(name), &index);
+
+	lcfs_iterate_dir(dir, 0, iter_cb, &test_ctx);
+
+cleanup:
 	lcfs_destroy_ctx(ctx);
 
 	return 0;

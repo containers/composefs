@@ -19,6 +19,11 @@ struct file
 	int fd;
 };
 
+static inline char *kstrndup(const char *str, size_t len, int ignored)
+{
+	return strndup(str, len);
+}
+
 static inline void *kzalloc(size_t len, int ignored)
 {
 	return calloc(1, len);
