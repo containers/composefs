@@ -77,6 +77,13 @@ struct lcfs_ctx_s {
 	/* Used by compute_tree.  */
 	struct lcfs_node_s *queue_end;
 	loff_t inode_table_size;
+
+#ifdef LCFS_SIZE_STATS
+	loff_t inode_data_size;
+	loff_t payload_data_size;
+	loff_t dir_data_size;
+	loff_t backing_data_size;
+#endif
 };
 
 int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
@@ -350,6 +357,17 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		node->inode_index = ctx->inode_table_size;
 		ctx->inode_table_size += sizeof(struct lcfs_inode_s) + payload_length;
 
+#ifdef LCFS_SIZE_STATS
+		ctx->inode_data_size += sizeof(struct lcfs_inode_s);
+		if ((node->inode.st_mode & S_IFMT) == S_IFLNK) {
+			ctx->payload_data_size += payload_length;
+		} else if ((node->inode.st_mode & S_IFMT) == S_IFREG) {
+			ctx->backing_data_size += payload_length;
+		} else if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
+			ctx->dir_data_size += payload_length;
+		}
+#endif
+
 		node->in_tree = true;
 		/* Append to queue for more work */
 		for (i = 0; i < node->children_size; i++) {
@@ -548,6 +566,15 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 			return ret;
 		}
 	}
+
+#ifdef LCFS_SIZE_STATS
+	fprintf(stderr, "Size - Inodes: %ld kb, symlink: %ld kb, backing: %ld kb dir: %ld kb, xattrs: %ld kb\n",
+		ctx->inode_data_size / 1024,
+		ctx->payload_data_size / 1024,
+		ctx->backing_data_size / 1024,
+		ctx->dir_data_size / 1024,
+		ctx->vdata_len / 1024);
+#endif
 
 	return 0;
 }
