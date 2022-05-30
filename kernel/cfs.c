@@ -288,12 +288,9 @@ static bool cfs_iterate_cb(void *private, const char *name, int name_len, u64 in
 static int cfs_iterate(struct file *file, struct dir_context *ctx)
 {
 	struct cfs_inode *cino = CFS_I(file->f_inode);
-	struct cfs_info *fsi;
 
 	if (!dir_emit_dots(file, ctx))
 		return 0;
-
-	fsi = file->f_inode->i_sb->s_fs_info;
 
 	return lcfs_iterate_dir(cino->dir, ctx->pos - 2, cfs_iterate_cb, ctx);
 }
