@@ -173,12 +173,19 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata, const cha
 		printf("%.*s\n", (int)name_len, name);
 	else {
 		char *payload = get_v_payload(&ino, payload_data);
-		printf("name:%.*s|ino:%zu|mode:%o|nlinks:%u|uid:%d|gid:%d|rdev:%d|size:%lu|mtim:%ld.%ld|ctim:%ld.%ld|payload:%s\n",
+		int n_xattrs = 0;
+
+		if (ino.xattrs.len != 0) {
+			struct lcfs_xattr_header_s *header = (struct lcfs_xattr_header_s *)(vdata + ino.xattrs.off);
+			n_xattrs = lcfs_u16_from_file(header->n_attr);
+		}
+
+		printf("name:%.*s|ino:%zu|mode:%o|nlinks:%u|uid:%d|gid:%d|rdev:%d|size:%lu|mtim:%ld.%ld|ctim:%ld.%ld|nxargs:%d|payload:%s\n",
 		       (int)name_len, name, index, ino.st_mode, ino.st_nlink,
 		       ino.st_uid, ino.st_gid, ino.st_rdev, ino.st_size,
 		       ino.st_mtim.tv_sec, ino.st_mtim.tv_nsec,
 		       ino.st_ctim.tv_sec, ino.st_ctim.tv_nsec,
-		       payload);
+		       n_xattrs, payload);
 		free(payload);
 	}
 
