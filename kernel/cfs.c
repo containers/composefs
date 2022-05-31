@@ -71,6 +71,7 @@ static const struct super_operations cfs_ops;
 static const struct file_operations cfs_dir_operations;
 static const struct inode_operations cfs_dir_inode_operations;
 static const struct inode_operations cfs_file_inode_operations;
+static const struct inode_operations cfs_link_inode_operations;
 
 static const struct xattr_handler *cfs_xattr_handlers[];
 static const struct export_operations cfs_export_operations;
@@ -78,6 +79,8 @@ static const struct export_operations cfs_export_operations;
 static const struct address_space_operations cfs_aops = {
 	.direct_IO = noop_direct_IO,
 };
+
+static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size);
 
 static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
                                     struct super_block *sb,
@@ -162,7 +165,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 			break;
 		case S_IFLNK:
 			inode->i_link = target_link;
-			inode->i_op = &simple_symlink_inode_operations;
+			inode->i_op = &cfs_link_inode_operations;
 			inode->i_fop = &cfs_file_operations;
 			break;
 		case S_IFDIR:
@@ -276,6 +279,12 @@ static const struct file_operations cfs_dir_operations = {
 
 static const struct inode_operations cfs_dir_inode_operations = {
 	.lookup = cfs_lookup,
+	.listxattr = cfs_listxattr,
+};
+
+static const struct inode_operations cfs_link_inode_operations = {
+	.get_link = simple_get_link,
+	.listxattr = cfs_listxattr,
 };
 
 /*
