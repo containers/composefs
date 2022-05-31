@@ -213,58 +213,6 @@ static struct inode *cfs_get_root_inode(struct super_block *sb)
 	return cfs_make_inode(fsi->lcfs_ctx, sb, LCFS_ROOT_INODE, ino, NULL);
 }
 
-static int cfs_rmdir(struct inode *ino, struct dentry *dir)
-{
-	return -EROFS;
-}
-
-static int cfs_rename(struct user_namespace *userns, struct inode *source_ino,
-		      struct dentry *src_dir, struct inode *target_ino,
-		      struct dentry *target, unsigned int flags)
-{
-	return -EROFS;
-}
-
-static int cfs_link(struct dentry *src, struct inode *i, struct dentry *target)
-{
-	return -EROFS;
-}
-
-static int cfs_unlink(struct inode *inode, struct dentry *dir)
-{
-	return -EROFS;
-}
-
-static int cfs_mknod(struct user_namespace *mnt_userns, struct inode *dir,
-		     struct dentry *dentry, umode_t mode, dev_t dev)
-{
-	return -EROFS;
-}
-
-static int cfs_mkdir(struct user_namespace *mnt_userns, struct inode *dir,
-		     struct dentry *dentry, umode_t mode)
-{
-	return -EROFS;
-}
-
-static int cfs_create(struct user_namespace *mnt_userns, struct inode *dir,
-		      struct dentry *dentry, umode_t mode, bool excl)
-{
-	return -EROFS;
-}
-
-static int cfs_symlink(struct user_namespace *mnt_userns, struct inode *dir,
-		       struct dentry *dentry, const char *symname)
-{
-	return -EROFS;
-}
-
-static int cfs_tmpfile(struct user_namespace *mnt_userns, struct inode *dir,
-		       struct dentry *dentry, umode_t mode)
-{
-	return -EROFS;
-}
-
 static bool cfs_iterate_cb(void *private, const char *name, int name_len, u64 ino, unsigned int dtype)
 {
 	struct dir_context *ctx = private;
@@ -327,16 +275,7 @@ static const struct file_operations cfs_dir_operations = {
 };
 
 static const struct inode_operations cfs_dir_inode_operations = {
-	.create = cfs_create,
 	.lookup = cfs_lookup,
-	.link = cfs_link,
-	.unlink = cfs_unlink,
-	.symlink = cfs_symlink,
-	.mkdir = cfs_mkdir,
-	.rmdir = cfs_rmdir,
-	.mknod = cfs_mknod,
-	.rename = cfs_rename,
-	.tmpfile = cfs_tmpfile,
 };
 
 /*
@@ -752,15 +691,6 @@ static const struct export_operations cfs_export_operations = {
 	.get_name = cfs_get_name,
 };
 
-static int cfs_setxattr(const struct xattr_handler *handler,
-			struct user_namespace *mnt_userns,
-			struct dentry *unused, struct inode *inode,
-			const char *name, const void *value, size_t size,
-			int flags)
-{
-	return -EROFS;
-}
-
 static int cfs_getxattr(const struct xattr_handler *handler,
 			struct dentry *unused2, struct inode *inode,
 			const char *name, void *value, size_t size)
@@ -793,7 +723,6 @@ static const struct file_operations cfs_file_operations = {
 static const struct xattr_handler cfs_xattr_handler = {
 	.prefix = "", /* catch all */
 	.get = cfs_getxattr,
-	.set = cfs_setxattr,
 };
 
 static const struct xattr_handler *cfs_xattr_handlers[] = {
