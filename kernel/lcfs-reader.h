@@ -35,7 +35,8 @@ int lcfs_get_xattr(struct lcfs_xattr_header_s *xattrs, const char *name, void *v
 
 typedef bool (*lcfs_dir_iter_cb)(void *private, const char *name, int namelen, u64 ino, unsigned int dtype);
 
-int lcfs_iterate_dir(struct lcfs_dir_s *dir, loff_t first, lcfs_dir_iter_cb cb, void *private);
+int lcfs_dir_iterate(struct lcfs_dir_s *dir, loff_t first, lcfs_dir_iter_cb cb, void *private);
+u32 lcfs_dir_get_link_count(struct lcfs_dir_s *dir);
 
 int lcfs_lookup(struct lcfs_dir_s *dir, const char *name, size_t name_len, lcfs_off_t *index);
 

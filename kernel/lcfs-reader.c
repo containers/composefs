@@ -456,7 +456,7 @@ int lcfs_get_xattr(struct lcfs_xattr_header_s *xattrs, const char *name, void *v
 	return -ENODATA;
 }
 
-int lcfs_iterate_dir(struct lcfs_dir_s *dir, loff_t first, lcfs_dir_iter_cb cb, void *private)
+int lcfs_dir_iterate(struct lcfs_dir_s *dir, loff_t first, lcfs_dir_iter_cb cb, void *private)
 {
 	size_t i, n_dentries;
 	u8 *data;
@@ -489,6 +489,34 @@ int lcfs_iterate_dir(struct lcfs_dir_s *dir, loff_t first, lcfs_dir_iter_cb cb, 
 			break;
 	}
 	return 0;
+}
+
+u32 lcfs_dir_get_link_count(struct lcfs_dir_s *dir)
+{
+	size_t i, n_dentries;
+	u8 *data;
+	u32 count;
+
+	count = 2; /* . and .. */
+
+	if (dir == NULL)
+		return count;
+
+	/* dir is validated by lcfs_get_dir(), so we can trust it here. */
+	n_dentries = dir->n_dentries;
+
+	data = ((u8 *)dir) + lcfs_dir_size(n_dentries);
+
+	for (i = 0; i < n_dentries; i++) {
+		u32 name_len = dir->dentries[i].name_len;
+
+		data += name_len;
+
+		if (dir->dentries[i].d_type == DT_DIR)
+			count++;
+	}
+
+	return count;
 }
 
 int lcfs_lookup(struct lcfs_dir_s *dir, const char *name, size_t name_len, lcfs_off_t *index)

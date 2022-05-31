@@ -59,7 +59,7 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 	dir = lcfs_get_dir(test_ctx->ctx, s_ino, 0);
 	if (test_ctx->recursion_left > 0 && !IS_ERR(dir)) {
 		test_ctx->recursion_left--;
-		lcfs_iterate_dir(dir, 0, iter_cb, test_ctx);
+		lcfs_dir_iterate(dir, 0, iter_cb, test_ctx);
 		test_ctx->recursion_left++;
 	}
 	return true;
@@ -160,7 +160,7 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 	name[min(len, NAME_MAX - 1)] = '\0';
 	lcfs_lookup(dir, name, strlen(name), &index);
 
-	lcfs_iterate_dir(dir, 0, iter_cb, &test_ctx);
+	lcfs_dir_iterate(dir, 0, iter_cb, &test_ctx);
 
 cleanup:
 	lcfs_destroy_ctx(ctx);

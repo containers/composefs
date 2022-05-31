@@ -14,6 +14,8 @@
 # define check_add_overflow(a, b, d) __builtin_add_overflow(a, b, d)
 # define ENOTSUPP ENOTSUP
 
+#define DT_DIR         4
+
 struct file
 {
 	int fd;

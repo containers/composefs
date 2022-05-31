@@ -119,6 +119,9 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 			dirdata = NULL;
 			goto fail;
 		}
+
+		/* We compute nlink instead of unnecessary storing it in the file */
+		ino->st_nlink = lcfs_dir_get_link_count(dirdata);
 	}
 
 	xattrs = lcfs_get_xattrs(ctx, ino);
@@ -282,7 +285,7 @@ static int cfs_iterate(struct file *file, struct dir_context *ctx)
 	if (!dir_emit_dots(file, ctx))
 		return 0;
 
-	return lcfs_iterate_dir(cino->dir, ctx->pos - 2, cfs_iterate_cb, ctx);
+	return lcfs_dir_iterate(cino->dir, ctx->pos - 2, cfs_iterate_cb, ctx);
 }
 
 struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
