@@ -30,6 +30,7 @@ enum {
 	BUILD_SKIP_XATTRS = (1 << 0),
 	BUILD_USE_EPOCH = (1 << 1),
 	BUILD_SKIP_DEVICES = (1 << 2),
+	BUILD_COMPUTE_DIGEST = (1 << 3),
 };
 
 struct lcfs_node_s *lcfs_node_new(void);
@@ -74,6 +75,16 @@ void lcfs_node_set_nlink(struct lcfs_node_s *node,
 uint64_t lcfs_node_get_size(struct lcfs_node_s *node);
 void lcfs_node_set_size(struct lcfs_node_s *node,
 			uint64_t size);
+
+
+void lcfs_node_set_fsverity_digest(struct lcfs_node_s *node,
+                                   uint8_t digest[32]);
+
+typedef int (*lcfs_read_cb)(void *file, void *buf, size_t count);
+int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node,
+                                        void *file,
+                                        uint64_t size,
+                                        lcfs_read_cb read_cb);
 
 struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
 			       const char *fname, const char *name,

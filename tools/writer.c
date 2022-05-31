@@ -83,7 +83,7 @@ static int fill_payload(struct lcfs_node_s *node,
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage: %s [--chdir=/dir] [--use-epoch] [--skip-xattrs] [--relative] [--skip-devices] [--out=filedname]\n",
+		"usage: %s [--chdir=/dir] [--use-epoch] [--skip-xattrs] [--relative] [--skip-devices] [--compute-digest] [--out=filedname]\n",
 		argv0);
 }
 
@@ -93,6 +93,7 @@ static void usage(const char *argv0)
 #define OPT_USE_EPOCH 103
 #define OPT_SKIP_DEVICES 104
 #define OPT_OUT 105
+#define OPT_COMPUTE_DIGEST 106
 
 int main(int argc, char **argv)
 {
@@ -120,6 +121,12 @@ int main(int argc, char **argv)
 			has_arg: no_argument,
 			flag: NULL,
 			val: OPT_USE_EPOCH
+		},
+		{
+			name: "compute-digest",
+			has_arg: no_argument,
+			flag: NULL,
+			val: OPT_COMPUTE_DIGEST
 		},
 		{
 			name: "chdir",
@@ -154,6 +161,9 @@ int main(int argc, char **argv)
 			break;
 		case OPT_SKIP_DEVICES:
 			buildflags |= BUILD_SKIP_DEVICES;
+			break;
+		case OPT_COMPUTE_DIGEST:
+			buildflags |= BUILD_COMPUTE_DIGEST;
 			break;
 		case OPT_RELATIVE:
 			relative_path = true;

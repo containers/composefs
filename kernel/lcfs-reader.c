@@ -96,6 +96,7 @@ struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
 		kfree(ctx);
 		return ERR_CAST(header);
 	}
+	header->root_flags = lcfs_u16_from_file(header->root_flags);
 	header->inode_len = lcfs_u32_from_file(header->inode_len);
 	header->data_offset = lcfs_u64_from_file(header->data_offset);
 
@@ -265,7 +266,33 @@ struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 		ino->st_size += (u64)lcfs_read_u32(&data) << 32;
 	}
 
+	if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
+		memcpy(ino->digest, data, LCFS_DIGEST_SIZE);
+		data += 32;
+	}
+
 	return ino;
+}
+
+struct lcfs_inode_s *lcfs_get_root_ino(struct lcfs_context_s *ctx,
+				       struct lcfs_inode_s *ino_buf,
+				       lcfs_off_t *index)
+{
+	lcfs_off_t root_ino = LCFS_MAKE_INO(0, ctx->header.root_flags);
+
+	*index = root_ino;
+	return lcfs_get_ino_index(ctx, root_ino, ino_buf);
+}
+
+const uint8_t *lcfs_get_digest(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, lcfs_off_t index)
+{
+	u32 flags = index & LCFS_INODE_FLAGS_MASK;
+
+	if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
+		return ino->digest;
+	}
+
+	return NULL;
 }
 
 struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx,

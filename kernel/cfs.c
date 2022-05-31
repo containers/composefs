@@ -37,6 +37,8 @@ MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 #include "cfs.h"
 #endif
 
+#include "lcfs-verity.h"
+
 #define CFS_MAGIC 0x12345678
 
 struct cfs_info {
@@ -54,6 +56,8 @@ struct cfs_inode {
 	char *real_path;
 	struct lcfs_xattr_header_s *xattrs;
 	struct lcfs_dir_s *dir;
+	bool has_digest;
+	uint8_t digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
 };
 
 static inline struct cfs_inode *CFS_I(struct inode *inode)
@@ -93,6 +97,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 	struct cfs_inode *cino;
 	struct inode *inode = NULL;
 	struct lcfs_dir_s *dirdata = NULL;
+	const uint8_t *digest;
 	int ret;
 	int r;
 
@@ -126,6 +131,8 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		ino->st_nlink = lcfs_dir_get_link_count(dirdata);
 	}
 
+	digest = lcfs_get_digest(ctx, ino, ino_num);
+
 	xattrs = lcfs_get_xattrs(ctx, ino);
 	if (IS_ERR(xattrs)) {
 		ret = PTR_ERR(xattrs);
@@ -143,6 +150,9 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		cino = CFS_I(inode);
 		cino->xattrs = xattrs;
 		cino->dir = dirdata;
+		cino->has_digest = digest != NULL;
+		if (cino->has_digest)
+			memcpy(cino->digest, digest, LCFS_DIGEST_SIZE);
 
 		inode->i_ino = ino_num;
 		set_nlink(inode, ino->st_nlink);
@@ -206,12 +216,13 @@ static struct inode *cfs_get_root_inode(struct super_block *sb)
 	struct cfs_info *fsi = sb->s_fs_info;
 	struct lcfs_inode_s ino_buf;
 	struct lcfs_inode_s *ino;
+	lcfs_off_t index;
 
-	ino = lcfs_get_ino_index(fsi->lcfs_ctx, LCFS_ROOT_INODE, &ino_buf);
+	ino = lcfs_get_root_ino(fsi->lcfs_ctx, &ino_buf, &index);
 	if (IS_ERR(ino))
 		return ERR_CAST(ino);
 
-	return cfs_make_inode(fsi->lcfs_ctx, sb, LCFS_ROOT_INODE, ino, NULL);
+	return cfs_make_inode(fsi->lcfs_ctx, sb, index, ino, NULL);
 }
 
 static bool cfs_iterate_cb(void *private, const char *name, int name_len, u64 ino, unsigned int dtype)
@@ -528,6 +539,25 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 
 	if (IS_ERR(real_file)) {
 		return PTR_ERR(real_file);
+	}
+
+	/* If metadata records a digest for the file, ensure it is there and correct before using the contents */
+	if (cino->has_digest) {
+		size_t digest_size;
+		u8 *verity_digest;
+		struct fsverity_info *verity_info = fsverity_get_info(d_inode(real_file->f_path.dentry));
+		if (verity_info == NULL) {
+			pr_warn("WARNING: composefs backing file '%pd' unexpectedly had no fs-verity digest\n", real_file->f_path.dentry);
+			fput(real_file);
+			return -EIO;
+		}
+		verity_digest = lcfs_fsverity_info_get_digest(verity_info, &digest_size);
+		if (digest_size != LCFS_DIGEST_SIZE ||
+		    memcmp(cino->digest, verity_digest, LCFS_DIGEST_SIZE) != 0) {
+			pr_warn("WARNING: composefs backing file '%pd' has the wrong fs-verity digest\n", real_file->f_path.dentry);
+			fput(real_file);
+			return -EIO;
+		}
 	}
 
 	file->private_data = real_file;

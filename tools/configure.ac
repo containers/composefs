@@ -8,6 +8,8 @@ AM_INIT_AUTOMAKE([1.11.2 -Wno-portability foreign tar-ustar no-dist-gzip dist-xz
 
 AC_PROG_CC
 
+PKG_CHECK_MODULES(FSVERITY, libfsverity)
+
 AC_DEFUN([CC_CHECK_FLAG_APPEND], [
   AC_CACHE_CHECK([if $CC supports flag $3 in envvar $2],
                  AS_TR_SH([cc_cv_$2_$3]),
