@@ -60,13 +60,13 @@ static char *get_v_payload(struct lcfs_inode_s *ino, const uint8_t *payload_data
 static uint32_t decode_uint32(const uint8_t **data) {
 	uint32_t *d = (uint32_t *)*data;
 	*data += sizeof(uint32_t);
-	return *d;
+	return lcfs_u32_from_file(*d);
 }
 
 static uint64_t decode_uint64(const uint8_t **data) {
 	uint64_t *d = (uint64_t *)*data;
 	*data += sizeof(uint64_t);
-	return *d;
+	return lcfs_u64_from_file(*d);
 }
 
 static void decode_inode(const uint8_t *inode_data, lcfs_off_t inod_num, struct lcfs_inode_s *ino, uint32_t *flags_out, const uint8_t **payload_data_out)
@@ -155,12 +155,14 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata, const cha
 	if (xattrs) {
 		if (ino.xattrs.len != 0) {
 			struct lcfs_xattr_header_s *header = (struct lcfs_xattr_header_s *)(vdata + ino.xattrs.off);
+			uint16_t n_attr = lcfs_u16_from_file(header->n_attr);
 			uint8_t *data;
 
-			data = ((uint8_t *)header) + lcfs_xattr_header_size(header->n_attr);
-			for (i = 0; i < header->n_attr; i++) {
-				uint32_t key_length = header->attr[i].key_length;
-				uint32_t value_length = header->attr[i].value_length;
+			data = ((uint8_t *)header) + lcfs_xattr_header_size(n_attr);
+			for (i = 0; i < n_attr; i++) {
+				struct lcfs_xattr_element_s *e = &header->attr[i];
+				uint16_t key_length = lcfs_u16_from_file(e->key_length);
+				uint16_t value_length = lcfs_u16_from_file(e->value_length);
 
 				printf("%.*s -> %.*s\n", (int)key_length, data,
 				       (int)value_length, data + key_length);
@@ -186,13 +188,13 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata, const cha
 		size_t n_dentries, child_name_len;
 
 		dir = (const struct lcfs_dir_s *)payload_data;
-		n_dentries = dir->n_dentries;
+		n_dentries = lcfs_u32_from_file(dir->n_dentries);
 
 		namedata = (char *)dir + lcfs_dir_size(n_dentries);
 		for (i = 0; i < n_dentries; i++) {
-			child_name_len = dir->dentries[i].name_len;
+			child_name_len = lcfs_u16_from_file(dir->dentries[i].name_len);
 			dump_inode(inode_data, vdata, namedata, child_name_len,
-				   dir->dentries[i].inode_index,
+				   lcfs_u64_from_file(dir->dentries[i].inode_index),
 				   rec + 1, extended, xattrs, recurse);
 			namedata += child_name_len;
 		}
@@ -219,16 +221,17 @@ static lcfs_off_t find_child(const uint8_t *inode_data, lcfs_off_t current, cons
 		return UINT64_MAX;
 
 	dir = (const struct lcfs_dir_s *)payload_data;
-	n_dentries = dir->n_dentries;
+	n_dentries = lcfs_u32_from_file(dir->n_dentries);
 
 	name_len = strlen(name);
 	namedata = (char *)dir + lcfs_dir_size(n_dentries);
 	for (i = 0; i < n_dentries; i++) {
-		if (name_len == dir->dentries[i].name_len &&
+		size_t child_name_len = lcfs_u16_from_file(dir->dentries[i].name_len);
+		if (name_len == child_name_len &&
 		    memcmp(name, namedata, name_len) == 0) {
-			return dir->dentries[i].inode_index;
+			return lcfs_u64_from_file(dir->dentries[i].inode_index);
 		}
-		namedata += dir->dentries[i].name_len;
+		namedata += child_name_len;
 	}
 
 	return UINT64_MAX;
@@ -314,8 +317,12 @@ int main(int argc, char *argv[])
 		error(EXIT_FAILURE, errno, "fstat %s", argv[1]);
 
 	header = (struct lcfs_header_s *)data;
+
+	if (lcfs_u64_from_file(header->data_offset) > size)
+		error(EXIT_FAILURE, EINVAL, "Invalid data offset");
+
 	inode_data = data + sizeof(struct lcfs_header_s);
-	vdata = data + header->data_offset;
+	vdata = data + lcfs_u64_from_file(header->data_offset);
 	root_index = LCFS_ROOT_INODE;
 
 	if (mode == DUMP) {

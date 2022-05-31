@@ -7,6 +7,7 @@
 # include <fcntl.h>
 # include <unistd.h>
 # include <sys/stat.h>
+# include <endian.h>
 
 # define kfree free
 # define vfree free

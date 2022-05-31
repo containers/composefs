@@ -96,6 +96,8 @@ struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
 		kfree(ctx);
 		return ERR_CAST(header);
 	}
+	header->inode_len = lcfs_u32_from_file(header->inode_len);
+	header->data_offset = lcfs_u64_from_file(header->data_offset);
 
 	return ctx;
 }
@@ -177,6 +179,18 @@ static void *lcfs_alloc_vdata(struct lcfs_context_s *ctx,
 	return res;
 }
 
+static u32 lcfs_read_u32(u8 **data) {
+	u32 v = lcfs_u32_from_file (__get_unaligned_cpu32(*data));
+	*data += sizeof(u32);
+	return v;
+}
+
+static u64 lcfs_read_u64(u8 **data) {
+	u64 v = lcfs_u64_from_file (__get_unaligned_cpu64(*data));
+	*data += sizeof(u64);
+	return v;
+}
+
 struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 					lcfs_off_t index,
 					struct lcfs_inode_s *ino)
@@ -195,74 +209,60 @@ struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 	if (IS_ERR(data))
 		return ERR_CAST(data);
 
-	ino->payload_length = __get_unaligned_cpu32(data);
-	data += sizeof(u32);
-	ino->xattrs.off = __get_unaligned_cpu32(data);
-	data += sizeof(u32);
-	ino->xattrs.len = __get_unaligned_cpu32(data);
-	data += sizeof(u32);
+	ino->payload_length = lcfs_read_u32(&data);
+	ino->xattrs.off = lcfs_read_u32(&data);
+	ino->xattrs.len = lcfs_read_u32(&data);
 
 	if (LCFS_INODE_FLAG_CHECK(flags, MODE)) {
-		ino->st_mode = __get_unaligned_cpu32(data);
-		data += sizeof(u32);
+		ino->st_mode = lcfs_read_u32(&data);
 	} else {
 		ino->st_mode = LCFS_INODE_DEFAULT_MODE;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, NLINK)) {
-		ino->st_nlink = __get_unaligned_cpu32(data);
-		data += sizeof(u32);
+		ino->st_nlink = lcfs_read_u32(&data);
 	} else {
 		ino->st_nlink = LCFS_INODE_DEFAULT_NLINK;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, UIDGID)) {
-		ino->st_uid = __get_unaligned_cpu32(data);
-		data += sizeof(u32);
-		ino->st_gid = __get_unaligned_cpu32(data);
-		data += sizeof(u32);
+		ino->st_uid = lcfs_read_u32(&data);
+		ino->st_gid = lcfs_read_u32(&data);
 	} else {
 		ino->st_uid = LCFS_INODE_DEFAULT_UIDGID;
 		ino->st_gid = LCFS_INODE_DEFAULT_UIDGID;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, RDEV)) {
-		ino->st_rdev = __get_unaligned_cpu32(data);
-		data += sizeof(u32);
+		ino->st_rdev = lcfs_read_u32(&data);
 	} else {
 		ino->st_rdev = LCFS_INODE_DEFAULT_RDEV;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, TIMES)) {
-		ino->st_mtim.tv_sec = __get_unaligned_cpu64(data);
-		data += sizeof(u64);
-		ino->st_ctim.tv_sec = __get_unaligned_cpu64(data);
-		data += sizeof(u64);
+		ino->st_mtim.tv_sec = lcfs_read_u64(&data);
+		ino->st_ctim.tv_sec = lcfs_read_u64(&data);
 	} else {
 		ino->st_mtim.tv_sec = LCFS_INODE_DEFAULT_TIMES;
 		ino->st_ctim.tv_sec = LCFS_INODE_DEFAULT_TIMES;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, TIMES_NSEC)) {
-		ino->st_mtim.tv_nsec = __get_unaligned_cpu32(data);
-		data += sizeof(u32);
-		ino->st_ctim.tv_nsec = __get_unaligned_cpu32(data);
-		data += sizeof(u32);
+		ino->st_mtim.tv_nsec = lcfs_read_u32(&data);
+		ino->st_ctim.tv_nsec = lcfs_read_u32(&data);
 	} else {
 		ino->st_mtim.tv_nsec = 0;
 		ino->st_ctim.tv_nsec = 0;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, LOW_SIZE)) {
-		ino->st_size = __get_unaligned_cpu32(data);
-		data += sizeof(u32);
+		ino->st_size = lcfs_read_u32(&data);
 	} else {
 		ino->st_size = 0;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, HIGH_SIZE)) {
-		ino->st_size += (uint64_t)__get_unaligned_cpu32(data) << 32;
-		data += sizeof(u32);
+		ino->st_size += (u64)lcfs_read_u32(&data) << 32;
 	}
 
 	return ino;
@@ -289,7 +289,7 @@ struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx,
 	if (IS_ERR(dir))
 		return ERR_CAST(dir);
 
-	n_dentries = dir->n_dentries;
+	n_dentries = dir->n_dentries = lcfs_u32_from_file(dir->n_dentries);
 
 	/* Verify that array fits */
 	if (ino->payload_length < lcfs_dir_size(n_dentries))
@@ -298,9 +298,11 @@ struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx,
 	data = ((u8 *)dir) + lcfs_dir_size(n_dentries);
 	data_end = ((u8 *)dir) + ino->payload_length;
 
-	/* Verify all dentries upfront */
+	/* Verify and convert all dentries upfront */
 	for (i = 0; i < n_dentries; i++) {
-		uint32_t name_len = dir->dentries[i].name_len;
+		struct lcfs_dentry_s *d = &dir->dentries[i];
+		u16 name_len = d->name_len = lcfs_u16_from_file(d->name_len);
+		d->inode_index = lcfs_u64_from_file(d->inode_index);
 
 		/* name needs to fit in data */
 		if (data_end - data < name_len)
@@ -338,7 +340,7 @@ struct lcfs_xattr_header_s *lcfs_get_xattrs(struct lcfs_context_s *ctx, struct l
 	if (IS_ERR(xattrs))
 		return ERR_CAST(xattrs);
 
-	n_xattrs = xattrs->n_attr;
+	n_xattrs = xattrs->n_attr = lcfs_u16_from_file (xattrs->n_attr);
 
 	/* Verify that array fits */
 	if (ino->xattrs.len < lcfs_xattr_header_size(n_xattrs))
@@ -347,10 +349,11 @@ struct lcfs_xattr_header_s *lcfs_get_xattrs(struct lcfs_context_s *ctx, struct l
 	data = ((u8 *)xattrs) + lcfs_xattr_header_size(n_xattrs);
 	data_end = ((u8 *)xattrs) + ino->xattrs.len;
 
-	/* Verify all keys and value sizes upfront */
+	/* Verify and convert all keys and value sizes upfront */
 	for (i = 0; i < n_xattrs; i++) {
-		uint16_t key_len = xattrs->attr[i].key_length;
-		uint16_t value_len = xattrs->attr[i].value_length;
+		struct lcfs_xattr_element_s *e = &xattrs->attr[i];
+		uint16_t key_len = e->key_length = lcfs_u16_from_file(e->key_length);
+		uint16_t value_len = e->value_length = lcfs_u16_from_file(e->value_length);
 		if (key_len > XATTR_NAME_MAX)
 			goto corrupted;
 

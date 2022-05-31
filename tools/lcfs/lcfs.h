@@ -21,12 +21,37 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <endian.h>
 
 #define LCFS_VERSION 1
 
 typedef uint64_t lcfs_off_t;
 
 typedef lcfs_off_t lcfs_c_str_t;
+
+static inline uint16_t lcfs_u16_to_file(uint16_t val) {
+	return htole16(val);
+}
+
+static inline uint32_t lcfs_u32_to_file(uint32_t val) {
+	return htole32(val);
+}
+
+static inline uint64_t lcfs_u64_to_file(uint64_t val) {
+	return htole64(val);
+}
+
+static inline uint16_t lcfs_u16_from_file(uint16_t val) {
+	return le16toh(val);
+}
+
+static inline uint32_t lcfs_u32_from_file(uint32_t val) {
+	return le32toh(val);
+}
+
+static inline uint64_t lcfs_u64_from_file(uint64_t val) {
+	return le64toh(val);
+}
 
 struct lcfs_vdata_s {
 	uint32_t off;

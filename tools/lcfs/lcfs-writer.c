@@ -460,17 +460,19 @@ static int compute_xattrs(struct lcfs_ctx_s *ctx) {
 			return -1;
 		}
 		header = (struct lcfs_xattr_header_s *)buffer;
-		header->n_attr = node->n_xattrs;
+		header->n_attr = lcfs_u16_to_file(node->n_xattrs);
 
 		data = buffer +  header_len;
 		for (i = 0; i < node->n_xattrs; i++) {
+			size_t key_len;
 			struct lcfs_xattr_s *xattr = &node->xattrs[i];
 
-			header->attr[i].key_length = strlen(xattr->key);
-			memcpy(data, xattr->key, strlen(xattr->key));
-			data += strlen(xattr->key);
+			key_len = strlen(xattr->key);
+			header->attr[i].key_length = lcfs_u16_to_file(key_len);
+			memcpy(data, xattr->key, key_len);
+			data += key_len;
 
-			header->attr[i].value_length = xattr->value_len;
+			header->attr[i].value_length = lcfs_u16_to_file(xattr->value_len);
 			memcpy(data, xattr->value, xattr->value_len);
 			data += xattr->value_len;
 		}
@@ -496,12 +498,12 @@ static struct lcfs_node_s *follow_links(struct lcfs_node_s *node) {
 }
 
 static int write_uint32(uint32_t val, FILE *out) {
-	uint32_t _val = val;
+	uint32_t _val = lcfs_u32_to_file(val);
 	return fwrite(&_val, sizeof(uint32_t), 1, out);
 }
 
 static int write_uint64(uint64_t val, FILE *out) {
-	uint64_t _val = val;
+	uint64_t _val = lcfs_u64_to_file(val);
 	return fwrite(&_val, sizeof(uint64_t), 1, out);
 }
 
@@ -609,7 +611,7 @@ static int write_inodes(struct lcfs_ctx_s *ctx, FILE *out) {
 			if (ret < 0)
 				return ret;
 		} else if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
-			struct lcfs_dir_s dir = { node->children_size };
+			struct lcfs_dir_s dir = { lcfs_u32_to_file(node->children_size) };
 			ret = fwrite(&dir, sizeof(dir), 1, out);
 			if (ret < 0)
 				return ret;
@@ -618,8 +620,8 @@ static int write_inodes(struct lcfs_ctx_s *ctx, FILE *out) {
 				struct lcfs_node_s *target_child = follow_links(dirent_child);
 				struct lcfs_dentry_s dentry;
 
-				dentry.inode_index = target_child->inode_index;
-				dentry.name_len = strlen(dirent_child->name);
+				dentry.inode_index = lcfs_u64_to_file(target_child->inode_index);
+				dentry.name_len = lcfs_u16_to_file(strlen(dirent_child->name));
 				dentry.d_type = node_get_dtype(target_child);
 				dentry.pad = 0;
 				ret = fwrite(&dentry, sizeof(dentry), 1, out);
@@ -644,7 +646,7 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 		.version = LCFS_VERSION,
 		.unused1 = 0,
 		.unused2 = 0,
-		.inode_len = sizeof(struct lcfs_inode_s),
+		.inode_len = lcfs_u32_to_file(sizeof(struct lcfs_inode_s)),
 	};
 	int ret = 0;
 	struct lcfs_ctx_s *ctx;
@@ -663,7 +665,7 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 		return ret;
 	}
 
-	header.data_offset = sizeof(struct lcfs_header_s) + ctx->inode_table_size;
+	header.data_offset = lcfs_u64_to_file(sizeof(struct lcfs_header_s) + ctx->inode_table_size);
 
 	ret = compute_xattrs(ctx);
 	if (ret < 0) {

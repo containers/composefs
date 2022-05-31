@@ -25,11 +25,65 @@ typedef uint64_t u64;
 #include <linux/fs.h>
 #include <linux/stat.h>
 
+#ifndef FUZZING
+#include <linux/byteorder/generic.h>
+#endif
+
 #define LCFS_VERSION 1
 
 typedef u64 lcfs_off_t;
 
 typedef lcfs_off_t lcfs_c_str_t;
+
+#ifdef FUZZING
+static inline uint16_t lcfs_u16_to_file(uint16_t val) {
+	return htole16(val);
+}
+
+static inline uint32_t lcfs_u32_to_file(uint32_t val) {
+	return htole32(val);
+}
+
+static inline uint64_t lcfs_u64_to_file(uint64_t val) {
+	return htole64(val);
+}
+
+static inline uint16_t lcfs_u16_from_file(uint16_t val) {
+	return le16toh(val);
+}
+
+static inline uint32_t lcfs_u32_from_file(uint32_t val) {
+	return le32toh(val);
+}
+
+static inline uint64_t lcfs_u64_from_file(uint64_t val) {
+	return le64toh(val);
+}
+#else
+static inline uint16_t lcfs_u16_to_file(uint16_t val) {
+	return cpu_to_le16(val);
+}
+
+static inline uint32_t lcfs_u32_to_file(uint32_t val) {
+	return cpu_to_le32(val);
+}
+
+static inline uint64_t lcfs_u64_to_file(uint64_t val) {
+	return cpu_to_le64(val);
+}
+
+static inline uint16_t lcfs_u16_from_file(uint16_t val) {
+	return le16_to_cpu(val);
+}
+
+static inline uint32_t lcfs_u32_from_file(uint32_t val) {
+	return le32_to_cpu(val);
+}
+
+static inline uint64_t lcfs_u64_from_file(uint64_t val) {
+	return le64_to_cpu(val);
+}
+#endif
 
 struct lcfs_vdata_s {
 	u32 off;
