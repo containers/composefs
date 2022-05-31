@@ -262,16 +262,6 @@ static int cfs_tmpfile(struct user_namespace *mnt_userns, struct inode *dir,
 	return -EROFS;
 }
 
-static int cfs_dir_release(struct inode *inode, struct file *file)
-{
-	return 0;
-}
-
-static int cfs_dir_open(struct inode *inode, struct file *file)
-{
-	return 0;
-}
-
 static bool cfs_iterate_cb(void *private, const char *name, int name_len, u64 ino, unsigned int dtype)
 {
 	struct dir_context *ctx = private;
@@ -293,27 +283,6 @@ static int cfs_iterate(struct file *file, struct dir_context *ctx)
 		return 0;
 
 	return lcfs_iterate_dir(cino->dir, ctx->pos - 2, cfs_iterate_cb, ctx);
-}
-
-static loff_t cfs_dir_llseek(struct file *file, loff_t offset, int origin)
-{
-	loff_t res = -EINVAL;
-
-	switch (origin) {
-	case SEEK_CUR:
-		offset += file->f_pos;
-		break;
-	case SEEK_SET:
-		break;
-	default:
-		return res;
-	}
-	if (offset < 0)
-		return res;
-
-	file->f_pos = offset;
-
-	return offset;
 }
 
 struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
@@ -349,10 +318,9 @@ return_negative:
 }
 
 static const struct file_operations cfs_dir_operations = {
-	.open = cfs_dir_open,
-	.iterate = cfs_iterate,
-	.release = cfs_dir_release,
-	.llseek = cfs_dir_llseek,
+	.llseek		= generic_file_llseek,
+	.read		= generic_read_dir,
+	.iterate_shared = cfs_iterate,
 };
 
 static const struct inode_operations cfs_dir_inode_operations = {
