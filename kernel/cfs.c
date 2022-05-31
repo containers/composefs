@@ -88,10 +88,9 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 	char *target_link = NULL;
 	char *real_path = NULL;
 	struct lcfs_xattr_header_s *xattrs = NULL;
-	loff_t real_size = 0;
 	struct cfs_inode *cino;
-	struct inode *inode;
-	struct lcfs_dir_s *dirdata;
+	struct inode *inode = NULL;
+	struct lcfs_dir_s *dirdata = NULL;
 	int ret;
 	int r;
 
@@ -104,10 +103,11 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		}
 	}
 
-	if ((ino->st_mode & S_IFMT) == S_IFREG) {
-		r = lcfs_get_backing(ctx, ino, ino_num, &real_size, &real_path);
+	if ((ino->st_mode & S_IFMT) == S_IFREG && ino->payload_length != 0) {
+		real_path = lcfs_dup_payload_path(ctx, ino, ino_num);
 		if (r < 0) {
-			ret = r;
+			ret = PTR_ERR(real_path);
+			real_path = NULL;
 			goto fail;
 		}
 	}
@@ -115,7 +115,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 	if ((ino->st_mode & S_IFMT) == S_IFDIR) {
 		dirdata = lcfs_get_dir(ctx, ino, ino_num);
 		if (IS_ERR(dirdata)) {
-			ret = PTR_ERR(dir);
+			ret = PTR_ERR(dirdata);
 			dirdata = NULL;
 			goto fail;
 		}
@@ -154,7 +154,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		case S_IFREG:
 			inode->i_op = &cfs_file_inode_operations;
 			inode->i_fop = &cfs_file_operations;
-			inode->i_size = real_size;
+			inode->i_size = ino->st_size;
 			cino->real_path = real_path;
 			break;
 		case S_IFLNK:
@@ -203,11 +203,11 @@ static struct inode *cfs_get_root_inode(struct super_block *sb)
 	struct lcfs_inode_s ino_buf;
 	struct lcfs_inode_s *ino;
 
-	ino = lcfs_get_ino_index(fsi->lcfs_ctx, 0, &ino_buf);
+	ino = lcfs_get_ino_index(fsi->lcfs_ctx, LCFS_ROOT_INODE, &ino_buf);
 	if (IS_ERR(ino))
 		return ERR_CAST(ino);
 
-	return cfs_make_inode(fsi->lcfs_ctx, sb, 0, ino, NULL);
+	return cfs_make_inode(fsi->lcfs_ctx, sb, LCFS_ROOT_INODE, ino, NULL);
 }
 
 static int cfs_rmdir(struct inode *ino, struct dentry *dir)

@@ -44,41 +44,76 @@ struct lcfs_header_s {
 	uint64_t unused3[3];
 } __attribute__((packed));
 
-struct lcfs_backing_s {
-	/* Total size of the backing file in bytes.  */
-	uint64_t st_size;
 
-	/* Source file.  */
-	uint32_t payload_len;
-	char payload[];
-} __attribute__((packed));
+enum lcfs_inode_flags {
+	LCFS_INODE_FLAGS_NONE            = 0,
+	LCFS_INODE_FLAGS_MODE            = 1 << 0,
+	LCFS_INODE_FLAGS_NLINK           = 1 << 1,
+	LCFS_INODE_FLAGS_UIDGID          = 1 << 2,
+	LCFS_INODE_FLAGS_RDEV            = 1 << 3,
+	LCFS_INODE_FLAGS_TIMES           = 1 << 4,
+	LCFS_INODE_FLAGS_TIMES_NSEC      = 1 << 5,
+	LCFS_INODE_FLAGS_LOW_SIZE        = 1 << 6, /* Low 32bit of st_size */
+	LCFS_INODE_FLAGS_HIGH_SIZE       = 1 << 7, /* High 32bit of st_size */
 
-#define lcfs_backing_size(_payload_len) (sizeof(struct lcfs_backing_s) + (_payload_len))
+};
+
+#define LCFS_INODE_FLAG_CHECK(_flag, _name) (((_flag) & (LCFS_INODE_FLAGS_ ## _name)) != 0)
+#define LCFS_INODE_FLAG_CHECK_SIZE(_flag, _name, _size) (LCFS_INODE_FLAG_CHECK(_flag, _name) ? (_size) : 0)
+
+#define LCFS_INODE_INDEX_SHIFT 8
+#define	LCFS_INODE_FLAGS_MASK ((1 << LCFS_INODE_INDEX_SHIFT) - 1)
+
+#define LCFS_ROOT_INODE LCFS_INODE_FLAGS_MASK
+
+#define LCFS_INODE_DEFAULT_MODE 0100644
+#define LCFS_INODE_DEFAULT_NLINK 1
+#define LCFS_INODE_DEFAULT_UIDGID 0
+#define LCFS_INODE_DEFAULT_RDEV 0
+#define LCFS_INODE_DEFAULT_TIMES 0
 
 struct lcfs_inode_s {
-	uint32_t st_mode; /* File type and mode.  */
-	uint32_t st_nlink; /* Number of hard links.  */
-	uint32_t st_uid; /* User ID of owner.  */
-	uint32_t st_gid; /* Group ID of owner.  */
-	uint32_t st_rdev; /* Device ID (if special file).  */
-
-	struct timespec st_mtim; /* Time of last modification.  */
-	struct timespec st_ctim; /* Time of last status change.  */
-
-	/* Variable len data.  */
-	struct lcfs_vdata_s xattrs;
-
 	/* This is the size of the type specific data that comes directly after
 	   the inode in the file. Of this type:
 	   *
 	   * directory: lcfs_dir_s
-	   * regular file: lcfs_backing_s
+	   * regular file: the backing filename
 	   * symlink: the target link
 	   *
-	   * Canonically payload_length is 0 for empty dir/file/symlink.
+	   * Canonically payload_length is 0 for empty dir/file/symlink
 	   */
 	uint32_t payload_length;
-} __attribute__((packed));
+
+	/* Variable len data.  */
+	struct lcfs_vdata_s xattrs;
+
+	/* Optional data: (selected by flags) */
+	uint32_t st_mode; /* File type and mode.  */
+	uint32_t st_nlink; /* Number of hard links, only for regular files.  */
+	uint32_t st_uid; /* User ID of owner.  */
+	uint32_t st_gid; /* Group ID of owner.  */
+	uint32_t st_rdev; /* Device ID (if special file).  */
+	uint64_t st_size; /* Size of file, only used for regular files */
+
+	struct timespec st_mtim; /* Time of last modification.  */
+	struct timespec st_ctim; /* Time of last status change.  */
+};
+
+static inline uint32_t lcfs_inode_encoded_size(uint32_t flags)
+{
+	return
+		sizeof(uint32_t) /* payload_length */ +
+		sizeof(struct lcfs_vdata_s) /* xattrs */ +
+		LCFS_INODE_FLAG_CHECK_SIZE(flags, MODE, sizeof(uint32_t)) +
+		LCFS_INODE_FLAG_CHECK_SIZE(flags, NLINK, sizeof(uint32_t)) +
+		LCFS_INODE_FLAG_CHECK_SIZE(flags, UIDGID, sizeof(uint32_t) + sizeof(uint32_t)) +
+		LCFS_INODE_FLAG_CHECK_SIZE(flags, RDEV, sizeof(uint32_t)) +
+		LCFS_INODE_FLAG_CHECK_SIZE(flags, TIMES, sizeof(uint64_t)*2) +
+		LCFS_INODE_FLAG_CHECK_SIZE(flags, TIMES_NSEC, sizeof(uint32_t)*2) +
+		LCFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(uint32_t)) +
+		LCFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(uint32_t))
+		;
+}
 
 struct lcfs_dentry_s {
 	/* Index of struct lcfs_inode_s */

@@ -87,4 +87,20 @@ static inline void fput(struct file *f)
 	free(f);
 }
 
+struct __una_u32 { u32 x; } __attribute__((packed));
+
+static inline u32 __get_unaligned_cpu32(const void *p)
+{
+        const struct __una_u32 *ptr = (const struct __una_u32 *)p;
+        return ptr->x;
+}
+
+struct __una_u64 { u64 x; } __attribute__((packed));
+
+static inline u64 __get_unaligned_cpu64(const void *p)
+{
+        const struct __una_u64 *ptr = (const struct __una_u64 *)p;
+        return ptr->x;
+}
+
 #endif

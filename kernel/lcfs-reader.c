@@ -16,6 +16,8 @@
 # include <linux/slab.h>
 # include <linux/bsearch.h>
 # include <linux/overflow.h>
+# include <linux/overflow.h>
+#include <linux/unaligned/packed_struct.h>
 #endif
 
 #include "lcfs-fuzzing.h"
@@ -116,37 +118,33 @@ static void *lcfs_get_inode_data(struct lcfs_context_s *ctx,
 			      size, dest);
 }
 
-static void *lcfs_alloc_inode_data(struct lcfs_context_s *ctx,
-			    u64 offset,
-			    u64 size)
-{
-	u8 *buf;
-	void *res;
-
-	buf = kmalloc(size, GFP_KERNEL);
-	if (!buf)
-		return ERR_PTR(-ENOMEM);
-
-	res = lcfs_get_inode_data(ctx, offset, size, buf);
-	if (IS_ERR(res))
-		kfree(buf);
-
-	return res;
-}
-
 static void *lcfs_get_inode_payload(struct lcfs_context_s *ctx,
 				    struct lcfs_inode_s *ino,
 				    lcfs_off_t index,
 				    u8 *dest)
 {
-	return lcfs_get_inode_data(ctx, index + sizeof(struct lcfs_inode_s), ino->payload_length, dest);
+	u32 flags = index & LCFS_INODE_FLAGS_MASK;
+	u64 offset = index >> LCFS_INODE_INDEX_SHIFT;
+	u64 inode_size = lcfs_inode_encoded_size(flags);
+	return lcfs_get_inode_data(ctx, offset + inode_size, ino->payload_length, dest);
 }
 
 static void *lcfs_alloc_inode_payload(struct lcfs_context_s *ctx,
 				      struct lcfs_inode_s *ino,
 				      lcfs_off_t index)
 {
-	return lcfs_alloc_inode_data(ctx, index + sizeof(struct lcfs_inode_s), ino->payload_length);
+	u8 *buf;
+	void *res;
+
+	buf = kmalloc(ino->payload_length, GFP_KERNEL);
+	if (!buf)
+		return ERR_PTR(-ENOMEM);
+
+	res = lcfs_get_inode_payload(ctx, ino, index, buf);
+	if (IS_ERR(res))
+		kfree(buf);
+
+	return res;
 }
 
 
@@ -181,9 +179,93 @@ static void *lcfs_alloc_vdata(struct lcfs_context_s *ctx,
 
 struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 					lcfs_off_t index,
-					struct lcfs_inode_s *buffer)
+					struct lcfs_inode_s *ino)
 {
-	return lcfs_get_inode_data(ctx, index, sizeof(struct lcfs_inode_s), (u8 *)buffer);
+	u32 flags = index & LCFS_INODE_FLAGS_MASK;
+	u64 offset = index >> LCFS_INODE_INDEX_SHIFT;
+	u8 buffer[sizeof(struct lcfs_inode_s)]; /* This will fix the maximal encoded size */
+	u64 inode_size = lcfs_inode_encoded_size(flags);
+	u8 *data;
+
+	/* Shouldn't happen, but lets check */
+	if (inode_size > sizeof(buffer))
+		return ERR_PTR(-EFSCORRUPTED);
+
+	data = lcfs_get_inode_data(ctx, offset, inode_size, buffer);
+	if (IS_ERR(data))
+		return ERR_CAST(data);
+
+	ino->payload_length = __get_unaligned_cpu32(data);
+	data += sizeof(u32);
+	ino->xattrs.off = __get_unaligned_cpu32(data);
+	data += sizeof(u32);
+	ino->xattrs.len = __get_unaligned_cpu32(data);
+	data += sizeof(u32);
+
+	if (LCFS_INODE_FLAG_CHECK(flags, MODE)) {
+		ino->st_mode = __get_unaligned_cpu32(data);
+		data += sizeof(u32);
+	} else {
+		ino->st_mode = LCFS_INODE_DEFAULT_MODE;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(flags, NLINK)) {
+		ino->st_nlink = __get_unaligned_cpu32(data);
+		data += sizeof(u32);
+	} else {
+		ino->st_nlink = LCFS_INODE_DEFAULT_NLINK;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(flags, UIDGID)) {
+		ino->st_uid = __get_unaligned_cpu32(data);
+		data += sizeof(u32);
+		ino->st_gid = __get_unaligned_cpu32(data);
+		data += sizeof(u32);
+	} else {
+		ino->st_uid = LCFS_INODE_DEFAULT_UIDGID;
+		ino->st_gid = LCFS_INODE_DEFAULT_UIDGID;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(flags, RDEV)) {
+		ino->st_rdev = __get_unaligned_cpu32(data);
+		data += sizeof(u32);
+	} else {
+		ino->st_rdev = LCFS_INODE_DEFAULT_RDEV;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(flags, TIMES)) {
+		ino->st_mtim.tv_sec = __get_unaligned_cpu64(data);
+		data += sizeof(u64);
+		ino->st_ctim.tv_sec = __get_unaligned_cpu64(data);
+		data += sizeof(u64);
+	} else {
+		ino->st_mtim.tv_sec = LCFS_INODE_DEFAULT_TIMES;
+		ino->st_ctim.tv_sec = LCFS_INODE_DEFAULT_TIMES;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(flags, TIMES_NSEC)) {
+		ino->st_mtim.tv_nsec = __get_unaligned_cpu32(data);
+		data += sizeof(u32);
+		ino->st_ctim.tv_nsec = __get_unaligned_cpu32(data);
+		data += sizeof(u32);
+	} else {
+		ino->st_mtim.tv_nsec = 0;
+		ino->st_ctim.tv_nsec = 0;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(flags, LOW_SIZE)) {
+		ino->st_size = __get_unaligned_cpu32(data);
+		data += sizeof(u32);
+	} else {
+		ino->st_size = 0;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(flags, HIGH_SIZE)) {
+		ino->st_size += (uint64_t)__get_unaligned_cpu32(data) << 32;
+		data += sizeof(u32);
+	}
+
+	return ino;
 }
 
 struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx,
@@ -350,7 +432,7 @@ int lcfs_get_xattr(struct lcfs_xattr_header_s *xattrs, const char *name, void *v
 		uint16_t key_len = xattrs->attr[i].key_length;
 		uint16_t value_len = xattrs->attr[i].value_length;
 
-		this_key = data;
+		this_key = (char *)data;
 		data += key_len;
 
 		this_value = data;
@@ -393,7 +475,7 @@ int lcfs_iterate_dir(struct lcfs_dir_s *dir, loff_t first, lcfs_dir_iter_cb cb, 
 	data = ((u8 *)dir) + lcfs_dir_size(n_dentries);
 
 	for (i = 0; i < n_dentries; i++) {
-		char *name = data;
+		char *name = (char *)data;
 		u32 name_len = dir->dentries[i].name_len;
 
 		data += name_len;
@@ -423,7 +505,7 @@ int lcfs_lookup(struct lcfs_dir_s *dir, const char *name, size_t name_len, lcfs_
 
 	data = ((u8 *)dir) + lcfs_dir_size(n_dentries);
 	for (i = 0; i < n_dentries; i++) {
-		char *entry_name = data;
+		char *entry_name = (char *)data;
 		u32 entry_name_len = dir->dentries[i].name_len;
 
 		if (name_len == entry_name_len &&
@@ -442,76 +524,29 @@ char *lcfs_dup_payload_path(struct lcfs_context_s *ctx,
 			    lcfs_off_t index)
 {
 	const char *v;
-	char *link;
+	u8 *path;
+
+	if ((ino->st_mode & S_IFMT) != S_IFREG &&
+	    (ino->st_mode & S_IFMT) != S_IFLNK) {
+		return ERR_PTR(-EINVAL);
+	}
 
 	if (ino->payload_length == 0 ||
 	    ino->payload_length > PATH_MAX)
 		return ERR_PTR(-EFSCORRUPTED);
 
-	link = kmalloc(ino->payload_length + 1, GFP_KERNEL);
-	if (!link)
+	path = kmalloc(ino->payload_length + 1, GFP_KERNEL);
+	if (!path)
 		return ERR_PTR(-ENOMEM);
 
-	v = lcfs_get_inode_payload(ctx, ino, index, link);
+	v = lcfs_get_inode_payload(ctx, ino, index, path);
 	if (IS_ERR(v)) {
-		kfree(link);
+		kfree(path);
 		return ERR_CAST(v);
 	}
 
 	/* zero terminate */
-	link[ino->payload_length] = 0;
+	path[ino->payload_length] = 0;
 
-	return link;
-}
-
-int lcfs_get_backing(struct lcfs_context_s *ctx,
-		     struct lcfs_inode_s *ino,
-		     lcfs_off_t index,
-		     loff_t *out_size,
-		     char **out_path)
-{
-	struct lcfs_backing_s *backing;
-	char *path = NULL;
-	size_t size;
-	u32 payload_len;
-
-	if (ino->payload_length == 0) {
-		size = 0;
-		path = NULL;
-	} else {
-		if (ino->payload_length < sizeof(struct lcfs_backing_s) ||
-		    ino->payload_length > sizeof(struct lcfs_backing_buf_s))
-			return -EFSCORRUPTED;
-
-		backing = lcfs_alloc_inode_payload(ctx, ino, index);
-		if (IS_ERR(backing))
-			return PTR_ERR(backing);
-
-		size = backing->st_size;
-		payload_len = backing->payload_len;
-
-		if (lcfs_backing_size(payload_len) != ino->payload_length ||
-		    /* Make sure we fit in the PATH_MAX bytes in out_buf, including zero (which is not in the file) */
-		    payload_len >= PATH_MAX) {
-			kfree(backing);
-			return -EFSCORRUPTED;
-		}
-
-		if (out_path) {
-			path = kstrndup(backing->payload, backing->payload_len, GFP_KERNEL);
-			if (path == NULL) {
-				kfree(backing);
-				return -ENOMEM;
-			}
-		}
-
-		kfree(backing);
-	}
-
-	if (out_size)
-		*out_size = size;
-	if (out_path)
-		*out_path = path;
-
-	return 0;
+	return (char *)path;
 }

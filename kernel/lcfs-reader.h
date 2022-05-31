@@ -41,6 +41,4 @@ int lcfs_lookup(struct lcfs_dir_s *dir, const char *name, size_t name_len, lcfs_
 
 char *lcfs_dup_payload_path(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, lcfs_off_t index);
 
-int lcfs_get_backing(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, lcfs_off_t index, loff_t *out_size, char **out_path);
-
 #endif

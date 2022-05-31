@@ -52,9 +52,10 @@ struct lcfs_node_s {
 
 	bool in_tree;
 
+	uint32_t flags;
+
 	char *name;
 	char *payload;
-	uint64_t st_size;
 	struct lcfs_dentry_s data;
 	lcfs_off_t inode_index;
 
@@ -82,7 +83,6 @@ struct lcfs_ctx_s {
 	loff_t inode_data_size;
 	loff_t payload_data_size;
 	loff_t dir_data_size;
-	loff_t backing_data_size;
 #endif
 };
 
@@ -278,8 +278,10 @@ static ssize_t compute_payload_size(struct lcfs_node_s *node)
 			payload_size = strlen(node->payload);
 		}
 	} else if ((node->inode.st_mode & S_IFMT) == S_IFREG) {
-		if (node->payload && strlen(node->payload) != 0 && node->st_size != 0) {
-			payload_size = lcfs_backing_size(strlen(node->payload));
+		/* Ensure we never use a payload for empty files, for canonicalization purposes */
+		if (node->inode.st_size != 0 &&
+		    node->payload && strlen(node->payload) != 0) {
+			payload_size = strlen(node->payload);
 		}
 	} else if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
 		if (node->children_size > 0) {
@@ -302,6 +304,33 @@ static ssize_t compute_payload_size(struct lcfs_node_s *node)
 	return payload_size;
 }
 
+static uint32_t compute_flags(struct lcfs_node_s *node) {
+	uint32_t flags = 0;
+	if (node->inode.st_mode != LCFS_INODE_DEFAULT_MODE)
+		flags |= LCFS_INODE_FLAGS_MODE;
+	if ((node->inode.st_mode & S_IFMT) == S_IFREG &&
+	    node->inode.st_nlink != LCFS_INODE_DEFAULT_NLINK)
+		flags |= LCFS_INODE_FLAGS_NLINK;
+	if (node->inode.st_uid != LCFS_INODE_DEFAULT_UIDGID ||
+	    node->inode.st_uid != LCFS_INODE_DEFAULT_UIDGID)
+		flags |= LCFS_INODE_FLAGS_UIDGID;
+	if (node->inode.st_rdev != LCFS_INODE_DEFAULT_RDEV)
+		flags |= LCFS_INODE_FLAGS_RDEV;
+	if (node->inode.st_mtim.tv_sec != LCFS_INODE_DEFAULT_TIMES ||
+	    node->inode.st_ctim.tv_sec != LCFS_INODE_DEFAULT_TIMES)
+		flags |= LCFS_INODE_FLAGS_TIMES;
+	if (node->inode.st_mtim.tv_nsec != 0 ||
+	    node->inode.st_ctim.tv_nsec != 0)
+		flags |= LCFS_INODE_FLAGS_TIMES_NSEC;
+	if ((node->inode.st_size & UINT32_MAX) != 0)
+		flags |= LCFS_INODE_FLAGS_LOW_SIZE;
+	if ((node->inode.st_size >> 32) != 0)
+		flags |= LCFS_INODE_FLAGS_HIGH_SIZE;
+
+	return flags;
+}
+
+
 /* This ensures that the tree is in a well defined order, with
    children sorted by name, and the nodes visited in breadth-first
    order.  It also updates the payload length of the nodes and using
@@ -311,6 +340,8 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 	size_t i;
 	ssize_t payload_length;
 	struct lcfs_node_s *node;
+	uint32_t inode_size;
+	uint32_t flags;
 
 	/* Start with the root node. */
 
@@ -343,6 +374,14 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		qsort(node->children, node->children_size, sizeof(node->children[0]), cmp_nodes);
 		qsort(node->xattrs, node->n_xattrs, sizeof(node->xattrs[0]), cmp_xattr);
 
+		/* Flags is always all one for root (as we don't know what flags to use from a dentry) */
+		if (node == root)
+			flags = LCFS_INODE_FLAGS_MASK;
+		else
+			flags = compute_flags(node);
+
+		node->flags = flags;
+
 		/* Compute payload length */
 		payload_length = compute_payload_size(node);
 		if (payload_length < 0)
@@ -353,16 +392,17 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		}
 		node->inode.payload_length = payload_length;
 
+		inode_size = lcfs_inode_encoded_size(flags);
+
 		/* Assign inode index */
-		node->inode_index = ctx->inode_table_size;
-		ctx->inode_table_size += sizeof(struct lcfs_inode_s) + payload_length;
+		node->inode_index = (ctx->inode_table_size << LCFS_INODE_INDEX_SHIFT) | flags;
+		ctx->inode_table_size += inode_size + payload_length;
 
 #ifdef LCFS_SIZE_STATS
-		ctx->inode_data_size += sizeof(struct lcfs_inode_s);
-		if ((node->inode.st_mode & S_IFMT) == S_IFLNK) {
+		ctx->inode_data_size += inode_size;
+		if ((node->inode.st_mode & S_IFMT) == S_IFLNK ||
+		    (node->inode.st_mode & S_IFMT) == S_IFREG) {
 			ctx->payload_data_size += payload_length;
-		} else if ((node->inode.st_mode & S_IFMT) == S_IFREG) {
-			ctx->backing_data_size += payload_length;
 		} else if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
 			ctx->dir_data_size += payload_length;
 		}
@@ -455,6 +495,98 @@ static struct lcfs_node_s *follow_links(struct lcfs_node_s *node) {
 	return node;
 }
 
+static int write_uint32(uint32_t val, FILE *out) {
+	uint32_t _val = val;
+	return fwrite(&_val, sizeof(uint32_t), 1, out);
+}
+
+static int write_uint64(uint64_t val, FILE *out) {
+	uint64_t _val = val;
+	return fwrite(&_val, sizeof(uint64_t), 1, out);
+}
+
+static int write_inode_data(struct lcfs_ctx_s *ctx, uint32_t flags, struct lcfs_inode_s *ino, FILE *out) {
+	int ret;
+	long start_pos, end_pos;
+
+	start_pos = ftell(out);
+
+	ret = write_uint32(ino->payload_length, out);
+	if (ret < 0)
+		return ret;
+
+	ret = write_uint32(ino->xattrs.off, out);
+	if (ret < 0)
+		return ret;
+
+	ret = write_uint32(ino->xattrs.len, out);
+	if (ret < 0)
+		return ret;
+
+	if (LCFS_INODE_FLAG_CHECK(flags, MODE)) {
+		ret = write_uint32(ino->st_mode, out);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(flags, NLINK)) {
+		ret = write_uint32(ino->st_nlink, out);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(flags, UIDGID)) {
+		ret = write_uint32(ino->st_uid, out);
+		if (ret < 0)
+			return ret;
+		ret = write_uint32(ino->st_gid, out);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(flags, RDEV)) {
+		ret = write_uint32(ino->st_rdev, out);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(flags, TIMES)) {
+		ret = write_uint64(ino->st_mtim.tv_sec, out);
+		if (ret < 0)
+			return ret;
+		ret = write_uint64(ino->st_ctim.tv_sec, out);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(flags, TIMES_NSEC)) {
+		ret = write_uint32(ino->st_mtim.tv_nsec, out);
+		if (ret < 0)
+			return ret;
+		ret = write_uint32(ino->st_ctim.tv_nsec, out);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(flags, LOW_SIZE)) {
+		ret = write_uint32(ino->st_size & UINT32_MAX, out);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(flags, HIGH_SIZE)) {
+		ret = write_uint32(ino->st_size >> 32, out);
+		if (ret < 0)
+			return ret;
+	}
+
+	end_pos = ftell(out);
+
+	assert((end_pos - start_pos) == lcfs_inode_encoded_size(flags));
+
+	return 0;
+}
+
 static int write_inodes(struct lcfs_ctx_s *ctx, FILE *out) {
 	struct lcfs_node_s *node;
 	size_t i;
@@ -463,24 +595,16 @@ static int write_inodes(struct lcfs_ctx_s *ctx, FILE *out) {
 	for (node = ctx->root; node != NULL; node = node->next) {
 		struct lcfs_inode_s *ino = &(node->inode);
 
-		ret = fwrite(ino, sizeof(struct lcfs_inode_s), 1, out);
+		ret = write_inode_data(ctx, node->flags, ino, out);
 		if (ret < 0)
 			return ret;
 
 		if (ino->payload_length == 0)
 			continue;
 
-		if ((node->inode.st_mode & S_IFMT) == S_IFLNK) {
-			ret = fwrite(node->payload, strlen(node->payload), 1, out);
-			if (ret < 0)
-				return ret;
-		} else if ((node->inode.st_mode & S_IFMT) == S_IFREG) {
-			struct lcfs_backing_s backing = { node->st_size };
-			backing.payload_len = strlen(node->payload);
-
-			ret = fwrite(&backing, sizeof(backing), 1, out);
-			if (ret < 0)
-				return ret;
+		if ((node->inode.st_mode & S_IFMT) == S_IFLNK ||
+		    (node->inode.st_mode & S_IFMT) == S_IFREG) {
+			assert(ino->payload_length == strlen(node->payload));
 			ret = fwrite(node->payload, strlen(node->payload), 1, out);
 			if (ret < 0)
 				return ret;
@@ -568,10 +692,9 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 	}
 
 #ifdef LCFS_SIZE_STATS
-	fprintf(stderr, "Size - Inodes: %ld kb, symlink: %ld kb, backing: %ld kb dir: %ld kb, xattrs: %ld kb\n",
+	fprintf(stderr, "Size - Inodes: %ld kb, payload: %ld kb, dir: %ld kb, xattrs: %ld kb\n",
 		ctx->inode_data_size / 1024,
 		ctx->payload_data_size / 1024,
-		ctx->backing_data_size / 1024,
 		ctx->dir_data_size / 1024,
 		ctx->vdata_len / 1024);
 #endif
@@ -671,7 +794,12 @@ static int read_xattrs(struct lcfs_node_s *ret,
 
 struct lcfs_node_s *lcfs_node_new(void)
 {
-	return calloc(1, sizeof(struct lcfs_node_s));
+	struct lcfs_node_s *node = calloc(1, sizeof(struct lcfs_node_s));
+	if (node == NULL)
+		return NULL;
+
+	node->inode.st_nlink = 1;
+	return node;
 }
 
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
@@ -707,7 +835,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 	ret->inode.st_rdev = sb.st_rdev;
 
 	if ((sb.st_mode & S_IFMT) == S_IFREG) {
-		ret->st_size = sb.st_size;
+		ret->inode.st_size = sb.st_size;
 	}
 
 	if ((buildflags & BUILD_USE_EPOCH) == 0) {
@@ -813,13 +941,13 @@ void lcfs_node_set_nlink(struct lcfs_node_s *node,
 
 uint64_t lcfs_node_get_size(struct lcfs_node_s *node)
 {
-	return node->st_size;
+	return node->inode.st_size;
 }
 
 void lcfs_node_set_size(struct lcfs_node_s *node,
 			 uint64_t size)
 {
-	node->st_size = size;
+	node->inode.st_size = size;
 }
 
 struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node,
@@ -845,6 +973,7 @@ struct lcfs_node_s *lcfs_node_get_parent(struct lcfs_node_s *node)
 void lcfs_node_make_hardlink(struct lcfs_node_s *node,
 			     struct lcfs_node_s *target)
 {
+	target = follow_links(target);
 	node->link_to = target;
 	target->inode.st_nlink++;
 }
