@@ -730,49 +730,59 @@ int lcfs_append_vdata_no_dedup(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 }
 
 static int read_xattrs(struct lcfs_node_s *ret,
-		       int dirfd, const char *fname, int flags)
+		       int dirfd, const char *fname)
 {
 	char path[PATH_MAX];
 	ssize_t list_size;
 	char *list, *it;
 	ssize_t r;
+	int fd;
 
-	if (flags & AT_EMPTY_PATH)
-		sprintf(path, "/proc/self/fd/%d", dirfd);
-	else
-		sprintf(path, "/proc/self/fd/%d/%s", dirfd, fname);
-
-	list_size = llistxattr(path, NULL, 0);
-	if (list_size < 0)
-		return list_size;
-
-	list = malloc(list_size);
-	if (list == NULL)
+	fd = openat(dirfd, fname, O_PATH | O_NOFOLLOW | O_CLOEXEC, 0);
+	if (fd < 0)
 		return -1;
 
-	r = llistxattr(path, list, list_size);
-	if (r < 0)
-		return r;
+	sprintf(path, "/proc/self/fd/%d", fd);
 
-	for (it = list; *it;) {
+	list_size = listxattr(path, NULL, 0);
+	if (list_size < 0) {
+		close(fd);
+		return list_size;
+	}
+
+	list = malloc(list_size);
+	if (list == NULL) {
+		close(fd);
+		return -1;
+	}
+
+	r = listxattr(path, list, list_size);
+	if (r < 0) {
+		close(fd);
+		return r;
+	}
+
+	for (it = list; it < list + list_size; it += strlen(it) + 1) {
 		ssize_t value_size;
-		size_t len = strlen(it);
 		char *value;
 
-		value_size = lgetxattr(path, it, NULL, 0);
+		value_size = getxattr(path, it, NULL, 0);
 		if (value_size < 0) {
+			close(fd);
 			free(list);
 			return value_size;
 		}
 
 		value = malloc(value_size);
 		if (value == NULL) {
+			close(fd);
 			free(list);
 			return -1;
 		}
 
-		r = lgetxattr(path, it, value, value_size);
+		r = getxattr(path, it, value, value_size);
 		if (r < 0) {
+			close(fd);
 			free(list);
 			free(value);
 			return r;
@@ -780,16 +790,17 @@ static int read_xattrs(struct lcfs_node_s *ret,
 
 		r = lcfs_node_append_xattr(ret, it, value, value_size);
 		if (r < 0) {
+			close(fd);
 			free(list);
 			free(value);
 			return r;
 		}
 
 		free(value);
-		it += len;
 	}
 
 	free(list);
+	close(fd);
 
 	return r;
 }
@@ -806,7 +817,6 @@ struct lcfs_node_s *lcfs_node_new(void)
 
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 					     const char *fname,
-					     int flags,
 					     int buildflags)
 {
 	struct lcfs_node_s *ret;
@@ -818,12 +828,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 		return NULL;
 	}
 
-	if (flags & ~AT_EMPTY_PATH) {
-		errno = EINVAL;
-		return NULL;
-	}
-
-	r = fstatat(dirfd, fname, &sb, AT_SYMLINK_NOFOLLOW | flags);
+	r = fstatat(dirfd, fname, &sb, AT_SYMLINK_NOFOLLOW);
 	if (r < 0)
 		return NULL;
 
@@ -846,7 +851,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 	}
 
 	if ((buildflags & BUILD_SKIP_XATTRS) == 0) {
-		r = read_xattrs(ret, dirfd, fname, flags);
+		r = read_xattrs(ret, dirfd, fname);
 		if (r < 0) {
 			free(ret);
 			return NULL;
@@ -1054,9 +1059,8 @@ bool lcfs_node_dirp(struct lcfs_node_s *node)
 	return (node->inode.st_mode & S_IFMT) == S_IFDIR;
 }
 
-struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int fd,
+struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
 			       const char *fname, const char *name,
-			       int flags,
 			       int buildflags)
 {
 	struct lcfs_node_s *node;
@@ -1064,26 +1068,28 @@ struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int fd,
 	DIR *dir;
 	int dfd;
 
-	node = lcfs_load_node_from_file(fd, fname, flags,
-					buildflags);
+	node = lcfs_load_node_from_file(dirfd, fname, buildflags);
 	if (node == NULL) {
-		close(fd);
 		return NULL;
 	}
 
 	if (!lcfs_node_dirp(node)) {
-		close(fd);
 		return node;
 	}
 
-	dir = fdopendir(fd);
-	if (dir == NULL) {
-		close(fd);
+	dfd = openat(dirfd, fname, O_RDONLY | O_NOFOLLOW | O_CLOEXEC, 0);
+	if (dfd < 0) {
 		lcfs_node_free(node);
 		return NULL;
 	}
 
-	dfd = dirfd(dir);
+	dir = fdopendir(dfd);
+	if (dir == NULL) {
+		close(dfd);
+		lcfs_node_free(node);
+		return NULL;
+	}
+
 	for (;;) {
 		struct lcfs_node_s *n;
 		int r;
@@ -1101,15 +1107,18 @@ struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int fd,
 		    strcmp(de->d_name, "..") == 0)
 			continue;
 
-		if (de->d_type == DT_DIR) {
-			int subdir_fd;
+		if (de->d_type == DT_UNKNOWN) {
+			struct stat statbuf;
 
-			subdir_fd = openat(dfd, de->d_name, O_RDONLY | O_NOFOLLOW);
-			if (subdir_fd < 0)
+			if (fstatat(dfd, de->d_name, &statbuf, AT_SYMLINK_NOFOLLOW) < 0)
 				goto fail;
 
-			n = lcfs_build(node, subdir_fd, "", de->d_name,
-				       AT_EMPTY_PATH, buildflags);
+			if (S_ISDIR(statbuf.st_mode))
+				de->d_type = DT_DIR;
+		}
+
+		if (de->d_type == DT_DIR) {
+			n = lcfs_build(node, dfd, de->d_name, de->d_name, buildflags);
 			if (n == NULL)
 				goto fail;
 		} else {
@@ -1119,8 +1128,7 @@ struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int fd,
 					continue;
 			}
 
-			n = lcfs_load_node_from_file(dfd, de->d_name,
-						     0, buildflags);
+			n = lcfs_load_node_from_file(dfd, de->d_name, buildflags);
 			if (n == NULL)
 				goto fail;
 		}
