@@ -348,7 +348,7 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 
 	seq_printf(m, ",descriptor=%s", fsi->descriptor_path);
 	if (fsi->base_path)
-		seq_printf(m, ",base=%s", fsi->base_path);
+		seq_printf(m, ",basedir=%s", fsi->base_path);
 	return 0;
 }
 
