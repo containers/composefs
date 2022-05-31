@@ -35,12 +35,11 @@ int lcfs_get_xattr(struct lcfs_xattr_header_s *xattrs, const char *name, void *v
 
 typedef bool (*lcfs_dir_iter_cb)(void *private, const char *name, int namelen, u64 ino, unsigned int dtype);
 
-int lcfs_iterate_dir(struct lcfs_dir_s *dir, loff_t first, lcfs_dir_iter_cb cb, void *private);
+int lcfs_dir_iterate(struct lcfs_dir_s *dir, loff_t first, lcfs_dir_iter_cb cb, void *private);
+u32 lcfs_dir_get_link_count(struct lcfs_dir_s *dir);
 
 int lcfs_lookup(struct lcfs_dir_s *dir, const char *name, size_t name_len, lcfs_off_t *index);
 
 char *lcfs_dup_payload_path(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, lcfs_off_t index);
-
-int lcfs_get_backing(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, lcfs_off_t index, loff_t *out_size, char **out_path);
 
 #endif

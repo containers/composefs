@@ -40,10 +40,6 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 	if (IS_ERR(s_ino))
 		return true;
 
-	if (lcfs_get_backing(test_ctx->ctx, s_ino, 0, &out_size, &out_path) == 0) {
-		free(out_path);
-	}
-
 	payload = lcfs_dup_payload_path(test_ctx->ctx, s_ino, 0);
 	if (!IS_ERR(payload))
 		free(payload);
@@ -63,7 +59,7 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 	dir = lcfs_get_dir(test_ctx->ctx, s_ino, 0);
 	if (test_ctx->recursion_left > 0 && !IS_ERR(dir)) {
 		test_ctx->recursion_left--;
-		lcfs_iterate_dir(dir, 0, iter_cb, test_ctx);
+		lcfs_dir_iterate(dir, 0, iter_cb, test_ctx);
 		test_ctx->recursion_left++;
 	}
 	return true;
@@ -149,14 +145,14 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 		}
 	}
 
-	ino = lcfs_get_ino_index(ctx, 0, &ino_buf);
+	ino = lcfs_get_ino_index(ctx, LCFS_ROOT_INODE, &ino_buf);
 	if (IS_ERR(ino))
 		goto cleanup;
 
 	test_ctx.ctx = ctx;
 	test_ctx.recursion_left = max_recursion;
 
-	dir = lcfs_get_dir(ctx, ino, 0);
+	dir = lcfs_get_dir(ctx, ino, LCFS_ROOT_INODE);
 	if (IS_ERR(dir))
 		goto cleanup;
 
@@ -164,7 +160,7 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 	name[min(len, NAME_MAX - 1)] = '\0';
 	lcfs_lookup(dir, name, strlen(name), &index);
 
-	lcfs_iterate_dir(dir, 0, iter_cb, &test_ctx);
+	lcfs_dir_iterate(dir, 0, iter_cb, &test_ctx);
 
 cleanup:
 	lcfs_destroy_ctx(ctx);

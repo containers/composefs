@@ -71,6 +71,7 @@ static const struct super_operations cfs_ops;
 static const struct file_operations cfs_dir_operations;
 static const struct inode_operations cfs_dir_inode_operations;
 static const struct inode_operations cfs_file_inode_operations;
+static const struct inode_operations cfs_link_inode_operations;
 
 static const struct xattr_handler *cfs_xattr_handlers[];
 static const struct export_operations cfs_export_operations;
@@ -78,6 +79,8 @@ static const struct export_operations cfs_export_operations;
 static const struct address_space_operations cfs_aops = {
 	.direct_IO = noop_direct_IO,
 };
+
+static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size);
 
 static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
                                     struct super_block *sb,
@@ -88,10 +91,9 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 	char *target_link = NULL;
 	char *real_path = NULL;
 	struct lcfs_xattr_header_s *xattrs = NULL;
-	loff_t real_size = 0;
 	struct cfs_inode *cino;
-	struct inode *inode;
-	struct lcfs_dir_s *dirdata;
+	struct inode *inode = NULL;
+	struct lcfs_dir_s *dirdata = NULL;
 	int ret;
 	int r;
 
@@ -104,10 +106,11 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		}
 	}
 
-	if ((ino->st_mode & S_IFMT) == S_IFREG) {
-		r = lcfs_get_backing(ctx, ino, ino_num, &real_size, &real_path);
+	if ((ino->st_mode & S_IFMT) == S_IFREG && ino->payload_length != 0) {
+		real_path = lcfs_dup_payload_path(ctx, ino, ino_num);
 		if (r < 0) {
-			ret = r;
+			ret = PTR_ERR(real_path);
+			real_path = NULL;
 			goto fail;
 		}
 	}
@@ -115,10 +118,13 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 	if ((ino->st_mode & S_IFMT) == S_IFDIR) {
 		dirdata = lcfs_get_dir(ctx, ino, ino_num);
 		if (IS_ERR(dirdata)) {
-			ret = PTR_ERR(dir);
+			ret = PTR_ERR(dirdata);
 			dirdata = NULL;
 			goto fail;
 		}
+
+		/* We compute nlink instead of unnecessary storing it in the file */
+		ino->st_nlink = lcfs_dir_get_link_count(dirdata);
 	}
 
 	xattrs = lcfs_get_xattrs(ctx, ino);
@@ -154,12 +160,12 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		case S_IFREG:
 			inode->i_op = &cfs_file_inode_operations;
 			inode->i_fop = &cfs_file_operations;
-			inode->i_size = real_size;
+			inode->i_size = ino->st_size;
 			cino->real_path = real_path;
 			break;
 		case S_IFLNK:
 			inode->i_link = target_link;
-			inode->i_op = &simple_symlink_inode_operations;
+			inode->i_op = &cfs_link_inode_operations;
 			inode->i_fop = &cfs_file_operations;
 			break;
 		case S_IFDIR:
@@ -203,73 +209,11 @@ static struct inode *cfs_get_root_inode(struct super_block *sb)
 	struct lcfs_inode_s ino_buf;
 	struct lcfs_inode_s *ino;
 
-	ino = lcfs_get_ino_index(fsi->lcfs_ctx, 0, &ino_buf);
+	ino = lcfs_get_ino_index(fsi->lcfs_ctx, LCFS_ROOT_INODE, &ino_buf);
 	if (IS_ERR(ino))
 		return ERR_CAST(ino);
 
-	return cfs_make_inode(fsi->lcfs_ctx, sb, 0, ino, NULL);
-}
-
-static int cfs_rmdir(struct inode *ino, struct dentry *dir)
-{
-	return -EROFS;
-}
-
-static int cfs_rename(struct user_namespace *userns, struct inode *source_ino,
-		      struct dentry *src_dir, struct inode *target_ino,
-		      struct dentry *target, unsigned int flags)
-{
-	return -EROFS;
-}
-
-static int cfs_link(struct dentry *src, struct inode *i, struct dentry *target)
-{
-	return -EROFS;
-}
-
-static int cfs_unlink(struct inode *inode, struct dentry *dir)
-{
-	return -EROFS;
-}
-
-static int cfs_mknod(struct user_namespace *mnt_userns, struct inode *dir,
-		     struct dentry *dentry, umode_t mode, dev_t dev)
-{
-	return -EROFS;
-}
-
-static int cfs_mkdir(struct user_namespace *mnt_userns, struct inode *dir,
-		     struct dentry *dentry, umode_t mode)
-{
-	return -EROFS;
-}
-
-static int cfs_create(struct user_namespace *mnt_userns, struct inode *dir,
-		      struct dentry *dentry, umode_t mode, bool excl)
-{
-	return -EROFS;
-}
-
-static int cfs_symlink(struct user_namespace *mnt_userns, struct inode *dir,
-		       struct dentry *dentry, const char *symname)
-{
-	return -EROFS;
-}
-
-static int cfs_tmpfile(struct user_namespace *mnt_userns, struct inode *dir,
-		       struct dentry *dentry, umode_t mode)
-{
-	return -EROFS;
-}
-
-static int cfs_dir_release(struct inode *inode, struct file *file)
-{
-	return 0;
-}
-
-static int cfs_dir_open(struct inode *inode, struct file *file)
-{
-	return 0;
+	return cfs_make_inode(fsi->lcfs_ctx, sb, LCFS_ROOT_INODE, ino, NULL);
 }
 
 static bool cfs_iterate_cb(void *private, const char *name, int name_len, u64 ino, unsigned int dtype)
@@ -292,28 +236,7 @@ static int cfs_iterate(struct file *file, struct dir_context *ctx)
 	if (!dir_emit_dots(file, ctx))
 		return 0;
 
-	return lcfs_iterate_dir(cino->dir, ctx->pos - 2, cfs_iterate_cb, ctx);
-}
-
-static loff_t cfs_dir_llseek(struct file *file, loff_t offset, int origin)
-{
-	loff_t res = -EINVAL;
-
-	switch (origin) {
-	case SEEK_CUR:
-		offset += file->f_pos;
-		break;
-	case SEEK_SET:
-		break;
-	default:
-		return res;
-	}
-	if (offset < 0)
-		return res;
-
-	file->f_pos = offset;
-
-	return offset;
+	return lcfs_dir_iterate(cino->dir, ctx->pos - 2, cfs_iterate_cb, ctx);
 }
 
 struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
@@ -349,23 +272,19 @@ return_negative:
 }
 
 static const struct file_operations cfs_dir_operations = {
-	.open = cfs_dir_open,
-	.iterate = cfs_iterate,
-	.release = cfs_dir_release,
-	.llseek = cfs_dir_llseek,
+	.llseek		= generic_file_llseek,
+	.read		= generic_read_dir,
+	.iterate_shared = cfs_iterate,
 };
 
 static const struct inode_operations cfs_dir_inode_operations = {
-	.create = cfs_create,
 	.lookup = cfs_lookup,
-	.link = cfs_link,
-	.unlink = cfs_unlink,
-	.symlink = cfs_symlink,
-	.mkdir = cfs_mkdir,
-	.rmdir = cfs_rmdir,
-	.mknod = cfs_mknod,
-	.rename = cfs_rename,
-	.tmpfile = cfs_tmpfile,
+	.listxattr = cfs_listxattr,
+};
+
+static const struct inode_operations cfs_link_inode_operations = {
+	.get_link = simple_get_link,
+	.listxattr = cfs_listxattr,
 };
 
 /*
@@ -377,7 +296,7 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 
 	seq_printf(m, ",descriptor=%s", fsi->descriptor_path);
 	if (fsi->base_path)
-		seq_printf(m, ",base=%s", fsi->base_path);
+		seq_printf(m, ",basedir=%s", fsi->base_path);
 	return 0;
 }
 
@@ -781,15 +700,6 @@ static const struct export_operations cfs_export_operations = {
 	.get_name = cfs_get_name,
 };
 
-static int cfs_setxattr(const struct xattr_handler *handler,
-			struct user_namespace *mnt_userns,
-			struct dentry *unused, struct inode *inode,
-			const char *name, const void *value, size_t size,
-			int flags)
-{
-	return -EROFS;
-}
-
 static int cfs_getxattr(const struct xattr_handler *handler,
 			struct dentry *unused2, struct inode *inode,
 			const char *name, void *value, size_t size)
@@ -822,7 +732,6 @@ static const struct file_operations cfs_file_operations = {
 static const struct xattr_handler cfs_xattr_handler = {
 	.prefix = "", /* catch all */
 	.get = cfs_getxattr,
-	.set = cfs_setxattr,
 };
 
 static const struct xattr_handler *cfs_xattr_handlers[] = {

@@ -471,13 +471,20 @@ int main(int argc, char **argv)
 		error(EXIT_FAILURE, errno, "malloc");
 
 	for (i = 0; i < argc; i++) {
+		FILE *to_close = NULL;
 		FILE *f;
 
-		f = fopen(argv[i], "r");
-		if (f == NULL)
-			error(EXIT_FAILURE, errno, "open `%s`", argv[i]);
+		if (strcmp(argv[i], "-") == 0) {
+			f = stdin;
+                } else {
+			f = fopen(argv[i], "r");
+			if (f == NULL)
+				error(EXIT_FAILURE, errno, "open `%s`", argv[i]);
+			to_close = f;
+                }
 		do_file(root, f);
-		fclose(f);
+		if (to_close)
+			fclose(to_close);
 	}
 
 	getcwd(cwd, sizeof(cwd));

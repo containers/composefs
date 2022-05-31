@@ -142,7 +142,6 @@ int main(int argc, char **argv)
 	const char *chdir_path = NULL;
 	char cwd[PATH_MAX];
 	int opt;
-	int fd;
 	FILE *out_file;
 
 	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
@@ -191,11 +190,7 @@ int main(int argc, char **argv)
 	argv += optind;
 	argc -= optind;
 
-	fd = open(".", O_RDONLY);
-	if (fd < 0)
-		error(EXIT_FAILURE, errno, "open current directory");
-
-	root = lcfs_build(NULL, fd, "", "", AT_EMPTY_PATH, buildflags);
+	root = lcfs_build(NULL, AT_FDCWD, ".", "", buildflags);
 	if (root == NULL)
 		error(EXIT_FAILURE, errno, "load current directory node");
 

@@ -7,12 +7,15 @@
 # include <fcntl.h>
 # include <unistd.h>
 # include <sys/stat.h>
+# include <endian.h>
 
 # define kfree free
 # define vfree free
 # define min(a, b) ((a)<(b)?(a):(b))
 # define check_add_overflow(a, b, d) __builtin_add_overflow(a, b, d)
 # define ENOTSUPP ENOTSUP
+
+#define DT_DIR         4
 
 struct file
 {
@@ -85,6 +88,22 @@ static inline void fput(struct file *f)
 {
 	close(f->fd);
 	free(f);
+}
+
+struct __una_u32 { u32 x; } __attribute__((packed));
+
+static inline u32 __get_unaligned_cpu32(const void *p)
+{
+        const struct __una_u32 *ptr = (const struct __una_u32 *)p;
+        return ptr->x;
+}
+
+struct __una_u64 { u64 x; } __attribute__((packed));
+
+static inline u64 __get_unaligned_cpu64(const void *p)
+{
+        const struct __una_u64 *ptr = (const struct __una_u64 *)p;
+        return ptr->x;
 }
 
 #endif

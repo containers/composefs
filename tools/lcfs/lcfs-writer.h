@@ -36,7 +36,6 @@ struct lcfs_node_s *lcfs_node_new(void);
 void lcfs_node_free(struct lcfs_node_s *node);
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 					     const char *fname,
-					     int flags,
 					     int buildflags);
 int lcfs_node_append_xattr(struct lcfs_node_s *node,
 			   const char *key,
@@ -76,8 +75,8 @@ uint64_t lcfs_node_get_size(struct lcfs_node_s *node);
 void lcfs_node_set_size(struct lcfs_node_s *node,
 			uint64_t size);
 
-struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int fd,
-			       const char *fname, const char *name, int flags,
+struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
+			       const char *fname, const char *name,
 			       int buildflags);
 
 int lcfs_write_to(struct lcfs_node_s *root, FILE *out);
