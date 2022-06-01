@@ -849,18 +849,26 @@ static int fsverity_read_cb(void *_fd, void *_buf, size_t count)
 	int fd = *(int *)_fd;
 	char *buf = _buf;
 
-        while (count) {
-                ssize_t n = read(fd, buf, count);
-                if (n < 0) {
+	while (count) {
+		ssize_t n = read(fd, buf, count);
+		if (n < 0) {
 			return -errno;
-                }
-                if (n == 0) {
-                        return -EIO;
-                }
-                buf += n;
-                count -= n;
-        }
-        return 0;
+		}
+		if (n == 0) {
+			return -EIO;
+		}
+		buf += n;
+		count -= n;
+	}
+	return 0;
+}
+
+int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node,
+                                   int fd,
+                                   uint64_t size)
+{
+	int _fd = fd;
+	return lcfs_node_set_fsverity_from_content(node, &_fd, size, fsverity_read_cb);
 }
 
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
@@ -893,13 +901,13 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 
 		ret->inode.st_size = sb.st_size;
 
-		if ((buildflags & BUILD_COMPUTE_DIGEST) != 0) {
+		if (sb.st_size != 0 && (buildflags & BUILD_COMPUTE_DIGEST) != 0) {
 			int fd = openat(dirfd, fname, O_RDONLY | O_CLOEXEC);
 			if (fd < 0) {
 				lcfs_node_free(ret);
 				return NULL;
 			}
-			r = lcfs_node_set_fsverity_from_content(ret, &fd, sb.st_size, fsverity_read_cb);
+			r = lcfs_node_set_fsverity_from_fd(ret, fd, sb.st_size);
 			close(fd);
 			if (r < 0) {
 				lcfs_node_free(ret);
@@ -934,6 +942,13 @@ int lcfs_node_set_payload(struct lcfs_node_s *node,
 	}
 
 	return 0;
+}
+
+const uint8_t *lcfs_node_get_fsverity_digest(struct lcfs_node_s *node)
+{
+	if (node->digest_set)
+		return node->inode.digest;
+	return NULL;
 }
 
 /* This is the sha256 fs-verity digest of the file contents */

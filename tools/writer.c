@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <linux/limits.h>
 #include <string.h>
+#include <stdlib.h>
 #include <error.h>
 #include <errno.h>
 #include <unistd.h>
@@ -30,8 +31,171 @@
 #include <sys/types.h>
 #include <getopt.h>
 
+static void digest_to_path(const uint8_t *csum, char *buf)
+{
+	static const char hexchars[] = "0123456789abcdef";
+	uint32_t i, j;
+
+	for (i = 0, j = 0; i < LCFS_DIGEST_SIZE; i++, j += 2) {
+		uint8_t byte = csum[i];
+		if (i == 1)
+			buf[j++] = '/';
+		buf[j] = hexchars[byte >> 4];
+		buf[j+1] = hexchars[byte & 0xF];
+	}
+	buf[j] = '\0';
+}
+
+static int ensure_dir (const char *path,
+		       mode_t      mode)
+{
+	struct stat buf;
+
+	/* We check this ahead of time, otherwise
+	   the mkdir call can fail in the read-only
+	   case with EROFS instead of EEXIST on some
+	   filesystems (such as NFS) */
+	if (stat(path, &buf) == 0) {
+		if (!S_ISDIR(buf.st_mode)) {
+			errno = ENOTDIR;
+			return -1;
+		}
+
+		return 0;
+	}
+
+	if (mkdir(path, mode) == -1 && errno != EEXIST)
+		return -1;
+
+	return 0;
+}
+
+
+static int mkdir_parents (const char *pathname,
+			  int         mode)
+{
+	char *fn = NULL;
+	char *p;
+
+	fn = strdup(pathname);
+	if (fn == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	p = fn;
+	while (*p == '/')
+		p++;
+
+	do {
+		while (*p && *p != '/')
+			p++;
+
+		if (!*p)
+			break;
+		*p = '\0';
+
+		if (ensure_dir (fn, mode) != 0)
+			return -1;
+
+		*p++ = '/';
+		while (*p && *p == '/')
+			p++;
+	} while (p);
+
+	return 0;
+}
+
+static int write_to_fd (int         fd,
+			const char *content,
+			ssize_t     len)
+{
+	ssize_t res;
+
+	while (len > 0)  {
+		res = write (fd, content, len);
+		if (res < 0 && errno == EINTR)
+			continue;
+		if (res <= 0) {
+			if (res == 0) /* Unexpected short write, should not happen when writing to a file */
+				errno = ENOSPC;
+			return -1;
+		}
+		len -= res;
+		content += res;
+	}
+
+	return 0;
+}
+
+#define BUFSIZE 8192
+static int copy_file_data (int sfd, int dfd)
+{
+	char buffer[BUFSIZE];
+	ssize_t bytes_read;
+
+	while (true) {
+		bytes_read = read(sfd, buffer, BUFSIZE);
+		if (bytes_read == -1) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+
+		if (bytes_read == 0)
+			break;
+
+		if (write_to_fd (dfd, buffer, bytes_read) != 0)
+			return -1;
+	}
+
+	return 0;
+}
+
+static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base, const char *dst, mode_t mode)
+{
+	char pathbuf[PATH_MAX];
+	int ret, res;
+	int sfd, dfd;
+	int errsv;
+
+	strncpy(pathbuf, dst_base, sizeof(pathbuf) - 1);
+	strncat(pathbuf, "/", sizeof(pathbuf) - 1);
+	strncat(pathbuf, dst, sizeof(pathbuf) - 1);
+
+	ret = mkdir_parents (pathbuf, 0755);
+	if (ret < 0)
+		return ret;
+
+	dfd = open(pathbuf, O_CREAT|O_EXCL|O_WRONLY, mode);
+	if (dfd == -1)	{
+		if (errno == EEXIST)
+			return 0; /* Already there, no need to copy */
+		return -1;
+	}
+
+	sfd = open (src, O_CLOEXEC | O_RDONLY);
+	if (sfd == -1) {
+			errsv = errno;
+			close (dfd);
+			errno = errsv;
+			return -1;
+	}
+
+	res = copy_file_data (sfd, dfd);
+
+	errsv = errno;
+	close (sfd);
+	close (dfd);
+	errno = errsv;
+
+	return res;
+}
+
+
 static int fill_payload(struct lcfs_node_s *node,
-			char *path, size_t len)
+			char *path, size_t len, size_t path_start_offset,
+                        bool by_digest, const char *digest_store_path)
 {
 	size_t old_len = len;
 	const char *fname;
@@ -40,7 +204,7 @@ static int fill_payload(struct lcfs_node_s *node,
         fname = lcfs_node_get_name(node);
 
 	if (fname) {
-		if (len == 0)
+		if (len == 0 || path[len-1] == '/')
 			ret = sprintf(path + len, "%s", fname);
 		else
 			ret = sprintf(path + len, "/%s", fname);
@@ -55,7 +219,7 @@ static int fill_payload(struct lcfs_node_s *node,
 		n_children = lcfs_node_get_n_children(node);
 		for (i = 0; i < n_children; i++) {
 			struct lcfs_node_s *child = lcfs_node_get_child(node, i);
-			ret = fill_payload(child, path, len);
+			ret = fill_payload(child, path, len, path_start_offset, by_digest, digest_store_path);
 			if (ret < 0)
 				return ret;
 			path[len] = '\0';
@@ -71,7 +235,25 @@ static int fill_payload(struct lcfs_node_s *node,
 		if (ret < 0)
 			return ret;
 	} else if ((lcfs_node_get_mode(node) & S_IFMT) == S_IFREG) {
-		ret = lcfs_node_set_payload(node, path);
+		const uint8_t *digest = NULL;
+
+		if (by_digest)
+			digest = lcfs_node_get_fsverity_digest(node);
+
+		if (digest) { /* Zero size files don't have a digest (since they are non-backed */
+			char digest_path[LCFS_DIGEST_SIZE*2 + 2];
+			digest_to_path(digest, digest_path);
+
+			if (digest_store_path) {
+				ret = copy_file_with_dirs_if_needed(path, digest_store_path, digest_path, 644);
+				if (ret < 0)
+					return ret;
+			}
+
+			ret = lcfs_node_set_payload(node, digest_path);
+		} else {
+			ret = lcfs_node_set_payload(node, path + path_start_offset);
+		}
 		if (ret < 0)
 			return ret;
 	}
@@ -83,17 +265,18 @@ static int fill_payload(struct lcfs_node_s *node,
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage: %s [--chdir=/dir] [--use-epoch] [--skip-xattrs] [--absolute] [--skip-devices] [--compute-digest] [--out=filedname]\n",
+		"usage: %s [--use-epoch] [--skip-xattrs] [--absolute] [--by-digest] [--digest-store=path] [--skip-devices] [--compute-digest] [--out=filedname] DIR\n",
 		argv0);
 }
 
 #define OPT_ABSOLUTE 100
-#define OPT_CHDIR 101
 #define OPT_SKIP_XATTRS 102
 #define OPT_USE_EPOCH 103
 #define OPT_SKIP_DEVICES 104
 #define OPT_OUT 105
 #define OPT_COMPUTE_DIGEST 106
+#define OPT_BY_DIGEST 107
+#define OPT_DIGEST_STORE 108
 
 int main(int argc, char **argv)
 {
@@ -129,10 +312,16 @@ int main(int argc, char **argv)
 			val: OPT_COMPUTE_DIGEST
 		},
 		{
-			name: "chdir",
+			name: "by-digest",
+			has_arg: no_argument,
+			flag: NULL,
+			val: OPT_BY_DIGEST
+		},
+		{
+			name: "digest-store",
 			has_arg: required_argument,
 			flag: NULL,
-			val: OPT_CHDIR
+			val: OPT_DIGEST_STORE
 		},
 		{
 			name: "out",
@@ -142,12 +331,17 @@ int main(int argc, char **argv)
 		},
 		{},
 	};
+	const char *bin = argv[0];
 	int buildflags = 0;
 	bool absolute_path = false;
+	bool by_digest = false;
 	struct lcfs_node_s *root;
 	const char *out = NULL;
-	const char *chdir_path = NULL;
-	char cwd[PATH_MAX];
+	const char *dir_path = NULL;
+	const char *digest_store_path = NULL;
+	char *absolute_prefix = NULL;
+	size_t path_start_offset;
+	char pathbuf[PATH_MAX];
 	int opt;
 	FILE *out_file;
 
@@ -168,8 +362,11 @@ int main(int argc, char **argv)
 		case OPT_ABSOLUTE:
 			absolute_path = true;
 			break;
-		case OPT_CHDIR:
-			chdir_path = optarg;
+		case OPT_BY_DIGEST:
+			by_digest = true;
+			break;
+		case OPT_DIGEST_STORE:
+			digest_store_path = optarg;
 			break;
 		case OPT_OUT:
 			out = optarg;
@@ -178,10 +375,30 @@ int main(int argc, char **argv)
 			fprintf(stderr, "option needs a value\n");
 			exit(EXIT_FAILURE);
 		default:
-			usage(argv[0]);
+			usage(bin);
 			exit(1);
 		}
 	}
+
+	argv += optind;
+	argc -= optind;
+
+	if (argc != 1) {
+		fprintf(stderr, "No path specified\n");
+		usage(bin);
+		exit(1);
+	}
+
+	dir_path = argv[0];
+
+	if (digest_store_path != NULL)
+		by_digest = true; /* implied */
+
+	if (by_digest)
+		buildflags |= BUILD_COMPUTE_DIGEST; /* implied */
+
+	if (absolute_path && by_digest)
+		error(EXIT_FAILURE, 0, "Can't specify both --absolute and --by-digest");
 
 	if (out != NULL) {
 		out_file = fopen(out, "w");
@@ -193,23 +410,26 @@ int main(int argc, char **argv)
 		out_file = stdout;
 	}
 
-	if (chdir_path &&
-	    chdir(chdir_path) < 0)
-		error(EXIT_FAILURE, errno, "chdir");
-
-	argv += optind;
-	argc -= optind;
-
-	root = lcfs_build(NULL, AT_FDCWD, ".", "", buildflags);
+	root = lcfs_build(NULL, AT_FDCWD, dir_path, "", buildflags);
 	if (root == NULL)
 		error(EXIT_FAILURE, errno, "load current directory node");
 
-	if (absolute_path)
-		getcwd(cwd, sizeof(cwd));
-	else
-		strcpy(cwd, "");
-
-	fill_payload(root, cwd, strlen(cwd));
+	if (absolute_path) {
+		getcwd(pathbuf, sizeof(pathbuf));
+		strncat(pathbuf, "/", sizeof(pathbuf) - 1);
+		strncat(pathbuf, dir_path, sizeof(pathbuf) - 1);
+		absolute_prefix = canonicalize_file_name(pathbuf);
+		strncpy(pathbuf, absolute_prefix, sizeof(pathbuf) - 1);
+		free(absolute_prefix);
+		strncat(pathbuf, "/", sizeof(pathbuf) - 1);
+		path_start_offset = 0;
+	} else {
+		strncpy(pathbuf, dir_path, sizeof(pathbuf) - 1);
+		if (pathbuf[strlen(pathbuf)] != '/')
+			strncat(pathbuf, "/", sizeof(pathbuf) - 1);
+		path_start_offset = strlen(pathbuf);
+	}
+	fill_payload(root, pathbuf, strlen(pathbuf), path_start_offset, by_digest, digest_store_path);
 
 	if (lcfs_write_to(root, out_file) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
