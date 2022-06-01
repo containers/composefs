@@ -16,5 +16,5 @@ stamp-h1
 install-sh
 .dirstamp
 dump
-writer
+mkcomposefs
 writer-json
