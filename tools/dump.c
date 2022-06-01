@@ -188,7 +188,17 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata, const cha
 			}
 		}
 	} else if (!extended)
-		printf("%.*s\n", (int)name_len, name);
+		if (is_dir(&ino))
+			printf("%.*s/\n", (int)name_len, name);
+		else {
+			char *payload = get_v_payload(&ino, payload_data);
+			if ((ino.st_mode & S_IFMT) == S_IFLNK) {
+				printf("%.*s -> %s\n", (int)name_len, name, payload);
+			} else {
+				printf("%.*s [%s]\n", (int)name_len, name, payload);
+			}
+			free(payload);
+		}
 	else {
 		char *payload = get_v_payload(&ino, payload_data);
 		int n_xattrs = 0;
