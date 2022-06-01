@@ -30,6 +30,7 @@
 #include <dirent.h>
 #include <sys/xattr.h>
 #include <assert.h>
+#include <libfsverity.h>
 
 /* In memory representation used to build the file.  */
 
@@ -61,6 +62,8 @@ struct lcfs_node_s {
 
 	struct lcfs_xattr_s *xattrs;
 	size_t n_xattrs;
+
+	bool digest_set;
 
 	struct lcfs_inode_s inode;
 };
@@ -326,6 +329,8 @@ static uint32_t compute_flags(struct lcfs_node_s *node) {
 		flags |= LCFS_INODE_FLAGS_LOW_SIZE;
 	if ((node->inode.st_size >> 32) != 0)
 		flags |= LCFS_INODE_FLAGS_HIGH_SIZE;
+	if (node->digest_set)
+		flags |= LCFS_INODE_FLAGS_DIGEST;
 
 	return flags;
 }
@@ -374,11 +379,7 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		qsort(node->children, node->children_size, sizeof(node->children[0]), cmp_nodes);
 		qsort(node->xattrs, node->n_xattrs, sizeof(node->xattrs[0]), cmp_xattr);
 
-		/* Flags is always all one for root (as we don't know what flags to use from a dentry) */
-		if (node == root)
-			flags = LCFS_INODE_FLAGS_MASK;
-		else
-			flags = compute_flags(node);
+		flags = compute_flags(node);
 
 		node->flags = flags;
 
@@ -395,7 +396,7 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		inode_size = lcfs_inode_encoded_size(flags);
 
 		/* Assign inode index */
-		node->inode_index = (ctx->inode_table_size << LCFS_INODE_INDEX_SHIFT) | flags;
+		node->inode_index = LCFS_MAKE_INO(ctx->inode_table_size, flags);
 		ctx->inode_table_size += inode_size + payload_length;
 
 #ifdef LCFS_SIZE_STATS
@@ -582,6 +583,12 @@ static int write_inode_data(struct lcfs_ctx_s *ctx, uint32_t flags, struct lcfs_
 			return ret;
 	}
 
+	if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
+		ret = fwrite(ino->digest, LCFS_DIGEST_SIZE, 1, out);
+		if (ret < 0)
+			return ret;
+	}
+
 	end_pos = ftell(out);
 
 	assert((end_pos - start_pos) == lcfs_inode_encoded_size(flags));
@@ -644,8 +651,6 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 {
 	struct lcfs_header_s header = {
 		.version = LCFS_VERSION,
-		.unused1 = 0,
-		.unused2 = 0,
 		.inode_len = lcfs_u32_to_file(sizeof(struct lcfs_inode_s)),
 	};
 	int ret = 0;
@@ -665,6 +670,7 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 		return ret;
 	}
 
+	header.root_flags = lcfs_u16_to_file(root->flags);
 	header.data_offset = lcfs_u64_to_file(sizeof(struct lcfs_header_s) + ctx->inode_table_size);
 
 	ret = compute_xattrs(ctx);
@@ -815,6 +821,56 @@ struct lcfs_node_s *lcfs_node_new(void)
 	return node;
 }
 
+int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node,
+					void *file,
+					uint64_t file_size,
+					lcfs_read_cb read_cb)
+{
+	struct libfsverity_merkle_tree_params params = { 1, FS_VERITY_HASH_ALG_SHA256, file_size, 4096, 0, NULL };
+	struct libfsverity_digest *computed_digest;
+	int r;
+
+	r = libfsverity_compute_digest(file, read_cb, &params, &computed_digest);
+	if (r < 0) {
+		errno = -r;
+		return -1;
+	}
+
+	assert(computed_digest->digest_size == LCFS_DIGEST_SIZE);
+
+	lcfs_node_set_fsverity_digest(node, computed_digest->digest);
+	free(computed_digest);
+
+	return 0;
+}
+
+static int fsverity_read_cb(void *_fd, void *_buf, size_t count)
+{
+	int fd = *(int *)_fd;
+	char *buf = _buf;
+
+	while (count) {
+		ssize_t n = read(fd, buf, count);
+		if (n < 0) {
+			return -errno;
+		}
+		if (n == 0) {
+			return -EIO;
+		}
+		buf += n;
+		count -= n;
+	}
+	return 0;
+}
+
+int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node,
+                                   int fd,
+                                   uint64_t size)
+{
+	int _fd = fd;
+	return lcfs_node_set_fsverity_from_content(node, &_fd, size, fsverity_read_cb);
+}
+
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 					     const char *fname,
 					     int buildflags)
@@ -823,7 +879,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 	struct stat sb;
 	int r;
 
-	if (buildflags & ~(BUILD_SKIP_XATTRS | BUILD_USE_EPOCH | BUILD_SKIP_DEVICES)) {
+	if (buildflags & ~(BUILD_SKIP_XATTRS | BUILD_USE_EPOCH | BUILD_SKIP_DEVICES | BUILD_COMPUTE_DIGEST)) {
 		errno = EINVAL;
 		return NULL;
 	}
@@ -842,7 +898,22 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 	ret->inode.st_rdev = sb.st_rdev;
 
 	if ((sb.st_mode & S_IFMT) == S_IFREG) {
+
 		ret->inode.st_size = sb.st_size;
+
+		if (sb.st_size != 0 && (buildflags & BUILD_COMPUTE_DIGEST) != 0) {
+			int fd = openat(dirfd, fname, O_RDONLY | O_CLOEXEC);
+			if (fd < 0) {
+				lcfs_node_free(ret);
+				return NULL;
+			}
+			r = lcfs_node_set_fsverity_from_fd(ret, fd, sb.st_size);
+			close(fd);
+			if (r < 0) {
+				lcfs_node_free(ret);
+				return NULL;
+			}
+		}
 	}
 
 	if ((buildflags & BUILD_USE_EPOCH) == 0) {
@@ -853,7 +924,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 	if ((buildflags & BUILD_SKIP_XATTRS) == 0) {
 		r = read_xattrs(ret, dirfd, fname);
 		if (r < 0) {
-			free(ret);
+			lcfs_node_free(ret);
 			return NULL;
 		}
 	}
@@ -871,6 +942,21 @@ int lcfs_node_set_payload(struct lcfs_node_s *node,
 	}
 
 	return 0;
+}
+
+const uint8_t *lcfs_node_get_fsverity_digest(struct lcfs_node_s *node)
+{
+	if (node->digest_set)
+		return node->inode.digest;
+	return NULL;
+}
+
+/* This is the sha256 fs-verity digest of the file contents */
+void lcfs_node_set_fsverity_digest(struct lcfs_node_s *node,
+                                   uint8_t digest[LCFS_DIGEST_SIZE])
+{
+	node->digest_set = true;
+	memcpy(node->inode.digest, digest, LCFS_DIGEST_SIZE);
 }
 
 const char *lcfs_node_get_name(struct lcfs_node_s *node)

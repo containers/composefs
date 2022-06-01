@@ -14,9 +14,14 @@
 
 struct lcfs_context_s;
 
-struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path);
+struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path,
+                                       const u8 *required_digest);
 
 void lcfs_destroy_ctx(struct lcfs_context_s *ctx);
+
+struct lcfs_inode_s *lcfs_get_root_ino(struct lcfs_context_s *ctx,
+				       struct lcfs_inode_s *ino_buf,
+				       lcfs_off_t *index);
 
 struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 					lcfs_off_t index,
@@ -26,6 +31,8 @@ static inline u64 lcfs_dentry_ino(struct lcfs_dentry_s *d)
 {
 	return d->inode_index;
 }
+
+const uint8_t *lcfs_get_digest(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, lcfs_off_t index);
 
 struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, lcfs_off_t index);
 

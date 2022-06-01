@@ -145,7 +145,8 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 		}
 	}
 
-	ino = lcfs_get_ino_index(ctx, LCFS_ROOT_INODE, &ino_buf);
+
+	ino = lcfs_get_root_ino(fsi->lcfs_ctx, &ino_buf, &index);
 	if (IS_ERR(ino))
 		goto cleanup;
 

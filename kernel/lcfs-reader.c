@@ -8,6 +8,7 @@
 
 #include "lcfs.h"
 #include "lcfs-reader.h"
+#include "lcfs-verity.h"
 
 #ifndef FUZZING
 # include <linux/string.h>
@@ -64,7 +65,7 @@ static void *lcfs_read_data(struct lcfs_context_s *ctx,
 	return dest;
 }
 
-struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
+struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path, const u8 *required_digest)
 {
 	struct lcfs_header_s *header;
 	struct lcfs_context_s *ctx;
@@ -74,6 +75,24 @@ struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
 	descriptor = filp_open(descriptor_path, O_RDONLY, 0);
 	if (IS_ERR(descriptor))
 		return ERR_CAST(descriptor);
+
+	if (required_digest) {
+		size_t digest_size;
+		u8 *verity_digest;
+		struct fsverity_info *verity_info = fsverity_get_info(d_inode(descriptor->f_path.dentry));
+		if (verity_info == NULL) {
+			pr_err("ERROR: composefs descriptor has no fs-verity digest\n");
+			fput(descriptor);
+			return ERR_PTR(-EINVAL);
+		}
+		verity_digest = lcfs_fsverity_info_get_digest(verity_info, &digest_size);
+		if (digest_size != LCFS_DIGEST_SIZE ||
+		    memcmp(required_digest, verity_digest, LCFS_DIGEST_SIZE) != 0) {
+			pr_err("ERROR: composefs descriptor has wrong fs-verity digest\n");
+			fput(descriptor);
+			return ERR_PTR(-EINVAL);
+		}
+	}
 
 	i_size = i_size_read(file_inode(descriptor));
 	if (i_size <= (sizeof(struct lcfs_header_s) + sizeof(struct lcfs_inode_s))) {
@@ -96,6 +115,7 @@ struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
 		kfree(ctx);
 		return ERR_CAST(header);
 	}
+	header->root_flags = lcfs_u16_from_file(header->root_flags);
 	header->inode_len = lcfs_u32_from_file(header->inode_len);
 	header->data_offset = lcfs_u64_from_file(header->data_offset);
 
@@ -265,7 +285,33 @@ struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 		ino->st_size += (u64)lcfs_read_u32(&data) << 32;
 	}
 
+	if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
+		memcpy(ino->digest, data, LCFS_DIGEST_SIZE);
+		data += 32;
+	}
+
 	return ino;
+}
+
+struct lcfs_inode_s *lcfs_get_root_ino(struct lcfs_context_s *ctx,
+				       struct lcfs_inode_s *ino_buf,
+				       lcfs_off_t *index)
+{
+	lcfs_off_t root_ino = LCFS_MAKE_INO(0, ctx->header.root_flags);
+
+	*index = root_ino;
+	return lcfs_get_ino_index(ctx, root_ino, ino_buf);
+}
+
+const uint8_t *lcfs_get_digest(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, lcfs_off_t index)
+{
+	u32 flags = index & LCFS_INODE_FLAGS_MASK;
+
+	if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
+		return ino->digest;
+	}
+
+	return NULL;
 }
 
 struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx,

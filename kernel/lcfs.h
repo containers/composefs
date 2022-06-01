@@ -31,6 +31,8 @@ typedef uint64_t u64;
 
 #define LCFS_VERSION 1
 
+#define LCFS_DIGEST_SIZE 32
+
 typedef u64 lcfs_off_t;
 
 typedef lcfs_off_t lcfs_c_str_t;
@@ -93,12 +95,12 @@ struct lcfs_vdata_s {
 struct lcfs_header_s {
 	u8 version;
 	u8 unused1;
-	u16 unused2;
+	uint16_t root_flags;  /* flags of root inode */
 
 	u32 inode_len;
 	lcfs_off_t data_offset;
 
-	u64 unused3[3];
+	u64 unused2[3];
 } __attribute__((packed));
 
 enum lcfs_inode_flags {
@@ -111,15 +113,16 @@ enum lcfs_inode_flags {
 	LCFS_INODE_FLAGS_TIMES_NSEC      = 1 << 5,
 	LCFS_INODE_FLAGS_LOW_SIZE        = 1 << 6, /* Low 32bit of st_size */
 	LCFS_INODE_FLAGS_HIGH_SIZE       = 1 << 7, /* High 32bit of st_size */
+	LCFS_INODE_FLAGS_DIGEST          = 1 << 8, /* fs-verity sha256 digest of content */
 };
 
 #define LCFS_INODE_FLAG_CHECK(_flag, _name) (((_flag) & (LCFS_INODE_FLAGS_ ## _name)) != 0)
 #define LCFS_INODE_FLAG_CHECK_SIZE(_flag, _name, _size) (LCFS_INODE_FLAG_CHECK(_flag, _name) ? (_size) : 0)
 
-#define LCFS_INODE_INDEX_SHIFT 8
+#define LCFS_INODE_INDEX_SHIFT 9
 #define	LCFS_INODE_FLAGS_MASK ((1 << LCFS_INODE_INDEX_SHIFT) - 1)
+#define LCFS_MAKE_INO(_index, _flags) ((u64)(_flags) | (((u64)(_index)) << LCFS_INODE_INDEX_SHIFT))
 
-#define LCFS_ROOT_INODE LCFS_INODE_FLAGS_MASK
 
 #define LCFS_INODE_DEFAULT_MODE 0100644
 #define LCFS_INODE_DEFAULT_NLINK 1
@@ -149,6 +152,7 @@ struct lcfs_inode_s {
 	u32 st_gid; /* Group ID of owner.  */
 	u32 st_rdev; /* Device ID (if special file).  */
 	u64 st_size; /* Size of file, only used for regular files */
+	uint8_t digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
 
 	struct timespec64 st_mtim; /* Time of last modification.  */
 	struct timespec64 st_ctim; /* Time of last status change.  */
@@ -166,7 +170,8 @@ static inline u32 lcfs_inode_encoded_size(u32 flags)
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, TIMES, sizeof(u64)*2) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, TIMES_NSEC, sizeof(u32)*2) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(u32)) +
-		LCFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(u32))
+		LCFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(u32)) +
+		LCFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, LCFS_DIGEST_SIZE)
 		;
 }
 

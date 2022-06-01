@@ -130,9 +130,27 @@ static void decode_inode(const uint8_t *inode_data, lcfs_off_t inod_num, struct 
 		ino->st_size += (uint64_t)decode_uint32(&data) << 32;
 	}
 
+	if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
+		memcpy(ino->digest, data, LCFS_DIGEST_SIZE);
+		data += LCFS_DIGEST_SIZE;
+	}
+
 	*flags_out = flags;
 	*payload_data_out = inode_data + (inod_num >> LCFS_INODE_INDEX_SHIFT) + lcfs_inode_encoded_size(flags);
 
+}
+
+static void digest_to_string(const uint8_t *csum, char *buf)
+{
+	static const char hexchars[] = "0123456789abcdef";
+	uint32_t i, j;
+
+	for (i = 0, j = 0; i < LCFS_DIGEST_SIZE; i++, j += 2) {
+		uint8_t byte = csum[i];
+		buf[j] = hexchars[byte >> 4];
+		buf[j+1] = hexchars[byte & 0xF];
+	}
+  buf[j] = '\0';
 }
 
 static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata, const char *name, size_t name_len, lcfs_off_t index,
@@ -174,18 +192,23 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata, const cha
 	else {
 		char *payload = get_v_payload(&ino, payload_data);
 		int n_xattrs = 0;
+		char digest_str[LCFS_DIGEST_SIZE*2+1] = {0};
 
 		if (ino.xattrs.len != 0) {
 			struct lcfs_xattr_header_s *header = (struct lcfs_xattr_header_s *)(vdata + ino.xattrs.off);
 			n_xattrs = lcfs_u16_from_file(header->n_attr);
 		}
 
-		printf("name:%.*s|ino:%zu|mode:%o|nlinks:%u|uid:%d|gid:%d|rdev:%d|size:%lu|mtim:%ld.%ld|ctim:%ld.%ld|nxargs:%d|payload:%s\n",
+		if (flags & LCFS_INODE_FLAGS_DIGEST) {
+			digest_to_string(ino.digest, digest_str);
+		}
+
+		printf("name:%.*s|ino:%zu|mode:%o|nlinks:%u|uid:%d|gid:%d|rdev:%d|size:%lu|mtim:%ld.%ld|ctim:%ld.%ld|nxargs:%d|digest:%s|payload:%s\n",
 		       (int)name_len, name, index, ino.st_mode, ino.st_nlink,
 		       ino.st_uid, ino.st_gid, ino.st_rdev, ino.st_size,
 		       ino.st_mtim.tv_sec, ino.st_mtim.tv_nsec,
 		       ino.st_ctim.tv_sec, ino.st_ctim.tv_nsec,
-		       n_xattrs, payload);
+		       n_xattrs, digest_str, payload);
 		free(payload);
 	}
 
@@ -330,8 +353,7 @@ int main(int argc, char *argv[])
 
 	inode_data = data + sizeof(struct lcfs_header_s);
 	vdata = data + lcfs_u64_from_file(header->data_offset);
-	root_index = LCFS_ROOT_INODE;
-
+	root_index = LCFS_MAKE_INO(0, lcfs_u16_from_file(header->root_flags));
 	if (mode == DUMP) {
 		dump_inode(inode_data, vdata, "", 0, root_index, 0, false, false, true);
 	} else if (mode == DUMP_EXTENDED) {
