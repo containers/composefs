@@ -265,7 +265,7 @@ static int fill_payload(struct lcfs_node_s *node,
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage: %s [--use-epoch] [--skip-xattrs] [--absolute] [--by-digest] [--digest-store=path] [--skip-devices] [--compute-digest] [--out=filedname] SOURCEDIR IMAGE\n",
+		"usage: %s [--use-epoch] [--skip-xattrs] [--absolute] [--by-digest] [--digest-store=path] [--skip-devices] [--compute-digest] SOURCEDIR IMAGE\n",
 		argv0);
 }
 
