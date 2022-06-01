@@ -51,7 +51,6 @@ struct cfs_info {
 
 struct cfs_inode {
 	struct inode vfs_inode; /* must be first for clear in otfs_alloc_inode to work */
-	struct lcfs_inode_s cfs_ino;
 	char *real_path;
 	struct lcfs_xattr_header_s *xattrs;
 	struct lcfs_dir_s *dir;
@@ -142,7 +141,6 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		mapping_set_unevictable(inode->i_mapping);
 
 		cino = CFS_I(inode);
-		cino->cfs_ino = *ino;
 		cino->xattrs = xattrs;
 		cino->dir = dirdata;
 
