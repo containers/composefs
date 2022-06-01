@@ -83,11 +83,11 @@ static int fill_payload(struct lcfs_node_s *node,
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage: %s [--chdir=/dir] [--use-epoch] [--skip-xattrs] [--relative] [--skip-devices] [--compute-digest] [--out=filedname]\n",
+		"usage: %s [--chdir=/dir] [--use-epoch] [--skip-xattrs] [--absolute] [--skip-devices] [--compute-digest] [--out=filedname]\n",
 		argv0);
 }
 
-#define OPT_RELATIVE 100
+#define OPT_ABSOLUTE 100
 #define OPT_CHDIR 101
 #define OPT_SKIP_XATTRS 102
 #define OPT_USE_EPOCH 103
@@ -99,10 +99,10 @@ int main(int argc, char **argv)
 {
 	const struct option longopts[] = {
 		{
-			name: "relative",
+			name: "absolute",
 			has_arg: no_argument,
 			flag: NULL,
-			val: OPT_RELATIVE
+			val: OPT_ABSOLUTE
 		},
 		{
 			name: "skip-xattrs",
@@ -143,7 +143,7 @@ int main(int argc, char **argv)
 		{},
 	};
 	int buildflags = 0;
-	bool relative_path = false;
+	bool absolute_path = false;
 	struct lcfs_node_s *root;
 	const char *out = NULL;
 	const char *chdir_path = NULL;
@@ -165,8 +165,8 @@ int main(int argc, char **argv)
 		case OPT_COMPUTE_DIGEST:
 			buildflags |= BUILD_COMPUTE_DIGEST;
 			break;
-		case OPT_RELATIVE:
-			relative_path = true;
+		case OPT_ABSOLUTE:
+			absolute_path = true;
 			break;
 		case OPT_CHDIR:
 			chdir_path = optarg;
@@ -204,10 +204,10 @@ int main(int argc, char **argv)
 	if (root == NULL)
 		error(EXIT_FAILURE, errno, "load current directory node");
 
-	if (relative_path)
-		strcpy(cwd, "");
-	else
+	if (absolute_path)
 		getcwd(cwd, sizeof(cwd));
+	else
+		strcpy(cwd, "");
 
 	fill_payload(root, cwd, strlen(cwd));
 
