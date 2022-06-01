@@ -265,7 +265,7 @@ static int fill_payload(struct lcfs_node_s *node,
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage: %s [--use-epoch] [--skip-xattrs] [--absolute] [--by-digest] [--digest-store=path] [--skip-devices] [--compute-digest] [--out=filedname] DIR\n",
+		"usage: %s [--use-epoch] [--skip-xattrs] [--absolute] [--by-digest] [--digest-store=path] [--skip-devices] [--compute-digest] [--out=filedname] SOURCEDIR IMAGE\n",
 		argv0);
 }
 
@@ -273,7 +273,6 @@ static void usage(const char *argv0)
 #define OPT_SKIP_XATTRS 102
 #define OPT_USE_EPOCH 103
 #define OPT_SKIP_DEVICES 104
-#define OPT_OUT 105
 #define OPT_COMPUTE_DIGEST 106
 #define OPT_BY_DIGEST 107
 #define OPT_DIGEST_STORE 108
@@ -323,12 +322,6 @@ int main(int argc, char **argv)
 			flag: NULL,
 			val: OPT_DIGEST_STORE
 		},
-		{
-			name: "out",
-			has_arg: required_argument,
-			flag: NULL,
-			val: OPT_OUT
-		},
 		{},
 	};
 	const char *bin = argv[0];
@@ -368,9 +361,6 @@ int main(int argc, char **argv)
 		case OPT_DIGEST_STORE:
 			digest_store_path = optarg;
 			break;
-		case OPT_OUT:
-			out = optarg;
-			break;
 		case ':':
 			fprintf(stderr, "option needs a value\n");
 			exit(EXIT_FAILURE);
@@ -383,13 +373,20 @@ int main(int argc, char **argv)
 	argv += optind;
 	argc -= optind;
 
-	if (argc != 1) {
-		fprintf(stderr, "No path specified\n");
+	if (argc < 1) {
+		fprintf(stderr, "No source path specified\n");
+		usage(bin);
+		exit(1);
+	}
+
+	if (argc != 2) {
+		fprintf(stderr, "No destination path specified\n");
 		usage(bin);
 		exit(1);
 	}
 
 	dir_path = argv[0];
+	out = argv[1];
 
 	if (digest_store_path != NULL)
 		by_digest = true; /* implied */
@@ -400,14 +397,14 @@ int main(int argc, char **argv)
 	if (absolute_path && by_digest)
 		error(EXIT_FAILURE, 0, "Can't specify both --absolute and --by-digest");
 
-	if (out != NULL) {
-		out_file = fopen(out, "w");
-		if (out_file == NULL)
-			error(EXIT_FAILURE, errno, "Failed to open output file");
-	} else {
+	if (strcmp(out, "-") == 0) {
 		if (isatty(1))
 			error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
 		out_file = stdout;
+        } else {
+		out_file = fopen(out, "w");
+		if (out_file == NULL)
+			error(EXIT_FAILURE, errno, "Failed to open output file");
 	}
 
 	root = lcfs_build(NULL, AT_FDCWD, dir_path, "", buildflags);
