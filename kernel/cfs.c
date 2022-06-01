@@ -49,6 +49,8 @@ struct cfs_info {
 	char *descriptor_path;
 	char *base_path;
 	struct file *base;
+	bool has_digest;
+	uint8_t digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
 };
 
 struct cfs_inode {
@@ -296,6 +298,56 @@ static const struct inode_operations cfs_link_inode_operations = {
 	.listxattr = cfs_listxattr,
 };
 
+static void digest_to_string(const uint8_t *digest, char *buf)
+{
+	static const char hexchars[] = "0123456789abcdef";
+	uint32_t i, j;
+
+	for (i = 0, j = 0; i < LCFS_DIGEST_SIZE; i++, j += 2) {
+		uint8_t byte = digest[i];
+		buf[j] = hexchars[byte >> 4];
+		buf[j+1] = hexchars[byte & 0xF];
+	}
+  buf[j] = '\0';
+}
+
+static int xdigit_value (char c)
+{
+  if (c >= '0' && c <= '9')
+    return c - '0';
+  if (c >= 'A' && c <= 'F')
+    return c - 'A' + 10;
+  if (c >= 'a' && c <= 'f')
+    return c - 'a' + 10;
+  return -1;
+}
+
+static int digest_from_string(const char *digest_str, uint8_t *digest)
+{
+	size_t i, j;
+
+	for (i = 0, j = 0; i < LCFS_DIGEST_SIZE; i += 1, j += 2) {
+		int big, little;
+
+		if (digest_str[j] == 0 ||
+		    digest_str[j+1] == 0)
+			return -EINVAL; /* Too short string */
+
+		big = xdigit_value(digest_str[j]);
+		little = xdigit_value(digest_str[j+1]);
+
+		if (big == -1 || little == -1)
+			return -EINVAL; /* Not hex digit */
+
+		digest[i] = (big << 4) | little;
+	}
+
+	if (digest_str[j] != 0)
+		return -EINVAL; /* Too long string */
+
+	return 0;
+}
+
 /*
  * Display the mount options in /proc/mounts.
  */
@@ -306,6 +358,12 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 	seq_printf(m, ",descriptor=%s", fsi->descriptor_path);
 	if (fsi->base_path)
 		seq_printf(m, ",basedir=%s", fsi->base_path);
+	if (fsi->has_digest) {
+		char buf[LCFS_DIGEST_SIZE*2+1];
+		digest_to_string(fsi->digest, buf);
+		seq_printf(m, ",digest=%s", buf);
+	}
+
 	return 0;
 }
 
@@ -380,11 +438,13 @@ static const struct super_operations cfs_ops = {
 enum cfs_param {
 	Opt_descriptor_file,
 	Opt_base_path,
+	Opt_digest,
 };
 
 const struct fs_parameter_spec cfs_parameters[] = {
 	fsparam_string("descriptor", Opt_descriptor_file),
 	fsparam_string("basedir", Opt_base_path),
+	fsparam_string("digest", Opt_digest),
 	{}
 };
 
@@ -392,7 +452,7 @@ static int cfs_parse_param(struct fs_context *fc, struct fs_parameter *param)
 {
 	struct fs_parse_result result;
 	struct cfs_info *fsi = fc->s_fs_info;
-	int opt;
+	int opt, r;
 
 	opt = fs_parse(fc, cfs_parameters, param, &result);
 	if (opt < 0)
@@ -410,6 +470,12 @@ static int cfs_parse_param(struct fs_context *fc, struct fs_parameter *param)
 		/* Take ownership.  */
 		fsi->base_path = param->string;
 		param->string = NULL;
+		break;
+	case Opt_digest:
+		r = digest_from_string(param->string, fsi->digest);
+		if (r < 0)
+			return r;
+		fsi->has_digest = true;
 		break;
 	}
 
@@ -460,7 +526,7 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 		base = f;
 	}
 
-	ctx = lcfs_create_ctx(fsi->descriptor_path);
+	ctx = lcfs_create_ctx(fsi->descriptor_path, fsi->has_digest ? fsi->digest : NULL);
 	if (IS_ERR(ctx)) {
 		ret = PTR_ERR(ctx);
 		goto fail;

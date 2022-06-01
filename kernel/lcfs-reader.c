@@ -8,6 +8,7 @@
 
 #include "lcfs.h"
 #include "lcfs-reader.h"
+#include "lcfs-verity.h"
 
 #ifndef FUZZING
 # include <linux/string.h>
@@ -64,7 +65,7 @@ static void *lcfs_read_data(struct lcfs_context_s *ctx,
 	return dest;
 }
 
-struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
+struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path, const u8 *required_digest)
 {
 	struct lcfs_header_s *header;
 	struct lcfs_context_s *ctx;
@@ -74,6 +75,24 @@ struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path)
 	descriptor = filp_open(descriptor_path, O_RDONLY, 0);
 	if (IS_ERR(descriptor))
 		return ERR_CAST(descriptor);
+
+	if (required_digest) {
+		size_t digest_size;
+		u8 *verity_digest;
+		struct fsverity_info *verity_info = fsverity_get_info(d_inode(descriptor->f_path.dentry));
+		if (verity_info == NULL) {
+			pr_err("ERROR: composefs descriptor has no fs-verity digest\n");
+			fput(descriptor);
+			return ERR_PTR(-EINVAL);
+		}
+		verity_digest = lcfs_fsverity_info_get_digest(verity_info, &digest_size);
+		if (digest_size != LCFS_DIGEST_SIZE ||
+		    memcmp(required_digest, verity_digest, LCFS_DIGEST_SIZE) != 0) {
+			pr_err("ERROR: composefs descriptor has wrong fs-verity digest\n");
+			fput(descriptor);
+			return ERR_PTR(-EINVAL);
+		}
+	}
 
 	i_size = i_size_read(file_inode(descriptor));
 	if (i_size <= (sizeof(struct lcfs_header_s) + sizeof(struct lcfs_inode_s))) {
