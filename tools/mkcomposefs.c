@@ -95,14 +95,17 @@ static int mkdir_parents (const char *pathname,
 			break;
 		*p = '\0';
 
-		if (ensure_dir (fn, mode) != 0)
+		if (ensure_dir (fn, mode) != 0) {
+			free(fn);
 			return -1;
+		}
 
 		*p++ = '/';
 		while (*p && *p == '/')
 			p++;
 	} while (p);
 
+	free(fn);
 	return 0;
 }
 
