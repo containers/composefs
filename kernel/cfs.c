@@ -49,6 +49,7 @@ struct cfs_info {
 	char *descriptor_path;
 	char *base_path;
 	struct file *base;
+	bool noverity;
 	bool has_digest;
 	uint8_t digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
 };
@@ -356,6 +357,8 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 	struct cfs_info *fsi = root->d_sb->s_fs_info;
 
 	seq_printf(m, ",descriptor=%s", fsi->descriptor_path);
+	if (fsi->noverity)
+		seq_printf(m, ",noverity");
 	if (fsi->base_path)
 		seq_printf(m, ",basedir=%s", fsi->base_path);
 	if (fsi->has_digest) {
@@ -439,12 +442,14 @@ enum cfs_param {
 	Opt_descriptor_file,
 	Opt_base_path,
 	Opt_digest,
+	Opt_verity,
 };
 
 const struct fs_parameter_spec cfs_parameters[] = {
 	fsparam_string("descriptor", Opt_descriptor_file),
 	fsparam_string("basedir", Opt_base_path),
 	fsparam_string("digest", Opt_digest),
+	fsparam_flag_no("verity", Opt_verity),
 	{}
 };
 
@@ -476,6 +481,9 @@ static int cfs_parse_param(struct fs_context *fc, struct fs_parameter *param)
 		if (r < 0)
 			return r;
 		fsi->has_digest = true;
+		break;
+	case Opt_verity:
+		fsi->noverity = !result.boolean;
 		break;
 	}
 
@@ -608,7 +616,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	}
 
 	/* If metadata records a digest for the file, ensure it is there and correct before using the contents */
-	if (cino->has_digest) {
+	if (cino->has_digest && !fsi->noverity) {
 		size_t digest_size;
 		u8 *verity_digest;
 		struct fsverity_info *verity_info = fsverity_get_info(d_inode(real_file->f_path.dentry));
