@@ -30,6 +30,7 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <getopt.h>
+#include <libfsverity.h>
 
 static void digest_to_path(const uint8_t *csum, char *buf)
 {
@@ -155,12 +156,14 @@ static int copy_file_data (int sfd, int dfd)
 	return 0;
 }
 
-static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base, const char *dst, mode_t mode)
+static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base, const char *dst, mode_t mode, bool try_enable_fsverity)
 {
 	char pathbuf[PATH_MAX];
+	char tmppath[PATH_MAX];
 	int ret, res;
 	int sfd, dfd;
 	int errsv;
+	struct stat statbuf;
 
 	strncpy(pathbuf, dst_base, sizeof(pathbuf) - 1);
 	strncat(pathbuf, "/", sizeof(pathbuf) - 1);
@@ -170,29 +173,78 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base, 
 	if (ret < 0)
 		return ret;
 
-	dfd = open(pathbuf, O_CREAT|O_EXCL|O_WRONLY, mode);
-	if (dfd == -1)	{
-		if (errno == EEXIST)
-			return 0; /* Already there, no need to copy */
+	if (lstat(pathbuf, &statbuf) == 0)
+		return 0; /* Already exists, no need to copy */
+
+	strncpy(tmppath, dst_base, sizeof(tmppath) - 1);
+	strncat(tmppath, "/.tmpXXXXXX", sizeof(tmppath) - 1);
+
+	dfd = mkostemp(tmppath, O_CLOEXEC);
+	if (dfd == -1)
 		return -1;
-	}
 
 	sfd = open (src, O_CLOEXEC | O_RDONLY);
 	if (sfd == -1) {
-			errsv = errno;
-			close (dfd);
-			errno = errsv;
-			return -1;
+		errsv = errno;
+		unlink(tmppath);
+		close (dfd);
+		errno = errsv;
+		return -1;
 	}
 
 	res = copy_file_data (sfd, dfd);
-
-	errsv = errno;
+	if (res < 0) {
+		errsv = errno;
+		unlink(tmppath);
+		close (sfd);
+		close (dfd);
+		errno = errsv;
+		return res;
+	}
 	close (sfd);
-	close (dfd);
-	errno = errsv;
 
-	return res;
+	res = fsync(dfd);
+	if (res < 0) {
+		errsv = errno;
+		unlink(tmppath);
+		close (dfd);
+		errno = errsv;
+		return res;
+	}
+	close (dfd);
+
+	if (try_enable_fsverity) {
+
+		/* Try to enable fsverity */
+		dfd = open(tmppath, O_CLOEXEC | O_RDONLY);
+		if (dfd < 0) {
+			errsv = errno;
+			unlink(tmppath);
+			close (dfd);
+			errno = errsv;
+			return res;
+		}
+
+		if (fstat(dfd, &statbuf) == 0) {
+			struct libfsverity_merkle_tree_params params = { 1, FS_VERITY_HASH_ALG_SHA256, statbuf.st_size, 4096, 0, NULL };
+
+			res = libfsverity_enable(dfd, &params);
+			if (res < 0) {
+				/* Ignore errors, we're only trying to enable it */
+			}
+		}
+		close(dfd);
+	}
+
+	res = rename(tmppath, pathbuf);
+	if (res < 0) {
+		errsv = errno;
+		unlink(tmppath);
+		errno = errsv;
+		return res;
+	}
+
+	return 0;
 }
 
 
@@ -248,7 +300,7 @@ static int fill_payload(struct lcfs_node_s *node,
 			digest_to_path(digest, digest_path);
 
 			if (digest_store_path) {
-				ret = copy_file_with_dirs_if_needed(path, digest_store_path, digest_path, 644);
+				ret = copy_file_with_dirs_if_needed(path, digest_store_path, digest_path, 0644, true);
 				if (ret < 0)
 					return ret;
 			}
