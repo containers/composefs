@@ -51,6 +51,8 @@ struct lcfs_node_s *lcfs_node_get_parent(struct lcfs_node_s *node);
 int lcfs_node_add_child(struct lcfs_node_s *parent,
 			struct lcfs_node_s *child, /* Takes ownership on success */
 			const char *name);
+int lcfs_node_remove_child(struct lcfs_node_s *parent,
+			   const char *name);
 const char *lcfs_node_get_name(struct lcfs_node_s *node);
 size_t lcfs_node_get_n_children(struct lcfs_node_s *node);
 struct lcfs_node_s * lcfs_node_get_child(struct lcfs_node_s *node, size_t i);

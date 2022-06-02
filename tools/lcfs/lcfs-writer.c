@@ -1074,6 +1074,38 @@ void lcfs_node_make_hardlink(struct lcfs_node_s *node,
 	target->inode.st_nlink++;
 }
 
+int lcfs_node_remove_child(struct lcfs_node_s *parent,
+			   const char *name)
+{
+	size_t i;
+
+	if ((parent->inode.st_mode & S_IFMT) != S_IFDIR) {
+		errno = ENOTDIR;
+		return -1;
+	}
+
+	for (i = 0; i < parent->children_size; ++i) {
+		struct lcfs_node_s *child = parent->children[i];
+
+		if (child->name && strcmp(child->name, name) == 0) {
+			memcpy(&parent->children[i], &parent->children[i+1], sizeof(struct lcfs_node_s *) * (parent->children_size - (i + 1)));
+			parent->children_size -= 1;
+
+			/* Unlink correctly as it may live on outside the tree and be reinsterted */
+			free(child->name);
+			child->name = NULL;
+			child->parent = NULL;
+
+			lcfs_node_unref(child);
+
+			return 0;
+		}
+	}
+
+	errno = ENOENT;
+	return -1;
+}
+
 int lcfs_node_add_child(struct lcfs_node_s *parent,
                         struct lcfs_node_s *child,
 			const char *name)
