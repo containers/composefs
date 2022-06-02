@@ -41,19 +41,15 @@ struct lcfs_xattr_s {
 };
 
 struct lcfs_node_s {
-	struct lcfs_node_s *next; /* Use for the queue in compute_tree */
+	int ref_count;
 
 	struct lcfs_node_s *parent;
 
-	struct lcfs_node_s **children;
+	struct lcfs_node_s **children; /* Owns refs */
 	size_t children_size;
 
 	/* Used to create hard links.  */
-	struct lcfs_node_s *link_to;
-
-	bool in_tree;
-
-	uint32_t flags;
+	struct lcfs_node_s *link_to; /* Owns refs */
 
 	char *name;
 	char *payload;
@@ -66,6 +62,12 @@ struct lcfs_node_s {
 	bool digest_set;
 
 	struct lcfs_inode_s inode;
+
+
+	/* Used during compute_tree */
+	uint32_t flags;
+	struct lcfs_node_s *next; /* Use for the queue in compute_tree */
+	bool in_tree;
 };
 
 struct lcfs_ctx_s {
@@ -155,7 +157,7 @@ static void vdata_ht_freer(void *data)
 	free(data);
 }
 
-static struct lcfs_ctx_s *lcfs_new_ctx(void)
+static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root)
 {
 	struct lcfs_ctx_s *ret;
 
@@ -163,6 +165,7 @@ static struct lcfs_ctx_s *lcfs_new_ctx(void)
 	if (ret == NULL)
 		return ret;
 
+	ret->root = lcfs_node_ref(root);
 	ret->ht = hash_initialize(0, NULL, vdata_ht_hasher, vdata_ht_comparator,
 				  vdata_ht_freer);
 
@@ -656,13 +659,11 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 	int ret = 0;
 	struct lcfs_ctx_s *ctx;
 
-	ctx = lcfs_new_ctx();
+	ctx = lcfs_new_ctx(root);
 	if (ctx == NULL) {
 		errno = ENOMEM;
 		return -1;
 	}
-
-	ctx->root = root;
 
 	ret = compute_tree(ctx, root);
 	if (ret < 0) {
@@ -707,6 +708,7 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 		ctx->vdata_len / 1024);
 #endif
 
+	lcfs_close(ctx);
 	return 0;
 }
 
@@ -717,7 +719,7 @@ static int lcfs_close(struct lcfs_ctx_s *ctx)
 
 	hash_free(ctx->ht);
 	free(ctx->vdata);
-	lcfs_node_free(ctx->root);
+	lcfs_node_unref(ctx->root);
 	free(ctx);
 
 	return 0;
@@ -817,6 +819,7 @@ struct lcfs_node_s *lcfs_node_new(void)
 	if (node == NULL)
 		return NULL;
 
+	node->ref_count = 1;
 	node->inode.st_nlink = 1;
 	return node;
 }
@@ -904,13 +907,13 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 		if (sb.st_size != 0 && (buildflags & BUILD_COMPUTE_DIGEST) != 0) {
 			int fd = openat(dirfd, fname, O_RDONLY | O_CLOEXEC);
 			if (fd < 0) {
-				lcfs_node_free(ret);
+				lcfs_node_unref(ret);
 				return NULL;
 			}
 			r = lcfs_node_set_fsverity_from_fd(ret, fd, sb.st_size);
 			close(fd);
 			if (r < 0) {
-				lcfs_node_free(ret);
+				lcfs_node_unref(ret);
 				return NULL;
 			}
 		}
@@ -924,7 +927,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 	if ((buildflags & BUILD_SKIP_XATTRS) == 0) {
 		r = read_xattrs(ret, dirfd, fname);
 		if (r < 0) {
-			lcfs_node_free(ret);
+			lcfs_node_unref(ret);
 			return NULL;
 		}
 	}
@@ -1067,7 +1070,7 @@ void lcfs_node_make_hardlink(struct lcfs_node_s *node,
 			     struct lcfs_node_s *target)
 {
 	target = follow_links(target);
-	node->link_to = target;
+	node->link_to = lcfs_node_ref(target);
 	target->inode.st_nlink++;
 }
 
@@ -1121,13 +1124,33 @@ int lcfs_node_add_child(struct lcfs_node_s *parent,
 	return 0;
 }
 
-void lcfs_node_free(struct lcfs_node_s *node)
+struct lcfs_node_s *lcfs_node_ref(struct lcfs_node_s *node)
+{
+	node->ref_count++;
+	return node;
+}
+
+void lcfs_node_unref(struct lcfs_node_s *node)
 {
 	size_t i;
 
-	for (i = 0; i < node->children_size; i++)
-		lcfs_node_free(node->children[i]);
+	node->ref_count--;
+
+	if (node->ref_count > 0)
+		return;
+
+	assert(node->parent == NULL);
+
+	for (i = 0; i < node->children_size; i++) {
+		struct lcfs_node_s *child = node->children[i];
+		child->parent = NULL;
+		lcfs_node_unref(child);
+	}
 	free(node->children);
+
+	if (node->link_to)
+		lcfs_node_unref(node->link_to);
+
 	free(node->name);
 	free(node->payload);
 
@@ -1151,7 +1174,7 @@ struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
 {
 	struct lcfs_node_s *node;
 	struct dirent *de;
-	DIR *dir;
+	DIR *dir = NULL;
 	int dfd;
 
 	node = lcfs_load_node_from_file(dirfd, fname, buildflags);
@@ -1164,16 +1187,13 @@ struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
 	}
 
 	dfd = openat(dirfd, fname, O_RDONLY | O_NOFOLLOW | O_CLOEXEC, 0);
-	if (dfd < 0) {
-		lcfs_node_free(node);
-		return NULL;
-	}
+	if (dfd < 0)
+		goto fail;
 
 	dir = fdopendir(dfd);
 	if (dir == NULL) {
 		close(dfd);
-		lcfs_node_free(node);
-		return NULL;
+		goto fail;
 	}
 
 	for (;;) {
@@ -1228,8 +1248,9 @@ struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
 	return node;
 
 fail:
-	lcfs_node_free(node);
-	closedir(dir);
+	lcfs_node_unref(node);
+	if (dir)
+		closedir(dir);
 	return NULL;
 }
 

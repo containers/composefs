@@ -34,7 +34,8 @@ enum {
 };
 
 struct lcfs_node_s *lcfs_node_new(void);
-void lcfs_node_free(struct lcfs_node_s *node);
+struct lcfs_node_s *lcfs_node_ref(struct lcfs_node_s *node);
+void lcfs_node_unref(struct lcfs_node_s *node);
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 					     const char *fname,
 					     int buildflags);
@@ -48,7 +49,7 @@ struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node,
 					   const char *name);
 struct lcfs_node_s *lcfs_node_get_parent(struct lcfs_node_s *node);
 int lcfs_node_add_child(struct lcfs_node_s *parent,
-			struct lcfs_node_s *child,
+			struct lcfs_node_s *child, /* Takes ownership on success */
 			const char *name);
 const char *lcfs_node_get_name(struct lcfs_node_s *node);
 size_t lcfs_node_get_n_children(struct lcfs_node_s *node);

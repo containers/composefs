@@ -131,21 +131,21 @@ append_child(struct lcfs_node_s *dir, const char *name)
 		return NULL;
 
 	if (lcfs_node_add_child(dir, child, name) < 0) {
-		lcfs_node_free(child);
+		lcfs_node_unref(child);
 		return NULL;
 	}
 
 	return child;
 }
 
-static struct lcfs_node_s *
+static int
 fill_xattrs(struct lcfs_node_s *node, yajl_val xattrs)
 {
 	size_t i;
 	char v_buffer[4096];
 
 	if (!YAJL_IS_OBJECT(xattrs))
-		return node;
+		return 0;
 
 	for (i = 0; i < YAJL_GET_OBJECT(xattrs)->len; i++) {
 		int r;
@@ -153,9 +153,8 @@ fill_xattrs(struct lcfs_node_s *node, yajl_val xattrs)
 		const char *v, *k = YAJL_GET_OBJECT(xattrs)->keys[i];
 
 		if (!YAJL_IS_STRING(YAJL_GET_OBJECT(xattrs)->values[i])) {
-			lcfs_node_free(node);
 			error(0, 0, "xattr value is not a string");
-			return NULL;
+			return -1;
 		}
 
 		v = YAJL_GET_STRING(YAJL_GET_OBJECT(xattrs)->values[i]);
@@ -163,20 +162,18 @@ fill_xattrs(struct lcfs_node_s *node, yajl_val xattrs)
 		r = base64_decode(v, strlen(v), v_buffer, sizeof(v_buffer),
 				  &written);
 		if (r < 0) {
-			lcfs_node_free(node);
 			error(0, 0, "xattr value is not valid b64");
-			return NULL;
+			return -1;
 		}
 
 		r = lcfs_node_append_xattr(node, k, v_buffer, written);
 		if (r < 0) {
-			lcfs_node_free(node);
 			error(0, 0, "append xattr");
-			return NULL;
+			return -1;
 		}
 	}
 
-	return node;
+	return 0;
 }
 
 static struct lcfs_node_s *get_node(struct lcfs_node_s *root, const char *what)
@@ -201,20 +198,21 @@ static struct lcfs_node_s *get_node(struct lcfs_node_s *root, const char *what)
 	return node;
 }
 
-static struct lcfs_node_s *fill_file(const char *typ,
-				     struct lcfs_node_s *root,
-				     struct lcfs_node_s *node, yajl_val entry)
+static int fill_file(const char *typ,
+		     struct lcfs_node_s *root,
+		     struct lcfs_node_s *node, yajl_val entry)
 {
 	const char *payload = NULL;
 	char payload_buffer[128];
 	uint16_t min = 0, maj = 0;
 	mode_t mode = 0;
 	yajl_val v;
+	int res;
 	bool is_regular_file = false;
 
 	if (node == NULL) {
 		error(0, 0, "node is NULL");
-		return node;
+		return 0;
 	}
 
 	if (strcmp(typ, "reg") == 0) {
@@ -234,8 +232,7 @@ static struct lcfs_node_s *fill_file(const char *typ,
 		v = get_child(entry, "linkName", yajl_t_string);
 		if (!v) {
 			error(0, 0, "linkName not specified");
-			lcfs_node_free(node);
-			return NULL;
+			return -1;
 		}
 
 		payload = YAJL_GET_STRING(v);
@@ -247,16 +244,14 @@ static struct lcfs_node_s *fill_file(const char *typ,
 		v = get_child(entry, "linkName", yajl_t_string);
 		if (!v) {
 			error(0, 0, "linkName not specified");
-			lcfs_node_free(node);
-			return NULL;
+			return -1;
 		}
 
 		target = get_node(root, YAJL_GET_STRING(v));
 		if (!target) {
- 			error(0, 0, "could not find target %s",
+			error(0, 0, "could not find target %s",
 			      YAJL_GET_STRING(v));
-			lcfs_node_free(node);
-			return NULL;
+			return -1;
 		}
 
 		lcfs_node_make_hardlink(node, target);
@@ -315,17 +310,19 @@ static struct lcfs_node_s *fill_file(const char *typ,
 
 		r = lcfs_node_set_payload(node, payload);
 		if (r < 0) {
-			lcfs_node_free(node);
 			error(0, 0, "set_payload");
-			return NULL;
+			return -1;
 		}
 	}
 
 	v = get_child(entry, "xattrs", yajl_t_object);
-	if (v)
-		return fill_xattrs(node, v);
+	if (v) {
+		res = fill_xattrs(node, v);
+		if (res < 0)
+			return -1;
+	}
 
-	return node;
+	return 0;
 }
 
 static struct lcfs_node_s *get_or_add_node(const char *typ,
@@ -335,6 +332,7 @@ static struct lcfs_node_s *get_or_add_node(const char *typ,
 	yajl_val tmp;
 	char *path, *dpath, *it;
 	struct lcfs_node_s *node = root;
+	int res;
 
 	tmp = get_child(entry, "name", yajl_t_string);
 	if (tmp == NULL) {
@@ -370,7 +368,12 @@ static struct lcfs_node_s *get_or_add_node(const char *typ,
 	}
 
 	free(path);
-	return fill_file(typ, root, node, entry);
+
+	res = fill_file(typ, root, node, entry);
+	if (res < 0) {
+		return NULL;
+	}
+	return node;
 }
 
 static void do_file(struct lcfs_node_s *root, FILE *file)
@@ -491,6 +494,8 @@ int main(int argc, char **argv)
 
 	if (lcfs_write_to(root, out_file) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
+
+	lcfs_node_unref(root);
 
 	return 0;
 }
