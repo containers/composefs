@@ -120,7 +120,7 @@ policy for this.
 To enable composefs selinux support, run:
 
 ```
-# semodule -i composefs.cli
+# semodule -i composefs.cil
 ```
 
 And, to later revert it, run:
