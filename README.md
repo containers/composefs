@@ -107,3 +107,24 @@ Mount options:
 `basedir`: is the directory to use as a base when resolving relative content paths.
 'noverity': Don't verify that target files have the right fs-verity digest. Useful if the fs doesn't support fs-verity but the descriptor has digests enabled.
 `digest`: A fs-verity sha256 digest that the descriptor file must match.
+
+## SELinux issues
+
+Composefs support xattrs natively, and selinux normally uses xattrs to
+store selinux file contexts. However, this only works if the local
+policy allows a particular filesystem type to use xattrs for selinux,
+and the default is to not allow it. So, until the default selinux
+contexts supports composefs, you need to manually install a local
+policy for this.
+
+To enable composefs selinux support, run:
+
+```
+# semodule -i composefs.cli
+```
+
+And, to later revert it, run:
+
+```
+# semodule -r composefs
+```
