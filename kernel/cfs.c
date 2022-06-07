@@ -100,6 +100,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 	struct cfs_inode *cino;
 	struct inode *inode = NULL;
 	struct lcfs_dir_s *dirdata = NULL;
+	u8 digest_buf[LCFS_DIGEST_SIZE];
 	const uint8_t *digest;
 	int ret;
 	int r;
@@ -134,7 +135,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		ino->st_nlink = lcfs_dir_get_link_count(dirdata);
 	}
 
-	digest = lcfs_get_digest(ctx, ino);
+	digest = lcfs_get_digest(ctx, ino, real_path, digest_buf);
 
 	xattrs = lcfs_get_xattrs(ctx, ino);
 	if (IS_ERR(xattrs)) {

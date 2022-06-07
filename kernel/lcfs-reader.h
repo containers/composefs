@@ -32,7 +32,7 @@ static inline u64 lcfs_dentry_ino(struct lcfs_dentry_s *d)
 	return d->inode_index;
 }
 
-const uint8_t *lcfs_get_digest(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino);
+const uint8_t *lcfs_get_digest(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, const char *payload, u8 digest_buf[LCFS_DIGEST_SIZE]);
 
 struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, lcfs_off_t index);
 

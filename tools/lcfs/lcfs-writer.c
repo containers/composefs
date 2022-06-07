@@ -335,8 +335,14 @@ static uint32_t compute_flags(struct lcfs_node_s *node) {
 		flags |= LCFS_INODE_FLAGS_HIGH_SIZE;
 	if (node->n_xattrs > 0)
 		flags |= LCFS_INODE_FLAGS_XATTRS;
-	if (node->digest_set)
-		flags |= LCFS_INODE_FLAGS_DIGEST;
+	if (node->digest_set) {
+		uint8_t payload_digest[LCFS_DIGEST_SIZE];
+		if (lcfs_digest_from_payload(node->payload, node->inode.payload_length, payload_digest) == 0 &&
+		    memcmp(payload_digest, node->inode.digest, LCFS_DIGEST_SIZE) == 0)
+			flags |= LCFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD;
+		else
+			flags |= LCFS_INODE_FLAGS_DIGEST;
+	}
 
 	return flags;
 }

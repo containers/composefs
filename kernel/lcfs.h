@@ -87,6 +87,54 @@ static inline uint64_t lcfs_u64_from_file(uint64_t val) {
 }
 #endif
 
+static inline int lcfs_xdigit_value (char c)
+{
+  if (c >= '0' && c <= '9')
+    return c - '0';
+  if (c >= 'A' && c <= 'F')
+    return c - 'A' + 10;
+  if (c >= 'a' && c <= 'f')
+    return c - 'a' + 10;
+  return -1;
+}
+
+static inline int lcfs_digest_from_payload(const char *payload, size_t payload_len, u8 digest_out[LCFS_DIGEST_SIZE])
+{
+	const char *p, *end;
+	u8 last_digit = 0, digit = 0;
+	size_t n_nibbles = 0;
+
+	end = payload + payload_len;
+	for (p = payload; p != end; p++) {
+		/* Skip subdir structure */
+		if (*p == '/')
+			continue;
+
+		/* Break at (and ignore) extension */
+		if (*p == '.')
+			break;
+
+		if (n_nibbles == LCFS_DIGEST_SIZE * 2)
+			return -1; /* Too long */
+
+		digit = lcfs_xdigit_value(*p);
+		if (digit == -1) {
+			return -1; /* Not hex digit */
+		}
+
+		n_nibbles++;
+		if ((n_nibbles % 2) == 0) {
+			digest_out[n_nibbles/2 - 1] = (last_digit << 4) | digit;
+		}
+		last_digit = digit;
+	}
+
+	if (n_nibbles != LCFS_DIGEST_SIZE * 2)
+		return -1; /* Too short */
+
+	return 0;
+}
+
 struct lcfs_vdata_s {
 	u32 off;
 	u32 len;
@@ -104,18 +152,19 @@ struct lcfs_header_s {
 } __attribute__((packed));
 
 enum lcfs_inode_flags {
-	LCFS_INODE_FLAGS_NONE            = 0,
-	LCFS_INODE_FLAGS_PAYLOAD         = 1 << 0,
-	LCFS_INODE_FLAGS_MODE            = 1 << 1,
-	LCFS_INODE_FLAGS_NLINK           = 1 << 2,
-	LCFS_INODE_FLAGS_UIDGID          = 1 << 3,
-	LCFS_INODE_FLAGS_RDEV            = 1 << 4,
-	LCFS_INODE_FLAGS_TIMES           = 1 << 5,
-	LCFS_INODE_FLAGS_TIMES_NSEC      = 1 << 6,
-	LCFS_INODE_FLAGS_LOW_SIZE        = 1 << 7, /* Low 32bit of st_size */
-	LCFS_INODE_FLAGS_HIGH_SIZE       = 1 << 8, /* High 32bit of st_size */
-	LCFS_INODE_FLAGS_XATTRS          = 1 << 9,
-	LCFS_INODE_FLAGS_DIGEST          = 1 << 10, /* fs-verity sha256 digest of content */
+	LCFS_INODE_FLAGS_NONE                = 0,
+	LCFS_INODE_FLAGS_PAYLOAD             = 1 << 0,
+	LCFS_INODE_FLAGS_MODE                = 1 << 1,
+	LCFS_INODE_FLAGS_NLINK               = 1 << 2,
+	LCFS_INODE_FLAGS_UIDGID              = 1 << 3,
+	LCFS_INODE_FLAGS_RDEV                = 1 << 4,
+	LCFS_INODE_FLAGS_TIMES               = 1 << 5,
+	LCFS_INODE_FLAGS_TIMES_NSEC          = 1 << 6,
+	LCFS_INODE_FLAGS_LOW_SIZE            = 1 << 7, /* Low 32bit of st_size */
+	LCFS_INODE_FLAGS_HIGH_SIZE           = 1 << 8, /* High 32bit of st_size */
+	LCFS_INODE_FLAGS_XATTRS              = 1 << 9,
+	LCFS_INODE_FLAGS_DIGEST              = 1 << 10, /* fs-verity sha256 digest of content */
+	LCFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD = 1 << 11, /* Compute digest from payload */
 };
 
 #define LCFS_INODE_FLAG_CHECK(_flag, _name) (((_flag) & (LCFS_INODE_FLAGS_ ## _name)) != 0)

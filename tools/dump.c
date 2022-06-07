@@ -72,10 +72,12 @@ static uint64_t decode_uint64(const uint8_t **data) {
 static void decode_inode(const uint8_t *inode_data, lcfs_off_t inod_num, struct lcfs_inode_s *ino, const uint8_t **payload_data_out)
 {
 	const uint8_t *data = inode_data + inod_num;
+	const uint8_t *payload_data;
 
 	memset(ino, 0, sizeof(struct lcfs_inode_s));
 
 	ino->flags = decode_uint32(&data);
+	payload_data = inode_data + inod_num + lcfs_inode_encoded_size(ino->flags);
 
 	if (LCFS_INODE_FLAG_CHECK(ino->flags, PAYLOAD)) {
 		ino->payload_length = decode_uint32(&data);
@@ -143,12 +145,16 @@ static void decode_inode(const uint8_t *inode_data, lcfs_off_t inod_num, struct 
 		ino->xattrs.len = 0;
 	}
 
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, DIGEST_FROM_PAYLOAD)) {
+		lcfs_digest_from_payload((const char *)payload_data, ino->payload_length, ino->digest);
+	}
+
 	if (LCFS_INODE_FLAG_CHECK(ino->flags, DIGEST)) {
 		memcpy(ino->digest, data, LCFS_DIGEST_SIZE);
 		data += LCFS_DIGEST_SIZE;
 	}
 
-	*payload_data_out = inode_data + inod_num + lcfs_inode_encoded_size(ino->flags);
+	*payload_data_out = payload_data;
 
 }
 
@@ -220,7 +226,7 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata, const cha
 			n_xattrs = lcfs_u16_from_file(header->n_attr);
 		}
 
-		if (ino.flags & LCFS_INODE_FLAGS_DIGEST) {
+		if ((ino.flags & LCFS_INODE_FLAGS_DIGEST) || (ino.flags & LCFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD)) {
 			digest_to_string(ino.digest, digest_str);
 		}
 

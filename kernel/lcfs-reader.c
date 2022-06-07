@@ -342,10 +342,15 @@ struct lcfs_inode_s *lcfs_get_root_ino(struct lcfs_context_s *ctx,
 	return lcfs_get_ino_index(ctx, root_ino, ino_buf);
 }
 
-const uint8_t *lcfs_get_digest(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
+const uint8_t *lcfs_get_digest(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, const char *payload, u8 digest_buf[LCFS_DIGEST_SIZE])
 {
 	if (LCFS_INODE_FLAG_CHECK(ino->flags, DIGEST)) {
 		return ino->digest;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, DIGEST_FROM_PAYLOAD && payload != NULL)) {
+		if (lcfs_digest_from_payload(payload, ino->payload_length, digest_buf) == 0)
+			return digest_buf;
 	}
 
 	return NULL;
