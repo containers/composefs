@@ -8,8 +8,10 @@
  * This file is released under the GPL.
  */
 
-#include <crypto/sha2.h>
-#include <linux/fsverity.h>
+#ifndef FUZZING
+# include <crypto/sha2.h>
+# include <linux/fsverity.h>
+#endif
 
 #ifdef STANDALONE_COMPOSEFS
 /* For whatever reason, struct fsverity_info is in a private header, even though

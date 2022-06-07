@@ -55,6 +55,7 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 		/* just retrieve the first name.  */
 		lcfs_get_xattr(xattrs, names, value, sizeof(value));
 	}
+	free(xattrs);
 
 	dir = lcfs_get_dir(test_ctx->ctx, s_ino, 0);
 	if (test_ctx->recursion_left > 0 && !IS_ERR(dir)) {
@@ -102,7 +103,7 @@ static struct lcfs_context_s *create_ctx(uint8_t *buf, size_t len)
 	}
 
 	sprintf(proc_path, "/proc/self/fd/%d", fd);
-	ctx = lcfs_create_ctx(proc_path);
+	ctx = lcfs_create_ctx(proc_path, NULL);
 	close(fd);
 	if (IS_ERR(ctx)) {
 		return NULL;
@@ -113,6 +114,7 @@ static struct lcfs_context_s *create_ctx(uint8_t *buf, size_t len)
 
 int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 {
+	struct lcfs_xattr_header_s *xattrs = NULL;
 	const size_t max_recursion = 4;
 	struct test_context_s test_ctx;
 	struct lcfs_context_s *ctx;
@@ -145,15 +147,20 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 		}
 	}
 
-
-	ino = lcfs_get_root_ino(fsi->lcfs_ctx, &ino_buf, &index);
+	ino = lcfs_get_root_ino(ctx, &ino_buf, &index);
 	if (IS_ERR(ino))
 		goto cleanup;
+
+	xattrs = lcfs_get_xattrs(ctx, ino);
+	if (IS_ERR(xattrs)) {
+		goto cleanup;
+	}
+	free(xattrs);
 
 	test_ctx.ctx = ctx;
 	test_ctx.recursion_left = max_recursion;
 
-	dir = lcfs_get_dir(ctx, ino, LCFS_ROOT_INODE);
+	dir = lcfs_get_dir(ctx, ino, 0);
 	if (IS_ERR(dir))
 		goto cleanup;
 

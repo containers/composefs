@@ -9,17 +9,32 @@
 # include <sys/stat.h>
 # include <endian.h>
 
+# define SHA512_DIGEST_SIZE 64
+
 # define kfree free
 # define vfree free
 # define min(a, b) ((a)<(b)?(a):(b))
 # define check_add_overflow(a, b, d) __builtin_add_overflow(a, b, d)
 # define ENOTSUPP ENOTSUP
+#define pr_err(x, ...)
+
+# define d_inode(d) (&d)
 
 #define DT_DIR         4
+
+struct inode
+{
+};
+
+struct path
+{
+	struct inode dentry;
+};
 
 struct file
 {
 	int fd;
+	struct path f_path;
 };
 
 static inline char *kstrndup(const char *str, size_t len, int ignored)
@@ -104,6 +119,11 @@ static inline u64 __get_unaligned_cpu64(const void *p)
 {
         const struct __una_u64 *ptr = (const struct __una_u64 *)p;
         return ptr->x;
+}
+
+static inline struct fsverity_info *fsverity_get_info(const struct inode *inode)
+{
+	return NULL;
 }
 
 #endif
