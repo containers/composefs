@@ -65,7 +65,6 @@ struct lcfs_node_s {
 
 
 	/* Used during compute_tree */
-	uint32_t flags;
 	struct lcfs_node_s *next; /* Use for the queue in compute_tree */
 	bool in_tree;
 };
@@ -312,6 +311,8 @@ static ssize_t compute_payload_size(struct lcfs_node_s *node)
 
 static uint32_t compute_flags(struct lcfs_node_s *node) {
 	uint32_t flags = 0;
+	if (node->inode.payload_length != 0)
+		flags |= LCFS_INODE_FLAGS_PAYLOAD;
 	if (node->inode.st_mode != LCFS_INODE_DEFAULT_MODE)
 		flags |= LCFS_INODE_FLAGS_MODE;
 	if ((node->inode.st_mode & S_IFMT) == S_IFREG &&
@@ -332,8 +333,16 @@ static uint32_t compute_flags(struct lcfs_node_s *node) {
 		flags |= LCFS_INODE_FLAGS_LOW_SIZE;
 	if ((node->inode.st_size >> 32) != 0)
 		flags |= LCFS_INODE_FLAGS_HIGH_SIZE;
-	if (node->digest_set)
-		flags |= LCFS_INODE_FLAGS_DIGEST;
+	if (node->n_xattrs > 0)
+		flags |= LCFS_INODE_FLAGS_XATTRS;
+	if (node->digest_set) {
+		uint8_t payload_digest[LCFS_DIGEST_SIZE];
+		if (lcfs_digest_from_payload(node->payload, node->inode.payload_length, payload_digest) == 0 &&
+		    memcmp(payload_digest, node->inode.digest, LCFS_DIGEST_SIZE) == 0)
+			flags |= LCFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD;
+		else
+			flags |= LCFS_INODE_FLAGS_DIGEST;
+	}
 
 	return flags;
 }
@@ -382,10 +391,6 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		qsort(node->children, node->children_size, sizeof(node->children[0]), cmp_nodes);
 		qsort(node->xattrs, node->n_xattrs, sizeof(node->xattrs[0]), cmp_xattr);
 
-		flags = compute_flags(node);
-
-		node->flags = flags;
-
 		/* Compute payload length */
 		payload_length = compute_payload_size(node);
 		if (payload_length < 0)
@@ -396,10 +401,15 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		}
 		node->inode.payload_length = payload_length;
 
+		flags = compute_flags(node);
+
+		node->inode.flags = flags;
+
+
 		inode_size = lcfs_inode_encoded_size(flags);
 
 		/* Assign inode index */
-		node->inode_index = LCFS_MAKE_INO(ctx->inode_table_size, flags);
+		node->inode_index = ctx->inode_table_size;
 		ctx->inode_table_size += inode_size + payload_length;
 
 #ifdef LCFS_SIZE_STATS
@@ -511,23 +521,22 @@ static int write_uint64(uint64_t val, FILE *out) {
 	return fwrite(&_val, sizeof(uint64_t), 1, out);
 }
 
-static int write_inode_data(struct lcfs_ctx_s *ctx, uint32_t flags, struct lcfs_inode_s *ino, FILE *out) {
+static int write_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_inode_s *ino, FILE *out) {
 	int ret;
 	long start_pos, end_pos;
+        uint32_t flags = ino->flags;
 
 	start_pos = ftell(out);
 
-	ret = write_uint32(ino->payload_length, out);
+	ret = write_uint32(ino->flags, out);
 	if (ret < 0)
 		return ret;
 
-	ret = write_uint32(ino->xattrs.off, out);
-	if (ret < 0)
-		return ret;
-
-	ret = write_uint32(ino->xattrs.len, out);
-	if (ret < 0)
-		return ret;
+	if (LCFS_INODE_FLAG_CHECK(flags, PAYLOAD)) {
+		ret = write_uint32(ino->payload_length, out);
+		if (ret < 0)
+			return ret;
+	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, MODE)) {
 		ret = write_uint32(ino->st_mode, out);
@@ -586,7 +595,17 @@ static int write_inode_data(struct lcfs_ctx_s *ctx, uint32_t flags, struct lcfs_
 			return ret;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
+        if (LCFS_INODE_FLAG_CHECK(flags, XATTRS)) {
+		ret = write_uint32(ino->xattrs.off, out);
+		if (ret < 0)
+			return ret;
+
+		ret = write_uint32(ino->xattrs.len, out);
+		if (ret < 0)
+			return ret;
+	}
+
+        if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
 		ret = fwrite(ino->digest, LCFS_DIGEST_SIZE, 1, out);
 		if (ret < 0)
 			return ret;
@@ -607,7 +626,7 @@ static int write_inodes(struct lcfs_ctx_s *ctx, FILE *out) {
 	for (node = ctx->root; node != NULL; node = node->next) {
 		struct lcfs_inode_s *ino = &(node->inode);
 
-		ret = write_inode_data(ctx, node->flags, ino, out);
+		ret = write_inode_data(ctx, ino, out);
 		if (ret < 0)
 			return ret;
 
@@ -671,7 +690,6 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 		return ret;
 	}
 
-	header.root_flags = lcfs_u16_to_file(root->flags);
 	header.data_offset = lcfs_u64_to_file(sizeof(struct lcfs_header_s) + ctx->inode_table_size);
 
 	ret = compute_xattrs(ctx);

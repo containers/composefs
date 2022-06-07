@@ -69,28 +69,35 @@ static uint64_t decode_uint64(const uint8_t **data) {
 	return lcfs_u64_from_file(*d);
 }
 
-static void decode_inode(const uint8_t *inode_data, lcfs_off_t inod_num, struct lcfs_inode_s *ino, uint32_t *flags_out, const uint8_t **payload_data_out)
+static void decode_inode(const uint8_t *inode_data, lcfs_off_t inod_num, struct lcfs_inode_s *ino, const uint8_t **payload_data_out)
 {
-	uint32_t flags = inod_num & LCFS_INODE_FLAGS_MASK;
-	const uint8_t *data = inode_data + (inod_num >> LCFS_INODE_INDEX_SHIFT);
+	const uint8_t *data = inode_data + inod_num;
+	const uint8_t *payload_data;
 
-	ino->payload_length = decode_uint32(&data);
-	ino->xattrs.off = decode_uint32(&data);
-	ino->xattrs.len = decode_uint32(&data);
+	memset(ino, 0, sizeof(struct lcfs_inode_s));
 
-	if (LCFS_INODE_FLAG_CHECK(flags, MODE)) {
+	ino->flags = decode_uint32(&data);
+	payload_data = inode_data + inod_num + lcfs_inode_encoded_size(ino->flags);
+
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, PAYLOAD)) {
+		ino->payload_length = decode_uint32(&data);
+	} else {
+		ino->payload_length = 0;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, MODE)) {
 		ino->st_mode = decode_uint32(&data);
 	} else {
 		ino->st_mode = LCFS_INODE_DEFAULT_MODE;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, NLINK)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, NLINK)) {
 		ino->st_nlink = decode_uint32(&data);
 	} else {
 		ino->st_nlink = LCFS_INODE_DEFAULT_NLINK;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, UIDGID)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, UIDGID)) {
 		ino->st_uid = decode_uint32(&data);
 		ino->st_gid = decode_uint32(&data);
 	} else {
@@ -98,13 +105,13 @@ static void decode_inode(const uint8_t *inode_data, lcfs_off_t inod_num, struct 
 		ino->st_gid = LCFS_INODE_DEFAULT_UIDGID;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, RDEV)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, RDEV)) {
 		ino->st_rdev = decode_uint32(&data);
 	} else {
 		ino->st_rdev = LCFS_INODE_DEFAULT_RDEV;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, TIMES)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, TIMES)) {
 		ino->st_mtim.tv_sec = decode_uint64(&data);
 		ino->st_ctim.tv_sec = decode_uint64(&data);
 	} else {
@@ -112,7 +119,7 @@ static void decode_inode(const uint8_t *inode_data, lcfs_off_t inod_num, struct 
 		ino->st_ctim.tv_sec = LCFS_INODE_DEFAULT_TIMES;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, TIMES_NSEC)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, TIMES_NSEC)) {
 		ino->st_mtim.tv_nsec = decode_uint32(&data);
 		ino->st_ctim.tv_nsec = decode_uint32(&data);
 	} else {
@@ -120,23 +127,34 @@ static void decode_inode(const uint8_t *inode_data, lcfs_off_t inod_num, struct 
 		ino->st_ctim.tv_nsec = 0;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, LOW_SIZE)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, LOW_SIZE)) {
 		ino->st_size = decode_uint32(&data);
 	} else {
 		ino->st_size = 0;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, HIGH_SIZE)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, HIGH_SIZE)) {
 		ino->st_size += (uint64_t)decode_uint32(&data) << 32;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, XATTRS)) {
+		ino->xattrs.off = decode_uint32(&data);
+		ino->xattrs.len = decode_uint32(&data);
+	} else {
+		ino->xattrs.off = 0;
+		ino->xattrs.len = 0;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, DIGEST_FROM_PAYLOAD)) {
+		lcfs_digest_from_payload((const char *)payload_data, ino->payload_length, ino->digest);
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, DIGEST)) {
 		memcpy(ino->digest, data, LCFS_DIGEST_SIZE);
 		data += LCFS_DIGEST_SIZE;
 	}
 
-	*flags_out = flags;
-	*payload_data_out = inode_data + (inod_num >> LCFS_INODE_INDEX_SHIFT) + lcfs_inode_encoded_size(flags);
+	*payload_data_out = payload_data;
 
 }
 
@@ -150,7 +168,7 @@ static void digest_to_string(const uint8_t *csum, char *buf)
 		buf[j] = hexchars[byte >> 4];
 		buf[j+1] = hexchars[byte & 0xF];
 	}
-  buf[j] = '\0';
+	buf[j] = '\0';
 }
 
 static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata, const char *name, size_t name_len, lcfs_off_t index,
@@ -158,11 +176,10 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata, const cha
 {
 	struct lcfs_inode_s ino;
 	const uint8_t *payload_data;
-	uint32_t flags;
 	bool dirp;
 	size_t i;
 
-	decode_inode(inode_data, index, &ino, &flags, &payload_data);
+	decode_inode(inode_data, index, &ino, &payload_data);
 
 	dirp = is_dir(&ino);
 
@@ -209,7 +226,7 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata, const cha
 			n_xattrs = lcfs_u16_from_file(header->n_attr);
 		}
 
-		if (flags & LCFS_INODE_FLAGS_DIGEST) {
+		if ((ino.flags & LCFS_INODE_FLAGS_DIGEST) || (ino.flags & LCFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD)) {
 			digest_to_string(ino.digest, digest_str);
 		}
 
@@ -247,12 +264,11 @@ static lcfs_off_t find_child(const uint8_t *inode_data, lcfs_off_t current, cons
 {
 	struct lcfs_inode_s ino;
 	const uint8_t *payload_data;
-	uint32_t flags;
 	const char *namedata;
 	const struct lcfs_dir_s *dir;
 	size_t i, n_dentries, name_len;
 
-	decode_inode(inode_data, current, &ino, &flags, &payload_data);
+	decode_inode(inode_data, current, &ino, &payload_data);
 
 	if (!is_dir(&ino))
 		return UINT64_MAX;
@@ -363,7 +379,7 @@ int main(int argc, char *argv[])
 
 	inode_data = data + sizeof(struct lcfs_header_s);
 	vdata = data + lcfs_u64_from_file(header->data_offset);
-	root_index = LCFS_MAKE_INO(0, lcfs_u16_from_file(header->root_flags));
+	root_index = 0;
 	if (mode == DUMP) {
 		dump_inode(inode_data, vdata, "", 0, root_index, 0, false, false, true);
 	} else if (mode == DUMP_EXTENDED) {

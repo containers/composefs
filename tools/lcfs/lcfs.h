@@ -55,6 +55,54 @@ static inline uint64_t lcfs_u64_from_file(uint64_t val) {
 	return le64toh(val);
 }
 
+static inline int lcfs_xdigit_value (char c)
+{
+  if (c >= '0' && c <= '9')
+    return c - '0';
+  if (c >= 'A' && c <= 'F')
+    return c - 'A' + 10;
+  if (c >= 'a' && c <= 'f')
+    return c - 'a' + 10;
+  return -1;
+}
+
+static inline int lcfs_digest_from_payload(const char *payload, size_t payload_len, uint8_t digest_out[LCFS_DIGEST_SIZE])
+{
+	const char *p, *end;
+	uint8_t last_digit = 0, digit = 0;
+	size_t n_nibbles = 0;
+
+	end = payload + payload_len;
+	for (p = payload; p != end; p++) {
+		/* Skip subdir structure */
+		if (*p == '/')
+			continue;
+
+		/* Break at (and ignore) extension */
+		if (*p == '.')
+			break;
+
+		if (n_nibbles == LCFS_DIGEST_SIZE * 2)
+			return -1; /* Too long */
+
+		digit = lcfs_xdigit_value(*p);
+		if (digit == -1) {
+			return -1; /* Not hex digit */
+		}
+
+		n_nibbles++;
+		if ((n_nibbles % 2) == 0) {
+			digest_out[n_nibbles/2 - 1] = (last_digit << 4) | digit;
+		}
+		last_digit = digit;
+	}
+
+	if (n_nibbles != LCFS_DIGEST_SIZE * 2)
+		return -1; /* Too short */
+
+	return 0;
+}
+
 struct lcfs_vdata_s {
 	uint32_t off;
 	uint32_t len;
@@ -63,34 +111,33 @@ struct lcfs_vdata_s {
 struct lcfs_header_s {
 	uint8_t version;
 	uint8_t unused1;
-	uint16_t root_flags;  /* flags of root inode */
+	uint16_t unused2;
 
 	uint32_t inode_len;
 	lcfs_off_t data_offset;
 
-	uint64_t unused2[3];
+	uint64_t unused3[3];
 } __attribute__((packed));
 
 
 enum lcfs_inode_flags {
-	LCFS_INODE_FLAGS_NONE            = 0,
-	LCFS_INODE_FLAGS_MODE            = 1 << 0,
-	LCFS_INODE_FLAGS_NLINK           = 1 << 1,
-	LCFS_INODE_FLAGS_UIDGID          = 1 << 2,
-	LCFS_INODE_FLAGS_RDEV            = 1 << 3,
-	LCFS_INODE_FLAGS_TIMES           = 1 << 4,
-	LCFS_INODE_FLAGS_TIMES_NSEC      = 1 << 5,
-	LCFS_INODE_FLAGS_LOW_SIZE        = 1 << 6, /* Low 32bit of st_size */
-	LCFS_INODE_FLAGS_HIGH_SIZE       = 1 << 7, /* High 32bit of st_size */
-	LCFS_INODE_FLAGS_DIGEST          = 1 << 8, /* fs-verity sha256 digest of content */
+	LCFS_INODE_FLAGS_NONE                = 0,
+	LCFS_INODE_FLAGS_PAYLOAD             = 1 << 0,
+	LCFS_INODE_FLAGS_MODE                = 1 << 1,
+	LCFS_INODE_FLAGS_NLINK               = 1 << 2,
+	LCFS_INODE_FLAGS_UIDGID              = 1 << 3,
+	LCFS_INODE_FLAGS_RDEV                = 1 << 4,
+	LCFS_INODE_FLAGS_TIMES               = 1 << 5,
+	LCFS_INODE_FLAGS_TIMES_NSEC          = 1 << 6,
+	LCFS_INODE_FLAGS_LOW_SIZE            = 1 << 7, /* Low 32bit of st_size */
+	LCFS_INODE_FLAGS_HIGH_SIZE           = 1 << 8, /* High 32bit of st_size */
+	LCFS_INODE_FLAGS_XATTRS              = 1 << 9,
+	LCFS_INODE_FLAGS_DIGEST              = 1 << 10, /* fs-verity sha256 digest of content */
+	LCFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD = 1 << 11, /* Compute digest from payload */
 };
 
 #define LCFS_INODE_FLAG_CHECK(_flag, _name) (((_flag) & (LCFS_INODE_FLAGS_ ## _name)) != 0)
 #define LCFS_INODE_FLAG_CHECK_SIZE(_flag, _name, _size) (LCFS_INODE_FLAG_CHECK(_flag, _name) ? (_size) : 0)
-
-#define LCFS_INODE_INDEX_SHIFT 9
-#define	LCFS_INODE_FLAGS_MASK ((1 << LCFS_INODE_INDEX_SHIFT) - 1)
-#define LCFS_MAKE_INO(_index, _flags) ((uint64_t)(_flags) | (((uint64_t)(_index)) << LCFS_INODE_INDEX_SHIFT))
 
 #define LCFS_INODE_DEFAULT_MODE 0100644
 #define LCFS_INODE_DEFAULT_NLINK 1
@@ -99,6 +146,10 @@ enum lcfs_inode_flags {
 #define LCFS_INODE_DEFAULT_TIMES 0
 
 struct lcfs_inode_s {
+	uint32_t flags;
+
+	/* Optional data: (selected by flags) */
+
 	/* This is the size of the type specific data that comes directly after
 	   the inode in the file. Of this type:
 	   *
@@ -110,16 +161,15 @@ struct lcfs_inode_s {
 	   */
 	uint32_t payload_length;
 
-	/* Variable len data.  */
-	struct lcfs_vdata_s xattrs;
-
-	/* Optional data: (selected by flags) */
 	uint32_t st_mode; /* File type and mode.  */
 	uint32_t st_nlink; /* Number of hard links, only for regular files.  */
 	uint32_t st_uid; /* User ID of owner.  */
 	uint32_t st_gid; /* Group ID of owner.  */
 	uint32_t st_rdev; /* Device ID (if special file).  */
 	uint64_t st_size; /* Size of file, only used for regular files */
+
+	struct lcfs_vdata_s xattrs; /* ref to variable data */
+
 	uint8_t digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
 
 	struct timespec st_mtim; /* Time of last modification.  */
@@ -129,8 +179,8 @@ struct lcfs_inode_s {
 static inline uint32_t lcfs_inode_encoded_size(uint32_t flags)
 {
 	return
-		sizeof(uint32_t) /* payload_length */ +
-		sizeof(struct lcfs_vdata_s) /* xattrs */ +
+		sizeof(uint32_t) /* flags */ +
+		LCFS_INODE_FLAG_CHECK_SIZE(flags, PAYLOAD, sizeof(uint32_t)) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, MODE, sizeof(uint32_t)) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, NLINK, sizeof(uint32_t)) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, UIDGID, sizeof(uint32_t) + sizeof(uint32_t)) +
@@ -139,6 +189,7 @@ static inline uint32_t lcfs_inode_encoded_size(uint32_t flags)
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, TIMES_NSEC, sizeof(uint32_t)*2) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(uint32_t)) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(uint32_t)) +
+		LCFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS, sizeof(uint32_t)*2) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, LCFS_DIGEST_SIZE)
 		;
 }
