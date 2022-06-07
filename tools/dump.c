@@ -77,13 +77,14 @@ static void decode_inode(const uint8_t *inode_data, lcfs_off_t inod_num, struct 
 	memset(ino, 0, sizeof(struct lcfs_inode_s));
 
 	ino->flags = decode_uint32(&data);
-	payload_data = inode_data + inod_num + lcfs_inode_encoded_size(ino->flags);
 
 	if (LCFS_INODE_FLAG_CHECK(ino->flags, PAYLOAD)) {
 		ino->payload_length = decode_uint32(&data);
 	} else {
 		ino->payload_length = 0;
 	}
+
+	payload_data = inode_data + inod_num  - ino->payload_length;
 
 	if (LCFS_INODE_FLAG_CHECK(ino->flags, MODE)) {
 		ino->st_mode = decode_uint32(&data);
@@ -379,7 +380,7 @@ int main(int argc, char *argv[])
 
 	inode_data = data + sizeof(struct lcfs_header_s);
 	vdata = data + lcfs_u64_from_file(header->data_offset);
-	root_index = 0;
+	root_index = lcfs_u64_from_file(header->root_inode);
 	if (mode == DUMP) {
 		dump_inode(inode_data, vdata, "", 0, root_index, 0, false, false, true);
 	} else if (mode == DUMP_EXTENDED) {

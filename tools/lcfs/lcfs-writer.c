@@ -409,8 +409,9 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		inode_size = lcfs_inode_encoded_size(flags);
 
 		/* Assign inode index */
+		ctx->inode_table_size += payload_length;
 		node->inode_index = ctx->inode_table_size;
-		ctx->inode_table_size += inode_size + payload_length;
+		ctx->inode_table_size += inode_size;
 
 #ifdef LCFS_SIZE_STATS
 		ctx->inode_data_size += inode_size;
@@ -618,52 +619,66 @@ static int write_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_inode_s *ino, FI
 	return 0;
 }
 
-static int write_inodes(struct lcfs_ctx_s *ctx, FILE *out) {
-	struct lcfs_node_s *node;
+static int write_payload_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, FILE *out) {
+	struct lcfs_inode_s *ino = &(node->inode);
 	size_t i;
 	int ret;
 
-	for (node = ctx->root; node != NULL; node = node->next) {
-		struct lcfs_inode_s *ino = &(node->inode);
+	if (ino->payload_length == 0)
+		return 0;
 
-		ret = write_inode_data(ctx, ino, out);
+	if ((node->inode.st_mode & S_IFMT) == S_IFLNK ||
+	    (node->inode.st_mode & S_IFMT) == S_IFREG) {
+		assert(ino->payload_length == strlen(node->payload));
+		ret = fwrite(node->payload, strlen(node->payload), 1, out);
+		if (ret < 0)
+			return ret;
+	} else if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
+		struct lcfs_dir_s dir = { lcfs_u32_to_file(node->children_size) };
+		ret = fwrite(&dir, sizeof(dir), 1, out);
+		if (ret < 0)
+			return ret;
+		for (i = 0; i < node->children_size; i++) {
+			struct lcfs_node_s *dirent_child = node->children[i];
+			struct lcfs_node_s *target_child = follow_links(dirent_child);
+			struct lcfs_dentry_s dentry;
+
+			dentry.inode_index = lcfs_u64_to_file(target_child->inode_index);
+			dentry.name_len = lcfs_u16_to_file(strlen(dirent_child->name));
+			dentry.d_type = node_get_dtype(target_child);
+			dentry.pad = 0;
+			ret = fwrite(&dentry, sizeof(dentry), 1, out);
+			if (ret < 0)
+				return ret;
+		}
+		for (i = 0; i < node->children_size; i++) {
+			struct lcfs_node_s *dirent_child = node->children[i];
+			ret = fwrite(dirent_child->name, strlen(dirent_child->name), 1, out);
+			if (ret < 0)
+				return ret;
+		}
+	}
+
+	return 0;
+}
+
+
+static int write_inodes(struct lcfs_ctx_s *ctx, FILE *out) {
+	struct lcfs_node_s *node;
+	int ret;
+	long inode_pos;
+
+	for (node = ctx->root; node != NULL; node = node->next) {
+		ret = write_payload_data(ctx, node, out);
 		if (ret < 0)
 			return ret;
 
-		if (ino->payload_length == 0)
-			continue;
+		inode_pos = ftell(out);
+		assert(inode_pos == node->inode_index + sizeof(struct lcfs_header_s));
 
-		if ((node->inode.st_mode & S_IFMT) == S_IFLNK ||
-		    (node->inode.st_mode & S_IFMT) == S_IFREG) {
-			assert(ino->payload_length == strlen(node->payload));
-			ret = fwrite(node->payload, strlen(node->payload), 1, out);
-			if (ret < 0)
-				return ret;
-		} else if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
-			struct lcfs_dir_s dir = { lcfs_u32_to_file(node->children_size) };
-			ret = fwrite(&dir, sizeof(dir), 1, out);
-			if (ret < 0)
-				return ret;
-			for (i = 0; i < node->children_size; i++) {
-				struct lcfs_node_s *dirent_child = node->children[i];
-				struct lcfs_node_s *target_child = follow_links(dirent_child);
-				struct lcfs_dentry_s dentry;
-
-				dentry.inode_index = lcfs_u64_to_file(target_child->inode_index);
-				dentry.name_len = lcfs_u16_to_file(strlen(dirent_child->name));
-				dentry.d_type = node_get_dtype(target_child);
-				dentry.pad = 0;
-				ret = fwrite(&dentry, sizeof(dentry), 1, out);
-				if (ret < 0)
-					return ret;
-			}
-			for (i = 0; i < node->children_size; i++) {
-				struct lcfs_node_s *dirent_child = node->children[i];
-				ret = fwrite(dirent_child->name, strlen(dirent_child->name), 1, out);
-				if (ret < 0)
-					return ret;
-			}
-		}
+		ret = write_inode_data(ctx, &(node->inode), out);
+		if (ret < 0)
+			return ret;
 	}
 
 	return 0;
@@ -691,6 +706,7 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 	}
 
 	header.data_offset = lcfs_u64_to_file(sizeof(struct lcfs_header_s) + ctx->inode_table_size);
+	header.root_inode = lcfs_u64_to_file(root->inode_index);
 
 	ret = compute_xattrs(ctx);
 	if (ret < 0) {

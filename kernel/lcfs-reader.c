@@ -119,9 +119,11 @@ struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path, const u8 *required
 	}
 	header->magic = lcfs_u32_from_file(header->magic);
 	header->data_offset = lcfs_u64_from_file(header->data_offset);
+	header->root_inode = lcfs_u64_from_file(header->root_inode);
 
         if (header->magic != LCFS_MAGIC ||
-            header->data_offset > ctx->descriptor_len) {
+            header->data_offset > ctx->descriptor_len ||
+            sizeof(struct lcfs_header_s) + header->root_inode > ctx->descriptor_len) {
 		fput(descriptor);
 		kfree(ctx);
 		return ERR_PTR(-EINVAL);
@@ -173,10 +175,13 @@ static void *lcfs_get_inode_payload(struct lcfs_context_s *ctx,
 				    lcfs_off_t index,
 				    u8 *dest)
 {
-	u32 flags = ino->flags;
 	u64 offset = index;
-	u64 inode_size = lcfs_inode_encoded_size(flags);
-	return lcfs_get_inode_data(ctx, offset + inode_size, ino->payload_length, dest);
+
+	/* Payload is stored before the inode, check it fits */
+	if (ino->payload_length > offset)
+		return ERR_PTR(-EINVAL);
+
+	return lcfs_get_inode_data(ctx, offset - ino->payload_length, ino->payload_length, dest);
 }
 
 static void *lcfs_alloc_inode_payload(struct lcfs_context_s *ctx,
@@ -343,7 +348,7 @@ struct lcfs_inode_s *lcfs_get_root_ino(struct lcfs_context_s *ctx,
 				       struct lcfs_inode_s *ino_buf,
 				       lcfs_off_t *index)
 {
-	lcfs_off_t root_ino = 0;
+	lcfs_off_t root_ino = ctx->header.root_inode;
 
 	*index = root_ino;
 	return lcfs_get_ino_index(ctx, root_ino, ino_buf);
