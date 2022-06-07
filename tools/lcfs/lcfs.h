@@ -27,6 +27,8 @@
 
 #define LCFS_DIGEST_SIZE 32
 
+#define LCFS_MAGIC 0xc078629aU
+
 typedef uint64_t lcfs_off_t;
 
 typedef lcfs_off_t lcfs_c_str_t;
@@ -113,7 +115,7 @@ struct lcfs_header_s {
 	uint8_t unused1;
 	uint16_t unused2;
 
-	uint32_t inode_len;
+	uint32_t magic;
 	lcfs_off_t data_offset;
 
 	uint64_t unused3[3];

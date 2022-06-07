@@ -39,8 +39,6 @@ MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 
 #include "lcfs-verity.h"
 
-#define CFS_MAGIC 0x12345678
-
 struct cfs_info {
 	struct lcfs_context_s *lcfs_ctx;
 
@@ -507,7 +505,7 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	/* Set up the inode allocator early */
 	sb->s_op = &cfs_ops;
 	sb->s_flags |= SB_RDONLY;
-	sb->s_magic = CFS_MAGIC;
+	sb->s_magic = LCFS_MAGIC;
 	sb->s_xattr = cfs_xattr_handlers;
 	sb->s_export_op = &cfs_export_operations;
 
