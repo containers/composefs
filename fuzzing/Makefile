@@ -9,9 +9,9 @@ main-run-single: main.c ../kernel/lcfs.h ../kernel/lcfs-fuzzing.h ../kernel/lcfs
 corpus:
 	rm -rf corpus_
 	mkdir corpus_
-	../tools/writer-json < ../tools/test-assets/config.json  > corpus_/tree.1
-	../tools/writer-json < ../tools/test-assets/config-with-hard-link.json  > corpus_/tree.2
-	../tools/writer --chdir .. > corpus_/tree.3
+	../tools/writer-json ../tools/test-assets/config.json  > corpus_/tree.1
+	../tools/writer-json ../tools/test-assets/config-with-hard-link.json  > corpus_/tree.2
+	../tools/mkcomposefs .. corpus_/tree.3
 	mv corpus_ corpus
 
 run: corpus
