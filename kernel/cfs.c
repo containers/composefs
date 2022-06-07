@@ -114,7 +114,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 
 	if ((ino->st_mode & S_IFMT) == S_IFREG && ino->payload_length != 0) {
 		real_path = lcfs_dup_payload_path(ctx, ino, ino_num);
-		if (r < 0) {
+		if (IS_ERR(real_path)) {
 			ret = PTR_ERR(real_path);
 			real_path = NULL;
 			goto fail;
