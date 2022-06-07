@@ -8,7 +8,6 @@
 
 #include "lcfs.h"
 #include "lcfs-reader.h"
-#include "lcfs-verity.h"
 
 #ifndef FUZZING
 # include <linux/string.h>
@@ -22,6 +21,7 @@
 #endif
 
 #include "lcfs-fuzzing.h"
+#include "lcfs-verity.h"
 
 #define MIN(a,b) ((a)<(b) ? (a) : (b))
 
