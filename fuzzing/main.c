@@ -30,8 +30,6 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 	struct lcfs_inode_s *s_ino;
 	struct lcfs_inode_s buffer;
 	struct lcfs_dir_s *dir;
-	ssize_t xattrs_len;
-	char names[512];
 	loff_t out_size;
 	char *out_path;
 	char *payload;
@@ -41,27 +39,38 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 		return true;
 
 	payload = lcfs_dup_payload_path(test_ctx->ctx, s_ino, 0);
-	if (!IS_ERR(payload))
+	if (!IS_ERR(payload)) {
+		u8 digest_buf[LCFS_DIGEST_SIZE];
+		lcfs_get_digest(test_ctx->ctx, s_ino, payload, digest_buf);
 		free(payload);
+	}
 
 	xattrs = lcfs_get_xattrs(test_ctx->ctx, s_ino);
 	if (!IS_ERR(xattrs)) {
+		ssize_t xattrs_len;
+		char names[512] = {0, };
 		char value[512];
+                char *it;
 
 		xattrs_len = lcfs_list_xattrs(xattrs, names, sizeof(names));
 		if (xattrs_len < 0)
 			return true;
 
-		/* just retrieve the first name.  */
-		lcfs_get_xattr(xattrs, names, value, sizeof(value));
+                for (it = names; *it; it += strlen (it))
+                  lcfs_get_xattr(xattrs, it, value, sizeof(value));
+
 		free(xattrs);
 	}
 
 	dir = lcfs_get_dir(test_ctx->ctx, s_ino, 0);
-	if (test_ctx->recursion_left > 0 && !IS_ERR(dir)) {
-		test_ctx->recursion_left--;
-		lcfs_dir_iterate(dir, 0, iter_cb, test_ctx);
-		test_ctx->recursion_left++;
+	if (!IS_ERR(dir)) {
+		lcfs_dir_get_link_count(dir);
+		if (test_ctx->recursion_left > 0) {
+			test_ctx->recursion_left--;
+			lcfs_dir_iterate(dir, 0, iter_cb, test_ctx);
+			test_ctx->recursion_left++;
+		}
+
 		free(dir);
 	}
 	return true;
@@ -117,6 +126,7 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 {
 	struct lcfs_xattr_header_s *xattrs = NULL;
 	const size_t max_recursion = 4;
+	u8 digest_out[LCFS_DIGEST_SIZE];
 	struct test_context_s test_ctx;
 	struct lcfs_context_s *ctx;
 	struct lcfs_inode_s ino_buf;
@@ -127,6 +137,8 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 	lcfs_off_t index;
 	lcfs_off_t off;
 	int fd;
+
+	lcfs_digest_from_payload(buf, len, digest_out);
 
 	ctx = create_ctx(buf, len);
 	if (ctx == NULL)
@@ -140,6 +152,9 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 		lcfs_get_ino_index(ctx, off, &ino_buf);
 	}
 
+	memcpy(name, buf, min(len, NAME_MAX - 1));
+	name[min(len, NAME_MAX - 1)] = '\0';
+
 	for (off = 0; off < 1000; off++) {
 		ino = lcfs_get_ino_index(ctx, off, &ino_buf);
 		if (!IS_ERR(ino)) {
@@ -147,8 +162,11 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 
 			dir = lcfs_get_dir(ctx, ino, off);
 			if (!IS_ERR(dir)) {
-	                        if (dir)
+				lcfs_dir_get_link_count(dir);
+	                        if (dir) {
+					lcfs_lookup(dir, name, strlen(name), &index);
 					lcfs_dir_iterate(dir, 0, iter_cb, &test_ctx);
+                                }
 				free(dir);
 			}
 		}
@@ -165,10 +183,6 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 	dir = lcfs_get_dir(ctx, ino, 0);
 	if (IS_ERR(dir))
 		goto cleanup;
-
-	memcpy(name, buf, min(len, NAME_MAX - 1));
-	name[min(len, NAME_MAX - 1)] = '\0';
-	lcfs_lookup(dir, name, strlen(name), &index);
 
 	lcfs_dir_iterate(dir, 0, iter_cb, &test_ctx);
 	free(dir);
