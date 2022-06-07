@@ -149,8 +149,9 @@ struct lcfs_header_s {
 
 	u32 magic;
 	lcfs_off_t data_offset;
+	lcfs_off_t root_inode;
 
-	u64 unused3[3];
+	u64 unused3[2];
 } __attribute__((packed));
 
 enum lcfs_inode_flags {

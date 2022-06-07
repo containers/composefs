@@ -117,8 +117,9 @@ struct lcfs_header_s {
 
 	uint32_t magic;
 	lcfs_off_t data_offset;
+	lcfs_off_t root_inode;
 
-	uint64_t unused3[3];
+	uint64_t unused3[2];
 } __attribute__((packed));
 
 
