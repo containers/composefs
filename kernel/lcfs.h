@@ -145,7 +145,7 @@ struct lcfs_vdata_s {
 struct lcfs_header_s {
 	u8 version;
 	u8 unused1;
-	uint16_t unused2;
+	u16 unused2;
 
 	u32 magic;
 	lcfs_off_t data_offset;
@@ -204,7 +204,7 @@ struct lcfs_inode_s {
 
 	struct lcfs_vdata_s xattrs; /* ref to variable data */
 
-	uint8_t digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
+	u8 digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
 
 	struct timespec64 st_mtim; /* Time of last modification.  */
 	struct timespec64 st_ctim; /* Time of last status change.  */
@@ -223,7 +223,7 @@ static inline u32 lcfs_inode_encoded_size(u32 flags)
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, TIMES_NSEC, sizeof(u32)*2) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(u32)) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(u32)) +
-		LCFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS, sizeof(uint32_t)*2) +
+		LCFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS, sizeof(u32)*2) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, LCFS_DIGEST_SIZE)
 		;
 }
@@ -231,9 +231,9 @@ static inline u32 lcfs_inode_encoded_size(u32 flags)
 struct lcfs_dentry_s {
 	/* Index of struct lcfs_inode_s */
 	lcfs_off_t inode_index;
-	uint16_t name_len;
-	uint8_t d_type;
-	uint8_t pad;
+	u16 name_len;
+	u8 d_type;
+	u8 pad;
 } __attribute__((packed));
 
 struct lcfs_dir_s {
@@ -246,12 +246,12 @@ struct lcfs_dir_s {
 
 /* xattr representation.  */
 struct lcfs_xattr_element_s {
-	uint16_t key_length;
-	uint16_t value_length;
+	u16 key_length;
+	u16 value_length;
 } __attribute__((packed));
 
 struct lcfs_xattr_header_s {
-	uint16_t n_attr;
+	u16 n_attr;
 	struct lcfs_xattr_element_s attr[0];
 } __attribute__((packed));
 
