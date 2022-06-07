@@ -424,7 +424,7 @@ struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx,
 
 struct lcfs_xattr_header_s *lcfs_get_xattrs(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
 {
-	struct lcfs_xattr_header_s *xattrs;
+	struct lcfs_xattr_header_s *xattrs = NULL;
 	u8 *data, *data_end;
 	size_t n_xattrs, i;
 
