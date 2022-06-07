@@ -673,7 +673,7 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 {
 	struct lcfs_header_s header = {
 		.version = LCFS_VERSION,
-		.inode_len = lcfs_u32_to_file(sizeof(struct lcfs_inode_s)),
+		.magic = lcfs_u32_to_file(LCFS_MAGIC),
 	};
 	int ret = 0;
 	struct lcfs_ctx_s *ctx;

@@ -117,8 +117,15 @@ struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path, const u8 *required
 		kfree(ctx);
 		return ERR_CAST(header);
 	}
-	header->inode_len = lcfs_u32_from_file(header->inode_len);
+	header->magic = lcfs_u32_from_file(header->magic);
 	header->data_offset = lcfs_u64_from_file(header->data_offset);
+
+        if (header->magic != LCFS_MAGIC ||
+            header->data_offset > ctx->descriptor_len) {
+		fput(descriptor);
+		kfree(ctx);
+		return ERR_PTR(-EINVAL);
+	}
 
 	return ctx;
 }

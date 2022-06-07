@@ -33,6 +33,8 @@ typedef uint64_t u64;
 
 #define LCFS_DIGEST_SIZE 32
 
+#define LCFS_MAGIC 0xc078629aU
+
 typedef u64 lcfs_off_t;
 
 typedef lcfs_off_t lcfs_c_str_t;
@@ -145,7 +147,7 @@ struct lcfs_header_s {
 	u8 unused1;
 	uint16_t unused2;
 
-	u32 inode_len;
+	u32 magic;
 	lcfs_off_t data_offset;
 
 	u64 unused3[3];
