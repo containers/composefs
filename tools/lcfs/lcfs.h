@@ -82,7 +82,8 @@ enum lcfs_inode_flags {
 	LCFS_INODE_FLAGS_TIMES_NSEC      = 1 << 5,
 	LCFS_INODE_FLAGS_LOW_SIZE        = 1 << 6, /* Low 32bit of st_size */
 	LCFS_INODE_FLAGS_HIGH_SIZE       = 1 << 7, /* High 32bit of st_size */
-	LCFS_INODE_FLAGS_DIGEST          = 1 << 8, /* fs-verity sha256 digest of content */
+	LCFS_INODE_FLAGS_XATTRS          = 1 << 8,
+	LCFS_INODE_FLAGS_DIGEST          = 1 << 9, /* fs-verity sha256 digest of content */
 };
 
 #define LCFS_INODE_FLAG_CHECK(_flag, _name) (((_flag) & (LCFS_INODE_FLAGS_ ## _name)) != 0)
@@ -107,16 +108,17 @@ struct lcfs_inode_s {
 	   */
 	uint32_t payload_length;
 
-	/* Variable len data.  */
-	struct lcfs_vdata_s xattrs;
-
 	/* Optional data: (selected by flags) */
+
 	uint32_t st_mode; /* File type and mode.  */
 	uint32_t st_nlink; /* Number of hard links, only for regular files.  */
 	uint32_t st_uid; /* User ID of owner.  */
 	uint32_t st_gid; /* Group ID of owner.  */
 	uint32_t st_rdev; /* Device ID (if special file).  */
 	uint64_t st_size; /* Size of file, only used for regular files */
+
+	struct lcfs_vdata_s xattrs; /* ref to variable data */
+
 	uint8_t digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
 
 	struct timespec st_mtim; /* Time of last modification.  */
@@ -128,7 +130,6 @@ static inline uint32_t lcfs_inode_encoded_size(uint32_t flags)
 	return
 		sizeof(uint32_t) /* flags */ +
 		sizeof(uint32_t) /* payload_length */ +
-		sizeof(struct lcfs_vdata_s) /* xattrs */ +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, MODE, sizeof(uint32_t)) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, NLINK, sizeof(uint32_t)) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, UIDGID, sizeof(uint32_t) + sizeof(uint32_t)) +
@@ -137,6 +138,7 @@ static inline uint32_t lcfs_inode_encoded_size(uint32_t flags)
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, TIMES_NSEC, sizeof(uint32_t)*2) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(uint32_t)) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(uint32_t)) +
+		LCFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS, sizeof(uint32_t)*2) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, LCFS_DIGEST_SIZE)
 		;
 }

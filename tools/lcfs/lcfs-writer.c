@@ -331,6 +331,8 @@ static uint32_t compute_flags(struct lcfs_node_s *node) {
 		flags |= LCFS_INODE_FLAGS_LOW_SIZE;
 	if ((node->inode.st_size >> 32) != 0)
 		flags |= LCFS_INODE_FLAGS_HIGH_SIZE;
+	if (node->n_xattrs > 0)
+		flags |= LCFS_INODE_FLAGS_XATTRS;
 	if (node->digest_set)
 		flags |= LCFS_INODE_FLAGS_DIGEST;
 
@@ -525,14 +527,6 @@ static int write_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_inode_s *ino, FI
 	if (ret < 0)
 		return ret;
 
-	ret = write_uint32(ino->xattrs.off, out);
-	if (ret < 0)
-		return ret;
-
-	ret = write_uint32(ino->xattrs.len, out);
-	if (ret < 0)
-		return ret;
-
 	if (LCFS_INODE_FLAG_CHECK(flags, MODE)) {
 		ret = write_uint32(ino->st_mode, out);
 		if (ret < 0)
@@ -590,7 +584,17 @@ static int write_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_inode_s *ino, FI
 			return ret;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
+        if (LCFS_INODE_FLAG_CHECK(flags, XATTRS)) {
+		ret = write_uint32(ino->xattrs.off, out);
+		if (ret < 0)
+			return ret;
+
+		ret = write_uint32(ino->xattrs.len, out);
+		if (ret < 0)
+			return ret;
+	}
+
+        if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
 		ret = fwrite(ino->digest, LCFS_DIGEST_SIZE, 1, out);
 		if (ret < 0)
 			return ret;

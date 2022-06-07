@@ -259,8 +259,6 @@ struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 		return ERR_PTR(-EFSCORRUPTED);
 
 	ino->payload_length = lcfs_read_u32(&data);
-	ino->xattrs.off = lcfs_read_u32(&data);
-	ino->xattrs.len = lcfs_read_u32(&data);
 
 	if (LCFS_INODE_FLAG_CHECK(ino->flags, MODE)) {
 		ino->st_mode = lcfs_read_u32(&data);
@@ -312,6 +310,14 @@ struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 
 	if (LCFS_INODE_FLAG_CHECK(ino->flags, HIGH_SIZE)) {
 		ino->st_size += (u64)lcfs_read_u32(&data) << 32;
+	}
+
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, XATTRS)) {
+		ino->xattrs.off = lcfs_read_u32(&data);
+		ino->xattrs.len = lcfs_read_u32(&data);
+	} else {
+		ino->xattrs.off = 0;
+		ino->xattrs.len = 0;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(ino->flags, DIGEST)) {
