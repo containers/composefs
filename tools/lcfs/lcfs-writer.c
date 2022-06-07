@@ -311,6 +311,8 @@ static ssize_t compute_payload_size(struct lcfs_node_s *node)
 
 static uint32_t compute_flags(struct lcfs_node_s *node) {
 	uint32_t flags = 0;
+	if (node->inode.payload_length != 0)
+		flags |= LCFS_INODE_FLAGS_PAYLOAD;
 	if (node->inode.st_mode != LCFS_INODE_DEFAULT_MODE)
 		flags |= LCFS_INODE_FLAGS_MODE;
 	if ((node->inode.st_mode & S_IFMT) == S_IFREG &&
@@ -383,10 +385,6 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		qsort(node->children, node->children_size, sizeof(node->children[0]), cmp_nodes);
 		qsort(node->xattrs, node->n_xattrs, sizeof(node->xattrs[0]), cmp_xattr);
 
-		flags = compute_flags(node);
-
-		node->inode.flags = flags;
-
 		/* Compute payload length */
 		payload_length = compute_payload_size(node);
 		if (payload_length < 0)
@@ -396,6 +394,11 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 			return -1;
 		}
 		node->inode.payload_length = payload_length;
+
+		flags = compute_flags(node);
+
+		node->inode.flags = flags;
+
 
 		inode_size = lcfs_inode_encoded_size(flags);
 
@@ -523,9 +526,11 @@ static int write_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_inode_s *ino, FI
 	if (ret < 0)
 		return ret;
 
-	ret = write_uint32(ino->payload_length, out);
-	if (ret < 0)
-		return ret;
+	if (LCFS_INODE_FLAG_CHECK(flags, PAYLOAD)) {
+		ret = write_uint32(ino->payload_length, out);
+		if (ret < 0)
+			return ret;
+	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, MODE)) {
 		ret = write_uint32(ino->st_mode, out);

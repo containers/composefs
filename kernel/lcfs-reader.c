@@ -258,7 +258,11 @@ struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 	if (inode_size > sizeof(buffer))
 		return ERR_PTR(-EFSCORRUPTED);
 
-	ino->payload_length = lcfs_read_u32(&data);
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, PAYLOAD)) {
+		ino->payload_length = lcfs_read_u32(&data);
+	} else {
+		ino->payload_length = 0;
+	}
 
 	if (LCFS_INODE_FLAG_CHECK(ino->flags, MODE)) {
 		ino->st_mode = lcfs_read_u32(&data);

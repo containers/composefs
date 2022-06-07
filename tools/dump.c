@@ -76,7 +76,12 @@ static void decode_inode(const uint8_t *inode_data, lcfs_off_t inod_num, struct 
 	memset(ino, 0, sizeof(struct lcfs_inode_s));
 
 	ino->flags = decode_uint32(&data);
-	ino->payload_length = decode_uint32(&data);
+
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, PAYLOAD)) {
+		ino->payload_length = decode_uint32(&data);
+	} else {
+		ino->payload_length = 0;
+	}
 
 	if (LCFS_INODE_FLAG_CHECK(ino->flags, MODE)) {
 		ino->st_mode = decode_uint32(&data);

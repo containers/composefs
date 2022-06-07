@@ -105,16 +105,17 @@ struct lcfs_header_s {
 
 enum lcfs_inode_flags {
 	LCFS_INODE_FLAGS_NONE            = 0,
-	LCFS_INODE_FLAGS_MODE            = 1 << 0,
-	LCFS_INODE_FLAGS_NLINK           = 1 << 1,
-	LCFS_INODE_FLAGS_UIDGID          = 1 << 2,
-	LCFS_INODE_FLAGS_RDEV            = 1 << 3,
-	LCFS_INODE_FLAGS_TIMES           = 1 << 4,
-	LCFS_INODE_FLAGS_TIMES_NSEC      = 1 << 5,
-	LCFS_INODE_FLAGS_LOW_SIZE        = 1 << 6, /* Low 32bit of st_size */
-	LCFS_INODE_FLAGS_HIGH_SIZE       = 1 << 7, /* High 32bit of st_size */
-	LCFS_INODE_FLAGS_XATTRS          = 1 << 8,
-	LCFS_INODE_FLAGS_DIGEST          = 1 << 9, /* fs-verity sha256 digest of content */
+	LCFS_INODE_FLAGS_PAYLOAD         = 1 << 0,
+	LCFS_INODE_FLAGS_MODE            = 1 << 1,
+	LCFS_INODE_FLAGS_NLINK           = 1 << 2,
+	LCFS_INODE_FLAGS_UIDGID          = 1 << 3,
+	LCFS_INODE_FLAGS_RDEV            = 1 << 4,
+	LCFS_INODE_FLAGS_TIMES           = 1 << 5,
+	LCFS_INODE_FLAGS_TIMES_NSEC      = 1 << 6,
+	LCFS_INODE_FLAGS_LOW_SIZE        = 1 << 7, /* Low 32bit of st_size */
+	LCFS_INODE_FLAGS_HIGH_SIZE       = 1 << 8, /* High 32bit of st_size */
+	LCFS_INODE_FLAGS_XATTRS          = 1 << 9,
+	LCFS_INODE_FLAGS_DIGEST          = 1 << 10, /* fs-verity sha256 digest of content */
 };
 
 #define LCFS_INODE_FLAG_CHECK(_flag, _name) (((_flag) & (LCFS_INODE_FLAGS_ ## _name)) != 0)
@@ -128,6 +129,9 @@ enum lcfs_inode_flags {
 
 struct lcfs_inode_s {
 	u32 flags;
+
+	/* Optional data: (selected by flags) */
+
 	/* This is the size of the type specific data that comes directly after
 	   the inode in the file. Of this type:
 	   *
@@ -138,8 +142,6 @@ struct lcfs_inode_s {
 	   * Canonically payload_length is 0 for empty dir/file/symlink.
 	   */
 	u32 payload_length;
-
-	/* Optional data: (selected by flags) */
 
 	u32 st_mode; /* File type and mode.  */
 	u32 st_nlink; /* Number of hard links, only for regular files.  */
@@ -160,7 +162,7 @@ static inline u32 lcfs_inode_encoded_size(u32 flags)
 {
 	return
 		sizeof(u32) /* flags */ +
-		sizeof(u32) /* payload_length */ +
+		LCFS_INODE_FLAG_CHECK_SIZE(flags, PAYLOAD, sizeof(u32)) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, MODE, sizeof(u32)) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, NLINK, sizeof(u32)) +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, UIDGID, sizeof(u32) + sizeof(u32)) +
