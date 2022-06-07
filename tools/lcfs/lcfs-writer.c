@@ -65,7 +65,6 @@ struct lcfs_node_s {
 
 
 	/* Used during compute_tree */
-	uint32_t flags;
 	struct lcfs_node_s *next; /* Use for the queue in compute_tree */
 	bool in_tree;
 };
@@ -384,7 +383,7 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 
 		flags = compute_flags(node);
 
-		node->flags = flags;
+		node->inode.flags = flags;
 
 		/* Compute payload length */
 		payload_length = compute_payload_size(node);
@@ -399,7 +398,7 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		inode_size = lcfs_inode_encoded_size(flags);
 
 		/* Assign inode index */
-		node->inode_index = LCFS_MAKE_INO(ctx->inode_table_size, flags);
+		node->inode_index = ctx->inode_table_size;
 		ctx->inode_table_size += inode_size + payload_length;
 
 #ifdef LCFS_SIZE_STATS
@@ -511,11 +510,16 @@ static int write_uint64(uint64_t val, FILE *out) {
 	return fwrite(&_val, sizeof(uint64_t), 1, out);
 }
 
-static int write_inode_data(struct lcfs_ctx_s *ctx, uint32_t flags, struct lcfs_inode_s *ino, FILE *out) {
+static int write_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_inode_s *ino, FILE *out) {
 	int ret;
 	long start_pos, end_pos;
+        uint32_t flags = ino->flags;
 
 	start_pos = ftell(out);
+
+	ret = write_uint32(ino->flags, out);
+	if (ret < 0)
+		return ret;
 
 	ret = write_uint32(ino->payload_length, out);
 	if (ret < 0)
@@ -607,7 +611,7 @@ static int write_inodes(struct lcfs_ctx_s *ctx, FILE *out) {
 	for (node = ctx->root; node != NULL; node = node->next) {
 		struct lcfs_inode_s *ino = &(node->inode);
 
-		ret = write_inode_data(ctx, node->flags, ino, out);
+		ret = write_inode_data(ctx, ino, out);
 		if (ret < 0)
 			return ret;
 
@@ -671,7 +675,6 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 		return ret;
 	}
 
-	header.root_flags = lcfs_u16_to_file(root->flags);
 	header.data_offset = lcfs_u64_to_file(sizeof(struct lcfs_header_s) + ctx->inode_table_size);
 
 	ret = compute_xattrs(ctx);

@@ -23,6 +23,8 @@
 
 #include "lcfs-fuzzing.h"
 
+#define MIN(a,b) ((a)<(b) ? (a) : (b))
+
 struct lcfs_context_s
 {
 	struct lcfs_header_s header;
@@ -115,7 +117,6 @@ struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path, const u8 *required
 		kfree(ctx);
 		return ERR_CAST(header);
 	}
-	header->root_flags = lcfs_u16_from_file(header->root_flags);
 	header->inode_len = lcfs_u32_from_file(header->inode_len);
 	header->data_offset = lcfs_u64_from_file(header->data_offset);
 
@@ -140,13 +141,33 @@ static void *lcfs_get_inode_data(struct lcfs_context_s *ctx,
 			      size, dest);
 }
 
+static void *lcfs_get_inode_data_max(struct lcfs_context_s *ctx,
+				     u64 offset,
+				     u64 max_size,
+				     u64 *read_size,
+				     u8 *dest)
+{
+	u64 remaining = ctx->descriptor_len - sizeof(struct lcfs_header_s);
+	u64 size;
+
+	if (offset > remaining)
+		return ERR_PTR(-EINVAL);
+	remaining -= offset;
+
+	/* Read at most remaining bytes, and no more than max_size */
+	size = MIN(remaining, max_size);
+	*read_size = size;
+
+	return lcfs_get_inode_data(ctx, offset, size, dest);
+}
+
 static void *lcfs_get_inode_payload(struct lcfs_context_s *ctx,
 				    struct lcfs_inode_s *ino,
 				    lcfs_off_t index,
 				    u8 *dest)
 {
-	u32 flags = index & LCFS_INODE_FLAGS_MASK;
-	u64 offset = index >> LCFS_INODE_INDEX_SHIFT;
+	u32 flags = ino->flags;
+	u64 offset = index;
 	u64 inode_size = lcfs_inode_encoded_size(flags);
 	return lcfs_get_inode_data(ctx, offset + inode_size, ino->payload_length, dest);
 }
@@ -215,37 +236,45 @@ struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 					lcfs_off_t index,
 					struct lcfs_inode_s *ino)
 {
-	u32 flags = index & LCFS_INODE_FLAGS_MASK;
-	u64 offset = index >> LCFS_INODE_INDEX_SHIFT;
+	u64 offset = index;
 	u8 buffer[sizeof(struct lcfs_inode_s)]; /* This will fix the maximal encoded size */
-	u64 inode_size = lcfs_inode_encoded_size(flags);
+	u64 read_size;
+	u64 inode_size;
 	u8 *data;
 
+	data = lcfs_get_inode_data_max(ctx, offset, sizeof(buffer), &read_size, buffer);
+	if (IS_ERR(data))
+		return ERR_CAST(data);
+
+	/* Need to fit at least flags to decode */
+	if (read_size < sizeof(u32))
+		return ERR_PTR(-EFSCORRUPTED);
+
+	memset(ino, 0, sizeof(struct lcfs_inode_s));
+	ino->flags = lcfs_read_u32(&data);
+
+	inode_size = lcfs_inode_encoded_size(ino->flags);
 	/* Shouldn't happen, but lets check */
 	if (inode_size > sizeof(buffer))
 		return ERR_PTR(-EFSCORRUPTED);
-
-	data = lcfs_get_inode_data(ctx, offset, inode_size, buffer);
-	if (IS_ERR(data))
-		return ERR_CAST(data);
 
 	ino->payload_length = lcfs_read_u32(&data);
 	ino->xattrs.off = lcfs_read_u32(&data);
 	ino->xattrs.len = lcfs_read_u32(&data);
 
-	if (LCFS_INODE_FLAG_CHECK(flags, MODE)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, MODE)) {
 		ino->st_mode = lcfs_read_u32(&data);
 	} else {
 		ino->st_mode = LCFS_INODE_DEFAULT_MODE;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, NLINK)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, NLINK)) {
 		ino->st_nlink = lcfs_read_u32(&data);
 	} else {
 		ino->st_nlink = LCFS_INODE_DEFAULT_NLINK;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, UIDGID)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, UIDGID)) {
 		ino->st_uid = lcfs_read_u32(&data);
 		ino->st_gid = lcfs_read_u32(&data);
 	} else {
@@ -253,13 +282,13 @@ struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 		ino->st_gid = LCFS_INODE_DEFAULT_UIDGID;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, RDEV)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, RDEV)) {
 		ino->st_rdev = lcfs_read_u32(&data);
 	} else {
 		ino->st_rdev = LCFS_INODE_DEFAULT_RDEV;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, TIMES)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, TIMES)) {
 		ino->st_mtim.tv_sec = lcfs_read_u64(&data);
 		ino->st_ctim.tv_sec = lcfs_read_u64(&data);
 	} else {
@@ -267,7 +296,7 @@ struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 		ino->st_ctim.tv_sec = LCFS_INODE_DEFAULT_TIMES;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, TIMES_NSEC)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, TIMES_NSEC)) {
 		ino->st_mtim.tv_nsec = lcfs_read_u32(&data);
 		ino->st_ctim.tv_nsec = lcfs_read_u32(&data);
 	} else {
@@ -275,17 +304,17 @@ struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 		ino->st_ctim.tv_nsec = 0;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, LOW_SIZE)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, LOW_SIZE)) {
 		ino->st_size = lcfs_read_u32(&data);
 	} else {
 		ino->st_size = 0;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, HIGH_SIZE)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, HIGH_SIZE)) {
 		ino->st_size += (u64)lcfs_read_u32(&data) << 32;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, DIGEST)) {
 		memcpy(ino->digest, data, LCFS_DIGEST_SIZE);
 		data += 32;
 	}
@@ -297,17 +326,15 @@ struct lcfs_inode_s *lcfs_get_root_ino(struct lcfs_context_s *ctx,
 				       struct lcfs_inode_s *ino_buf,
 				       lcfs_off_t *index)
 {
-	lcfs_off_t root_ino = LCFS_MAKE_INO(0, ctx->header.root_flags);
+	lcfs_off_t root_ino = 0;
 
 	*index = root_ino;
 	return lcfs_get_ino_index(ctx, root_ino, ino_buf);
 }
 
-const uint8_t *lcfs_get_digest(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, lcfs_off_t index)
+const uint8_t *lcfs_get_digest(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
 {
-	u32 flags = index & LCFS_INODE_FLAGS_MASK;
-
-	if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
+	if (LCFS_INODE_FLAG_CHECK(ino->flags, DIGEST)) {
 		return ino->digest;
 	}
 

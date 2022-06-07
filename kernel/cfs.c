@@ -134,7 +134,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		ino->st_nlink = lcfs_dir_get_link_count(dirdata);
 	}
 
-	digest = lcfs_get_digest(ctx, ino, ino_num);
+	digest = lcfs_get_digest(ctx, ino);
 
 	xattrs = lcfs_get_xattrs(ctx, ino);
 	if (IS_ERR(xattrs)) {

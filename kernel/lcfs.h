@@ -95,12 +95,12 @@ struct lcfs_vdata_s {
 struct lcfs_header_s {
 	u8 version;
 	u8 unused1;
-	uint16_t root_flags;  /* flags of root inode */
+	uint16_t unused2;
 
 	u32 inode_len;
 	lcfs_off_t data_offset;
 
-	u64 unused2[3];
+	u64 unused3[3];
 } __attribute__((packed));
 
 enum lcfs_inode_flags {
@@ -119,11 +119,6 @@ enum lcfs_inode_flags {
 #define LCFS_INODE_FLAG_CHECK(_flag, _name) (((_flag) & (LCFS_INODE_FLAGS_ ## _name)) != 0)
 #define LCFS_INODE_FLAG_CHECK_SIZE(_flag, _name, _size) (LCFS_INODE_FLAG_CHECK(_flag, _name) ? (_size) : 0)
 
-#define LCFS_INODE_INDEX_SHIFT 9
-#define	LCFS_INODE_FLAGS_MASK ((1 << LCFS_INODE_INDEX_SHIFT) - 1)
-#define LCFS_MAKE_INO(_index, _flags) ((u64)(_flags) | (((u64)(_index)) << LCFS_INODE_INDEX_SHIFT))
-
-
 #define LCFS_INODE_DEFAULT_MODE 0100644
 #define LCFS_INODE_DEFAULT_NLINK 1
 #define LCFS_INODE_DEFAULT_UIDGID 0
@@ -131,6 +126,7 @@ enum lcfs_inode_flags {
 #define LCFS_INODE_DEFAULT_TIMES 0
 
 struct lcfs_inode_s {
+	u32 flags;
 	/* This is the size of the type specific data that comes directly after
 	   the inode in the file. Of this type:
 	   *
@@ -161,6 +157,7 @@ struct lcfs_inode_s {
 static inline u32 lcfs_inode_encoded_size(u32 flags)
 {
 	return
+		sizeof(u32) /* flags */ +
 		sizeof(u32) /* payload_length */ +
 		sizeof(struct lcfs_vdata_s) /* xattrs */ +
 		LCFS_INODE_FLAG_CHECK_SIZE(flags, MODE, sizeof(u32)) +
