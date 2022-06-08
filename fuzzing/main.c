@@ -43,7 +43,7 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 	if (IS_ERR(s_ino))
 		return true;
 
-	payload = lcfs_dup_payload_path(test_ctx->ctx, s_ino, 0);
+	payload = lcfs_dup_payload_path(test_ctx->ctx, s_ino, ino);
 	if (!IS_ERR(payload)) {
 		u8 digest_buf[LCFS_DIGEST_SIZE];
 		lcfs_get_digest(test_ctx->ctx, s_ino, payload, digest_buf);
@@ -67,7 +67,7 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 		free(xattrs);
 	}
 
-	dir = lcfs_get_dir(test_ctx->ctx, s_ino, 0);
+	dir = lcfs_get_dir(test_ctx->ctx, s_ino, ino);
 	if (!IS_ERR(dir)) {
 		lcfs_dir_get_link_count(dir);
 		lcfs_dir_iterate(dir, 0, iter_cb, test_ctx);
