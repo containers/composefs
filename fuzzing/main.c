@@ -138,7 +138,7 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 	lcfs_off_t off;
 	int fd;
 
-	lcfs_digest_from_payload(buf, len, digest_out);
+	lcfs_digest_from_payload((const char *) buf, len, digest_out);
 
 	ctx = create_ctx(buf, len);
 	if (ctx == NULL)
