@@ -24,8 +24,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "lcfs.h"
-
 enum {
 	BUILD_SKIP_XATTRS = (1 << 0),
 	BUILD_USE_EPOCH = (1 << 1),
