@@ -512,114 +512,107 @@ static struct lcfs_node_s *follow_links(struct lcfs_node_s *node) {
 	return node;
 }
 
-static int write_uint32(uint32_t val, FILE *out) {
+static int write_uint32(uint32_t val, void *file, lcfs_write_cb write_cb) {
 	uint32_t _val = lcfs_u32_to_file(val);
-	return fwrite(&_val, sizeof(uint32_t), 1, out);
+	return write_cb(file, &_val, sizeof(uint32_t));
 }
 
-static int write_uint64(uint64_t val, FILE *out) {
+static int write_uint64(uint64_t val, void *file, lcfs_write_cb write_cb) {
 	uint64_t _val = lcfs_u64_to_file(val);
-	return fwrite(&_val, sizeof(uint64_t), 1, out);
+	return write_cb(file, &_val, sizeof(uint64_t));
 }
 
-static int write_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_inode_s *ino, FILE *out) {
+static int write_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_inode_s *ino, void *file, lcfs_write_cb write_cb) {
 	int ret;
-	long start_pos, end_pos;
         uint32_t flags = ino->flags;
 
-	start_pos = ftell(out);
-
-	ret = write_uint32(ino->flags, out);
+	ret = write_uint32(ino->flags, file, write_cb);
 	if (ret < 0)
 		return ret;
 
 	if (LCFS_INODE_FLAG_CHECK(flags, PAYLOAD)) {
-		ret = write_uint32(ino->payload_length, out);
+		ret = write_uint32(ino->payload_length, file, write_cb);
 		if (ret < 0)
 			return ret;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, MODE)) {
-		ret = write_uint32(ino->st_mode, out);
+		ret = write_uint32(ino->st_mode, file, write_cb);
 		if (ret < 0)
 			return ret;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, NLINK)) {
-		ret = write_uint32(ino->st_nlink, out);
+		ret = write_uint32(ino->st_nlink, file, write_cb);
 		if (ret < 0)
 			return ret;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, UIDGID)) {
-		ret = write_uint32(ino->st_uid, out);
+		ret = write_uint32(ino->st_uid, file, write_cb);
 		if (ret < 0)
 			return ret;
-		ret = write_uint32(ino->st_gid, out);
+		ret = write_uint32(ino->st_gid, file, write_cb);
 		if (ret < 0)
 			return ret;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, RDEV)) {
-		ret = write_uint32(ino->st_rdev, out);
+		ret = write_uint32(ino->st_rdev, file, write_cb);
 		if (ret < 0)
 			return ret;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, TIMES)) {
-		ret = write_uint64(ino->st_mtim.tv_sec, out);
+		ret = write_uint64(ino->st_mtim.tv_sec, file, write_cb);
 		if (ret < 0)
 			return ret;
-		ret = write_uint64(ino->st_ctim.tv_sec, out);
+		ret = write_uint64(ino->st_ctim.tv_sec, file, write_cb);
 		if (ret < 0)
 			return ret;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, TIMES_NSEC)) {
-		ret = write_uint32(ino->st_mtim.tv_nsec, out);
+		ret = write_uint32(ino->st_mtim.tv_nsec, file, write_cb);
 		if (ret < 0)
 			return ret;
-		ret = write_uint32(ino->st_ctim.tv_nsec, out);
+		ret = write_uint32(ino->st_ctim.tv_nsec, file, write_cb);
 		if (ret < 0)
 			return ret;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, LOW_SIZE)) {
-		ret = write_uint32(ino->st_size & UINT32_MAX, out);
+		ret = write_uint32(ino->st_size & UINT32_MAX, file, write_cb);
 		if (ret < 0)
 			return ret;
 	}
 
 	if (LCFS_INODE_FLAG_CHECK(flags, HIGH_SIZE)) {
-		ret = write_uint32(ino->st_size >> 32, out);
+		ret = write_uint32(ino->st_size >> 32, file, write_cb);
 		if (ret < 0)
 			return ret;
 	}
 
         if (LCFS_INODE_FLAG_CHECK(flags, XATTRS)) {
-		ret = write_uint32(ino->xattrs.off, out);
+		ret = write_uint32(ino->xattrs.off, file, write_cb);
 		if (ret < 0)
 			return ret;
 
-		ret = write_uint32(ino->xattrs.len, out);
+		ret = write_uint32(ino->xattrs.len, file, write_cb);
 		if (ret < 0)
 			return ret;
 	}
 
         if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
-		ret = fwrite(ino->digest, LCFS_DIGEST_SIZE, 1, out);
+		ret = write_cb(file, ino->digest, LCFS_DIGEST_SIZE);
 		if (ret < 0)
 			return ret;
 	}
 
-	end_pos = ftell(out);
-
-	assert((end_pos - start_pos) == lcfs_inode_encoded_size(flags));
-
 	return 0;
 }
 
-static int write_payload_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, FILE *out) {
+static int write_payload_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, void *file, lcfs_write_cb write_cb) {
 	struct lcfs_inode_s *ino = &(node->inode);
 	size_t i;
 	int ret;
@@ -630,12 +623,12 @@ static int write_payload_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, 
 	if ((node->inode.st_mode & S_IFMT) == S_IFLNK ||
 	    (node->inode.st_mode & S_IFMT) == S_IFREG) {
 		assert(ino->payload_length == strlen(node->payload));
-		ret = fwrite(node->payload, strlen(node->payload), 1, out);
+		ret = write_cb(file, node->payload, strlen(node->payload));
 		if (ret < 0)
 			return ret;
 	} else if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
 		struct lcfs_dir_s dir = { lcfs_u32_to_file(node->children_size) };
-		ret = fwrite(&dir, sizeof(dir), 1, out);
+		ret = write_cb(file, &dir, sizeof(dir));
 		if (ret < 0)
 			return ret;
 		for (i = 0; i < node->children_size; i++) {
@@ -647,13 +640,13 @@ static int write_payload_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, 
 			dentry.name_len = lcfs_u16_to_file(strlen(dirent_child->name));
 			dentry.d_type = node_get_dtype(target_child);
 			dentry.pad = 0;
-			ret = fwrite(&dentry, sizeof(dentry), 1, out);
+			ret = write_cb(file, &dentry, sizeof(dentry));
 			if (ret < 0)
 				return ret;
 		}
 		for (i = 0; i < node->children_size; i++) {
 			struct lcfs_node_s *dirent_child = node->children[i];
-			ret = fwrite(dirent_child->name, strlen(dirent_child->name), 1, out);
+			ret = write_cb(file, dirent_child->name, strlen(dirent_child->name));
 			if (ret < 0)
 				return ret;
 		}
@@ -663,20 +656,17 @@ static int write_payload_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, 
 }
 
 
-static int write_inodes(struct lcfs_ctx_s *ctx, FILE *out) {
+static int write_inodes(struct lcfs_ctx_s *ctx, void *file, lcfs_write_cb write_cb) {
 	struct lcfs_node_s *node;
 	int ret;
 	long inode_pos;
 
 	for (node = ctx->root; node != NULL; node = node->next) {
-		ret = write_payload_data(ctx, node, out);
+		ret = write_payload_data(ctx, node, file, write_cb);
 		if (ret < 0)
 			return ret;
 
-		inode_pos = ftell(out);
-		assert(inode_pos == node->inode_index + sizeof(struct lcfs_header_s));
-
-		ret = write_inode_data(ctx, &(node->inode), out);
+		ret = write_inode_data(ctx, &(node->inode), file, write_cb);
 		if (ret < 0)
 			return ret;
 	}
@@ -684,7 +674,7 @@ static int write_inodes(struct lcfs_ctx_s *ctx, FILE *out) {
 	return 0;
 }
 
-int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
+int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb)
 {
 	struct lcfs_header_s header = {
 		.version = LCFS_VERSION,
@@ -714,20 +704,20 @@ int lcfs_write_to(struct lcfs_node_s *root, FILE *out)
 		return ret;
 	}
 
-	ret = fwrite(&header, sizeof(header), 1, out);
+	ret = write_cb(file, &header, sizeof(header));
 	if (ret < 0) {
 		lcfs_close(ctx);
 		return ret;
 	}
 
-	ret = write_inodes(ctx, out);
+	ret = write_inodes(ctx, file, write_cb);
 	if (ret < 0) {
 		lcfs_close(ctx);
 		return ret;
 	}
 
 	if (ctx->vdata) {
-		ret = fwrite(ctx->vdata, ctx->vdata_len, 1, out);
+		ret = write_cb(file, ctx->vdata, ctx->vdata_len);
 		if (ret < 0) {
 			lcfs_close(ctx);
 			return ret;

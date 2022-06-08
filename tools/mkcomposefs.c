@@ -332,6 +332,13 @@ static void usage(const char *argv0)
 #define OPT_BY_DIGEST 107
 #define OPT_DIGEST_STORE 108
 
+static int write_cb(void *_file, void *buf, size_t count)
+{
+  FILE *file = _file;
+
+  return fwrite(buf, 1, count, file);
+}
+
 int main(int argc, char **argv)
 {
 	const struct option longopts[] = {
@@ -483,7 +490,7 @@ int main(int argc, char **argv)
 	}
 	fill_payload(root, pathbuf, strlen(pathbuf), path_start_offset, by_digest, digest_store_path);
 
-	if (lcfs_write_to(root, out_file) < 0)
+	if (lcfs_write_to(root, out_file, write_cb) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
 
 	lcfs_node_unref(root);
