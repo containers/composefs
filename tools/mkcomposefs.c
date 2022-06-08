@@ -17,8 +17,9 @@
 
 #define _GNU_SOURCE
 
-#include "lcfs.h"
-#include "lcfs-writer.h"
+#include "config.h"
+
+#include "libcomposefs/lcfs-writer.h"
 
 #include <stdio.h>
 #include <linux/limits.h>

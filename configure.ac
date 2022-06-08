@@ -1,8 +1,11 @@
 AC_PREREQ([2.69])
 AC_INIT([composefs], [0.1], [giuseppe@scrivano.org])
-AC_CONFIG_SRCDIR([dump.c])
+AC_CONFIG_SRCDIR([tools/mkcomposefs.c])
 AC_CONFIG_HEADERS([config.h])
 AC_SYS_LARGEFILE
+
+LT_PREREQ([2.2.6])
+LT_INIT()
 
 AM_INIT_AUTOMAKE([1.11.2 -Wno-portability foreign tar-ustar no-dist-gzip dist-xz subdir-objects])
 
@@ -59,14 +62,24 @@ CC_CHECK_FLAGS_APPEND([WARN_CFLAGS], [CFLAGS], [\
 ])])
 AC_SUBST(WARN_CFLAGS)
 
-
-old_LIBS=$LIBS
-AC_SEARCH_LIBS(yajl_tree_get, [yajl], [AC_DEFINE([HAVE_YAJL], 1, [Define if libyajl is available])], [AC_MSG_ERROR([*** libyajl headers not found])])
-LIBS=$old_LIBS
-
-LIBS_YAJL=$ac_cv_search_yajl_tree_get
-AC_SUBST([LIBS_YAJL])
-
+AC_ARG_WITH(yajl,
+        AS_HELP_STRING([--with-yajl], [Build with yajl support [default=auto]]),
+        , with_yajl=auto)
+if test "x$with_yajl" != "xno"; then
+  old_LIBS=$LIBS
+  AC_SEARCH_LIBS(yajl_tree_get, [yajl], [have_libyajl=yes], [have_libyajl=no])
+  LIBS=$old_LIBS
+  if test $have_libyajl = yes; then
+    AC_DEFINE(HAVE_LIBYAJL, 1, [Define if libyajl is available])
+    LIBS_YAJL=$ac_cv_search_yajl_tree_get
+    AC_SUBST([LIBS_YAJL])
+  elif test "x$with_yajl" == "xyes"; then
+    AC_MSG_ERROR([yajl was requested but it could not be found])
+  fi
+else
+  have_libyajl=no
+fi
+AM_CONDITIONAL([USE_YAJL],[test "$have_libyajl" = "yes"])
 
 AC_FUNC_ERROR_AT_LINE
 AC_FUNC_FSEEKO
@@ -76,5 +89,5 @@ AC_FUNC_MMAP
 AC_FUNC_REALLOC
 AC_CHECK_FUNCS([getcwd memset munmap strdup])
 
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([Makefile libcomposefs/Makefile tools/Makefile])
 AC_OUTPUT

@@ -24,6 +24,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define LCFS_DIGEST_SIZE 32
+
 enum {
 	LCFS_BUILD_SKIP_XATTRS = (1 << 0),
 	LCFS_BUILD_USE_EPOCH = (1 << 1),

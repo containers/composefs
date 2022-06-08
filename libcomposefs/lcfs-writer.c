@@ -17,6 +17,8 @@
 
 #define _GNU_SOURCE
 
+#include "config.h"
+
 #include "lcfs.h"
 #include "lcfs-writer.h"
 #include "hash.h"
