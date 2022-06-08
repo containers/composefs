@@ -916,7 +916,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 	struct stat sb;
 	int r;
 
-	if (buildflags & ~(BUILD_SKIP_XATTRS | BUILD_USE_EPOCH | BUILD_SKIP_DEVICES | BUILD_COMPUTE_DIGEST)) {
+	if (buildflags & ~(LCFS_BUILD_SKIP_XATTRS | LCFS_BUILD_USE_EPOCH | LCFS_BUILD_SKIP_DEVICES | LCFS_BUILD_COMPUTE_DIGEST)) {
 		errno = EINVAL;
 		return NULL;
 	}
@@ -938,7 +938,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 
 		ret->inode.st_size = sb.st_size;
 
-		if (sb.st_size != 0 && (buildflags & BUILD_COMPUTE_DIGEST) != 0) {
+		if (sb.st_size != 0 && (buildflags & LCFS_BUILD_COMPUTE_DIGEST) != 0) {
 			int fd = openat(dirfd, fname, O_RDONLY | O_CLOEXEC);
 			if (fd < 0) {
 				lcfs_node_unref(ret);
@@ -953,12 +953,12 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
 		}
 	}
 
-	if ((buildflags & BUILD_USE_EPOCH) == 0) {
+	if ((buildflags & LCFS_BUILD_USE_EPOCH) == 0) {
 		ret->inode.st_mtim = sb.st_mtim;
 		ret->inode.st_ctim = sb.st_ctim;
 	}
 
-	if ((buildflags & BUILD_SKIP_XATTRS) == 0) {
+	if ((buildflags & LCFS_BUILD_SKIP_XATTRS) == 0) {
 		r = read_xattrs(ret, dirfd, fname);
 		if (r < 0) {
 			lcfs_node_unref(ret);
@@ -1294,7 +1294,7 @@ struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
 			if (n == NULL)
 				goto fail;
 		} else {
-			if (buildflags & BUILD_SKIP_DEVICES) {
+			if (buildflags & LCFS_BUILD_SKIP_DEVICES) {
 				if (de->d_type == DT_BLK
 				    || de->d_type == DT_CHR)
 					continue;

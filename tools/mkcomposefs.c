@@ -396,16 +396,16 @@ int main(int argc, char **argv)
 	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
 		switch (opt) {
 		case OPT_USE_EPOCH:
-			buildflags |= BUILD_USE_EPOCH;
+			buildflags |= LCFS_BUILD_USE_EPOCH;
 			break;
 		case OPT_SKIP_XATTRS:
-			buildflags |= BUILD_SKIP_XATTRS;
+			buildflags |= LCFS_BUILD_SKIP_XATTRS;
 			break;
 		case OPT_SKIP_DEVICES:
-			buildflags |= BUILD_SKIP_DEVICES;
+			buildflags |= LCFS_BUILD_SKIP_DEVICES;
 			break;
 		case OPT_COMPUTE_DIGEST:
-			buildflags |= BUILD_COMPUTE_DIGEST;
+			buildflags |= LCFS_BUILD_COMPUTE_DIGEST;
 			break;
 		case OPT_ABSOLUTE:
 			absolute_path = true;
@@ -447,7 +447,7 @@ int main(int argc, char **argv)
 		by_digest = true; /* implied */
 
 	if (by_digest)
-		buildflags |= BUILD_COMPUTE_DIGEST; /* implied */
+		buildflags |= LCFS_BUILD_COMPUTE_DIGEST; /* implied */
 
 	if (absolute_path && by_digest)
 		error(EXIT_FAILURE, 0, "Can't specify both --absolute and --by-digest");

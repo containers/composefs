@@ -25,10 +25,10 @@
 #include <stdbool.h>
 
 enum {
-	BUILD_SKIP_XATTRS = (1 << 0),
-	BUILD_USE_EPOCH = (1 << 1),
-	BUILD_SKIP_DEVICES = (1 << 2),
-	BUILD_COMPUTE_DIGEST = (1 << 3),
+	LCFS_BUILD_SKIP_XATTRS = (1 << 0),
+	LCFS_BUILD_USE_EPOCH = (1 << 1),
+	LCFS_BUILD_SKIP_DEVICES = (1 << 2),
+	LCFS_BUILD_COMPUTE_DIGEST = (1 << 3),
 };
 
 struct lcfs_node_s *lcfs_node_new(void);
