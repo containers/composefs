@@ -71,7 +71,8 @@ static inline int lcfs_xdigit_value (char c)
 static inline int lcfs_digest_from_payload(const char *payload, size_t payload_len, uint8_t digest_out[LCFS_DIGEST_SIZE])
 {
 	const char *p, *end;
-	uint8_t last_digit = 0, digit = 0;
+	uint8_t last_digit = 0;
+	int digit = 0;
 	size_t n_nibbles = 0;
 
 	end = payload + payload_len;
