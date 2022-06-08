@@ -6,7 +6,10 @@
 #define EFSCORRUPTED       EUCLEAN         /* Filesystem is corrupted */
 
 #ifdef FUZZING
-# define ERR_CAST(x)((void *)x)
+static inline void *ERR_CAST(const void *ptr)
+{
+	return (void *) ptr;
+}
 # define ERR_PTR(x)((void *)((long)x))
 # define PTR_ERR(x)((long)x)
 # define IS_ERR(x) ((unsigned long)(void *)(x) >= (unsigned long)-4096)
