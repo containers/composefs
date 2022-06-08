@@ -180,7 +180,7 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 	if (!IS_ERR(xattrs))
 		free(xattrs);
 
-	dir = lcfs_get_dir(ctx, ino, 0);
+	dir = lcfs_get_dir(ctx, ino, index);
 	if (IS_ERR(dir))
 		goto cleanup;
 
