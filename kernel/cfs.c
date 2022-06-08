@@ -101,7 +101,6 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 	u8 digest_buf[LCFS_DIGEST_SIZE];
 	const uint8_t *digest;
 	int ret;
-	int r;
 
 	if ((ino->st_mode & S_IFMT) == S_IFLNK) {
 		target_link = lcfs_dup_payload_path(ctx, ino, ino_num);
