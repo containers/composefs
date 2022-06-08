@@ -17,7 +17,9 @@
 
 #define _GNU_SOURCE
 
-#include "lcfs.h"
+#include "config.h"
+
+#include "libcomposefs/lcfs.h"
 
 #include <stdio.h>
 #include <stdint.h>

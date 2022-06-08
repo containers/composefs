@@ -17,8 +17,9 @@
 
 #define _GNU_SOURCE
 
-#include "lcfs.h"
-#include "lcfs-writer.h"
+#include "config.h"
+
+#include "libcomposefs/lcfs-writer.h"
 
 #include <stdio.h>
 #include <linux/limits.h>
@@ -332,6 +333,13 @@ static void usage(const char *argv0)
 #define OPT_BY_DIGEST 107
 #define OPT_DIGEST_STORE 108
 
+static int write_cb(void *_file, void *buf, size_t count)
+{
+  FILE *file = _file;
+
+  return fwrite(buf, 1, count, file);
+}
+
 int main(int argc, char **argv)
 {
 	const struct option longopts[] = {
@@ -396,16 +404,16 @@ int main(int argc, char **argv)
 	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
 		switch (opt) {
 		case OPT_USE_EPOCH:
-			buildflags |= BUILD_USE_EPOCH;
+			buildflags |= LCFS_BUILD_USE_EPOCH;
 			break;
 		case OPT_SKIP_XATTRS:
-			buildflags |= BUILD_SKIP_XATTRS;
+			buildflags |= LCFS_BUILD_SKIP_XATTRS;
 			break;
 		case OPT_SKIP_DEVICES:
-			buildflags |= BUILD_SKIP_DEVICES;
+			buildflags |= LCFS_BUILD_SKIP_DEVICES;
 			break;
 		case OPT_COMPUTE_DIGEST:
-			buildflags |= BUILD_COMPUTE_DIGEST;
+			buildflags |= LCFS_BUILD_COMPUTE_DIGEST;
 			break;
 		case OPT_ABSOLUTE:
 			absolute_path = true;
@@ -447,7 +455,7 @@ int main(int argc, char **argv)
 		by_digest = true; /* implied */
 
 	if (by_digest)
-		buildflags |= BUILD_COMPUTE_DIGEST; /* implied */
+		buildflags |= LCFS_BUILD_COMPUTE_DIGEST; /* implied */
 
 	if (absolute_path && by_digest)
 		error(EXIT_FAILURE, 0, "Can't specify both --absolute and --by-digest");
@@ -483,7 +491,7 @@ int main(int argc, char **argv)
 	}
 	fill_payload(root, pathbuf, strlen(pathbuf), path_start_offset, by_digest, digest_store_path);
 
-	if (lcfs_write_to(root, out_file) < 0)
+	if (lcfs_write_to(root, out_file, write_cb) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
 
 	lcfs_node_unref(root);

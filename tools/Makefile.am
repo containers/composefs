@@ -1,16 +1,17 @@
-bin_PROGRAMS = dump mkcomposefs writer-json
+bin_PROGRAMS = mkcomposefs
+noinst_PROGRAMS = dump
 
-HASH_CFLAGS = -DUSE_OBSTACK=0 -DTESTING=0 -DUSE_DIFF_HASH=0
+if USE_YAJL
+noinst_PROGRAMS += writer-json
+endif
 
-AM_CFLAGS = -I $(abs_top_srcdir)/lcfs $(WARN_CFLAGS) $(HASH_CFLAGS)  $(FSVERITY_CFLAGS)
+AM_CFLAGS = $(WARN_CFLAGS)
 
-LCFS_FILES = lcfs/bitrotate.h lcfs/hash.c lcfs/hash.h lcfs/lcfs.h lcfs/lcfs-writer.c lcfs/lcfs-writer.h lcfs/xalloc-oversized.h
+dump_SOURCES = dump.c
+dump_LDADD = ../libcomposefs/libcomposefs.la
 
-dump_SOURCES = dump.c $(LCFS_FILES)
-dump_LDADD = $(FSVERITY_LIBS)
+mkcomposefs_SOURCES = mkcomposefs.c
+mkcomposefs_LDADD =  ../libcomposefs/libcomposefs.la
 
-mkcomposefs_SOURCES = mkcomposefs.c $(LCFS_FILES)
-mkcomposefs_LDADD = $(FSVERITY_LIBS)
-
-writer_json_SOURCES = writer-json.c read-file.c read-file.h $(LCFS_FILES)
-writer_json_LDADD = $(LIBS_YAJL) $(FSVERITY_LIBS)
+writer_json_SOURCES = writer-json.c read-file.c read-file.h
+writer_json_LDADD = ../libcomposefs/libcomposefs.la $(LIBS_YAJL)

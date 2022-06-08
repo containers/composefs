@@ -24,14 +24,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "lcfs.h"
+#define LCFS_DIGEST_SIZE 32
 
 enum {
-	BUILD_SKIP_XATTRS = (1 << 0),
-	BUILD_USE_EPOCH = (1 << 1),
-	BUILD_SKIP_DEVICES = (1 << 2),
-	BUILD_COMPUTE_DIGEST = (1 << 3),
+	LCFS_BUILD_SKIP_XATTRS = (1 << 0),
+	LCFS_BUILD_USE_EPOCH = (1 << 1),
+	LCFS_BUILD_SKIP_DEVICES = (1 << 2),
+	LCFS_BUILD_COMPUTE_DIGEST = (1 << 3),
 };
+
+typedef int (*lcfs_read_cb)(void *file, void *buf, size_t count);
+typedef int (*lcfs_write_cb)(void *file, void *buf, size_t count);
 
 struct lcfs_node_s *lcfs_node_new(void);
 struct lcfs_node_s *lcfs_node_ref(struct lcfs_node_s *node);
@@ -83,7 +86,6 @@ const uint8_t *lcfs_node_get_fsverity_digest(struct lcfs_node_s *node);
 void lcfs_node_set_fsverity_digest(struct lcfs_node_s *node,
                                    uint8_t digest[32]);
 
-typedef int (*lcfs_read_cb)(void *file, void *buf, size_t count);
 int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node,
                                         void *file,
                                         uint64_t size,
@@ -97,7 +99,7 @@ struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
 			       const char *fname, const char *name,
 			       int buildflags);
 
-int lcfs_write_to(struct lcfs_node_s *root, FILE *out);
+int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb);
 
 
 #endif
