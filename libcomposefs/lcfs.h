@@ -31,8 +31,6 @@
 
 typedef uint64_t lcfs_off_t;
 
-typedef lcfs_off_t lcfs_c_str_t;
-
 static inline uint16_t lcfs_u16_to_file(uint16_t val) {
 	return htole16(val);
 }
