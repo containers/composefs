@@ -11,7 +11,7 @@ corpus:
 	mkdir corpus_
 	../tools/writer-json ../tools/test-assets/config.json  > corpus_/tree.1
 	../tools/writer-json ../tools/test-assets/config-with-hard-link.json  > corpus_/tree.2
-	../tools/mkcomposefs .. corpus_/tree.3
+	../tools/mkcomposefs --compute-digest .. corpus_/tree.3
 	mv corpus_ corpus
 
 run: corpus

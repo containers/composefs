@@ -15,7 +15,7 @@
 struct test_context_s
 {
 	struct lcfs_context_s *ctx;
-	int recursion_left;
+	int dirs_left;
 };
 
 int LLVMFuzzerInitialize(int *argc, char ***argv)
@@ -34,11 +34,16 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 	char *out_path;
 	char *payload;
 
+        if (test_ctx->dirs_left == 0)
+		return false;
+
+	test_ctx->dirs_left--;
+
 	s_ino = lcfs_get_ino_index(test_ctx->ctx, ino, &buffer);
 	if (IS_ERR(s_ino))
 		return true;
 
-	payload = lcfs_dup_payload_path(test_ctx->ctx, s_ino, 0);
+	payload = lcfs_dup_payload_path(test_ctx->ctx, s_ino, ino);
 	if (!IS_ERR(payload)) {
 		u8 digest_buf[LCFS_DIGEST_SIZE];
 		lcfs_get_digest(test_ctx->ctx, s_ino, payload, digest_buf);
@@ -62,15 +67,10 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 		free(xattrs);
 	}
 
-	dir = lcfs_get_dir(test_ctx->ctx, s_ino, 0);
+	dir = lcfs_get_dir(test_ctx->ctx, s_ino, ino);
 	if (!IS_ERR(dir)) {
 		lcfs_dir_get_link_count(dir);
-		if (test_ctx->recursion_left > 0) {
-			test_ctx->recursion_left--;
-			lcfs_dir_iterate(dir, 0, iter_cb, test_ctx);
-			test_ctx->recursion_left++;
-		}
-
+		lcfs_dir_iterate(dir, 0, iter_cb, test_ctx);
 		free(dir);
 	}
 	return true;
@@ -125,7 +125,7 @@ static struct lcfs_context_s *create_ctx(uint8_t *buf, size_t len)
 int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 {
 	struct lcfs_xattr_header_s *xattrs = NULL;
-	const size_t max_recursion = 4;
+	const size_t max_dirs = 10;
 	u8 digest_out[LCFS_DIGEST_SIZE];
 	struct test_context_s test_ctx;
 	struct lcfs_context_s *ctx;
@@ -138,14 +138,14 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 	lcfs_off_t off;
 	int fd;
 
-	lcfs_digest_from_payload(buf, len, digest_out);
+	lcfs_digest_from_payload((const char *) buf, len, digest_out);
 
 	ctx = create_ctx(buf, len);
 	if (ctx == NULL)
 		return 0;
 
 	test_ctx.ctx = ctx;
-	test_ctx.recursion_left = max_recursion;
+	test_ctx.dirs_left = max_dirs;
 
 	if (len >= sizeof (lcfs_off_t)) {
 		off = *((lcfs_off_t *) buf);
