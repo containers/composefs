@@ -35,8 +35,6 @@ typedef uint64_t u64;
 
 #define LCFS_MAGIC 0xc078629aU
 
-typedef u64 lcfs_off_t;
-
 #ifdef FUZZING
 static inline uint16_t lcfs_u16_to_file(uint16_t val) {
 	return htole16(val);
@@ -147,8 +145,8 @@ struct lcfs_header_s {
 	u16 unused2;
 
 	u32 magic;
-	lcfs_off_t data_offset;
-	lcfs_off_t root_inode;
+	u64 data_offset;
+	u64 root_inode;
 
 	u64 unused3[2];
 } __attribute__((packed));
@@ -229,7 +227,7 @@ static inline u32 lcfs_inode_encoded_size(u32 flags)
 
 struct lcfs_dentry_s {
 	/* Index of struct lcfs_inode_s */
-	lcfs_off_t inode_index;
+	u64 inode_index;
 	u16 name_len;
 	u8 d_type;
 	u8 pad;

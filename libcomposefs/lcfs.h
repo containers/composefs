@@ -29,8 +29,6 @@
 
 #define LCFS_MAGIC 0xc078629aU
 
-typedef uint64_t lcfs_off_t;
-
 static inline uint16_t lcfs_u16_to_file(uint16_t val) {
 	return htole16(val);
 }
@@ -115,8 +113,8 @@ struct lcfs_header_s {
 	uint16_t unused2;
 
 	uint32_t magic;
-	lcfs_off_t data_offset;
-	lcfs_off_t root_inode;
+	uint64_t data_offset;
+	uint64_t root_inode;
 
 	uint64_t unused3[2];
 } __attribute__((packed));
@@ -198,7 +196,7 @@ static inline uint32_t lcfs_inode_encoded_size(uint32_t flags)
 
 struct lcfs_dentry_s {
 	/* Index of struct lcfs_inode_s */
-	lcfs_off_t inode_index;
+	uint64_t inode_index;
 	uint16_t name_len;
 	uint8_t d_type;
 	uint8_t pad;

@@ -213,7 +213,7 @@ static struct inode *cfs_get_root_inode(struct super_block *sb)
 	struct cfs_info *fsi = sb->s_fs_info;
 	struct lcfs_inode_s ino_buf;
 	struct lcfs_inode_s *ino;
-	lcfs_off_t index;
+	u64 index;
 
 	ino = lcfs_get_root_ino(fsi->lcfs_ctx, &ino_buf, &index);
 	if (IS_ERR(ino))
@@ -253,7 +253,7 @@ struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 	struct lcfs_inode_s ino_buf;
 	struct inode *inode;
         struct lcfs_inode_s *ino_s;
-	lcfs_off_t index;
+	u64 index;
 	int ret;
 
 	if (dentry->d_name.len > NAME_MAX)
@@ -750,7 +750,7 @@ static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 	inode_index |= fid->raw[1];
 	generation = fid->raw[2];
 
-	ino = ilookup(sb, (lcfs_off_t)inode_index);
+	ino = ilookup(sb, inode_index);
 	if (!ino) {
 		struct lcfs_inode_s inode_buf;
 		struct lcfs_inode_s *inode;

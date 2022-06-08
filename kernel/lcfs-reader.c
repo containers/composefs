@@ -172,7 +172,7 @@ static void *lcfs_get_inode_data_max(struct lcfs_context_s *ctx,
 
 static void *lcfs_get_inode_payload(struct lcfs_context_s *ctx,
 				    struct lcfs_inode_s *ino,
-				    lcfs_off_t index,
+				    u64 index,
 				    u8 *dest)
 {
 	u64 offset = index;
@@ -186,7 +186,7 @@ static void *lcfs_get_inode_payload(struct lcfs_context_s *ctx,
 
 static void *lcfs_alloc_inode_payload(struct lcfs_context_s *ctx,
 				      struct lcfs_inode_s *ino,
-				      lcfs_off_t index)
+				      u64 index)
 {
 	u8 *buf;
 	void *res;
@@ -245,7 +245,7 @@ static u64 lcfs_read_u64(u8 **data) {
 }
 
 struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
-					lcfs_off_t index,
+					u64 index,
 					struct lcfs_inode_s *ino)
 {
 	u64 offset = index;
@@ -346,9 +346,9 @@ struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 
 struct lcfs_inode_s *lcfs_get_root_ino(struct lcfs_context_s *ctx,
 				       struct lcfs_inode_s *ino_buf,
-				       lcfs_off_t *index)
+				       u64 *index)
 {
-	lcfs_off_t root_ino = ctx->header.root_inode;
+	u64 root_ino = ctx->header.root_inode;
 
 	*index = root_ino;
 	return lcfs_get_ino_index(ctx, root_ino, ino_buf);
@@ -370,7 +370,7 @@ const uint8_t *lcfs_get_digest(struct lcfs_context_s *ctx, struct lcfs_inode_s *
 
 struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx,
 				struct lcfs_inode_s *ino,
-				lcfs_off_t index)
+				u64 index)
 {
 	struct lcfs_dir_s *dir;
 	u8 *data, *data_end;
@@ -622,7 +622,7 @@ u32 lcfs_dir_get_link_count(struct lcfs_dir_s *dir)
 	return count;
 }
 
-int lcfs_lookup(struct lcfs_dir_s *dir, const char *name, size_t name_len, lcfs_off_t *index)
+int lcfs_lookup(struct lcfs_dir_s *dir, const char *name, size_t name_len, u64 *index)
 {
 	size_t i, n_dentries;
 	u8 *data;
@@ -652,7 +652,7 @@ int lcfs_lookup(struct lcfs_dir_s *dir, const char *name, size_t name_len, lcfs_
 
 char *lcfs_dup_payload_path(struct lcfs_context_s *ctx,
 			    struct lcfs_inode_s *ino,
-			    lcfs_off_t index)
+			    u64 index)
 {
 	const char *v;
 	u8 *path;
