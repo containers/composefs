@@ -30,12 +30,8 @@
 
 #include "lcfs-reader.h"
 
-#ifdef STANDALONE_COMPOSEFS
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
-#else
-#include "cfs.h"
-#endif
 
 #include "lcfs-verity.h"
 
@@ -874,7 +870,6 @@ static void cfs_inode_init_once(void *foo)
 	inode_init_once(&cino->vfs_inode);
 }
 
-#ifdef STANDALONE_COMPOSEFS
 static int __init init_cfs(void)
 {
 	cfs_inode_cachep = kmem_cache_create("cfs_inode",
@@ -900,12 +895,3 @@ static void __exit exit_cfs(void)
 
 module_init(init_cfs);
 module_exit(exit_cfs);
-
-#else
-
-struct vfsmount *cfs_mount(void *raw_data)
-{
-	return vfs_kern_mount(&cfs_type, 0, "", raw_data);
-}
-
-#endif

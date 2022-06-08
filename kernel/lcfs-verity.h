@@ -13,7 +13,6 @@
 # include <linux/fsverity.h>
 #endif
 
-#ifdef STANDALONE_COMPOSEFS
 /* For whatever reason, struct fsverity_info is in a private header, even though
    fsverity_get_info() is in the public header. For now, just duplicate enough
    to implement lcfs_fsverity_info_get_digest() locally, but for upstreaming we
@@ -46,9 +45,6 @@ struct fsverity_info {
         u8 file_digest[FS_VERITY_MAX_DIGEST_SIZE];
         const struct inode *inode;
 };
-#else
-#include <fs/verity/fsverity_private.h>
-#endif
 
 static inline u8 *lcfs_fsverity_info_get_digest(struct fsverity_info *verity_info, size_t *digest_size) {
 	*digest_size = verity_info->tree_params.digest_size;
