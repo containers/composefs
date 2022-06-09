@@ -56,7 +56,7 @@ struct lcfs_node_s {
 	char *name;
 	char *payload;
 	struct lcfs_dentry_s data;
-	lcfs_off_t inode_index;
+	uint64_t inode_index;
 
 	struct lcfs_xattr_s *xattrs;
 	size_t n_xattrs;
@@ -117,8 +117,8 @@ static char *memdup(const char *s, size_t len)
 
 struct hasher_vdata_s {
 	const char *const *vdata;
-	lcfs_off_t off;
-	lcfs_off_t len;
+	uint64_t off;
+	uint64_t len;
 };
 
 static size_t hash_memory(const char *string, size_t len, size_t n_buckets)

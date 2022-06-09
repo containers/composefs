@@ -71,7 +71,7 @@ static uint64_t decode_uint64(const uint8_t **data) {
 	return lcfs_u64_from_file(*d);
 }
 
-static void decode_inode(const uint8_t *inode_data, lcfs_off_t inod_num, struct lcfs_inode_s *ino, const uint8_t **payload_data_out)
+static void decode_inode(const uint8_t *inode_data, uint64_t inod_num, struct lcfs_inode_s *ino, const uint8_t **payload_data_out)
 {
 	const uint8_t *data = inode_data + inod_num;
 	const uint8_t *payload_data;
@@ -174,7 +174,7 @@ static void digest_to_string(const uint8_t *csum, char *buf)
 	buf[j] = '\0';
 }
 
-static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata, const char *name, size_t name_len, lcfs_off_t index,
+static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata, const char *name, size_t name_len, uint64_t index,
 		      size_t rec, bool extended, bool xattrs, bool recurse)
 {
 	struct lcfs_inode_s ino;
@@ -263,7 +263,7 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata, const cha
 	return 0;
 }
 
-static lcfs_off_t find_child(const uint8_t *inode_data, lcfs_off_t current, const char *name)
+static uint64_t find_child(const uint8_t *inode_data, uint64_t current, const char *name)
 {
 	struct lcfs_inode_s ino;
 	const uint8_t *payload_data;
@@ -296,12 +296,12 @@ static lcfs_off_t find_child(const uint8_t *inode_data, lcfs_off_t current, cons
 	return UINT64_MAX;
 }
 
-static lcfs_off_t lookup(const uint8_t *inode_data, lcfs_off_t parent,
+static uint64_t lookup(const uint8_t *inode_data, uint64_t parent,
                          const void *what)
 {
 	char *it;
 	char *dpath, *path;
-        lcfs_off_t current;
+        uint64_t current;
 
 	if (strcmp(what, "/") == 0)
 		return parent;
@@ -388,7 +388,7 @@ int main(int argc, char *argv[])
 	} else if (mode == DUMP_EXTENDED) {
 		dump_inode(inode_data, vdata, "", 0, root_index, 0, true, false, true);
 	} else if (mode == LOOKUP) {
-		lcfs_off_t index;
+		uint64_t index;
 
 		index = lookup(inode_data, root_index, argv[3]);
 		if (index == UINT64_MAX)
@@ -396,7 +396,7 @@ int main(int argc, char *argv[])
 
 		dump_inode(inode_data, vdata, "", 0, index, 0, true, false, false);
 	} else if (mode == XATTRS) {
-		lcfs_off_t index;
+		uint64_t index;
 
 		index = lookup(inode_data, root_index, argv[3]);
 		if (index == UINT64_MAX)

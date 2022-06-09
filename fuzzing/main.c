@@ -134,8 +134,8 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 	struct lcfs_dir_s *dir;
 	char name[NAME_MAX];
 	char value[256];
-	lcfs_off_t index;
-	lcfs_off_t off;
+	u64 index;
+	u64 off;
 	int fd;
 
 	lcfs_digest_from_payload((const char *) buf, len, digest_out);
@@ -147,8 +147,8 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 	test_ctx.ctx = ctx;
 	test_ctx.dirs_left = max_dirs;
 
-	if (len >= sizeof (lcfs_off_t)) {
-		off = *((lcfs_off_t *) buf);
+	if (len >= sizeof (u64)) {
+		off = *((u64 *) buf);
 		lcfs_get_ino_index(ctx, off, &ino_buf);
 	}
 
