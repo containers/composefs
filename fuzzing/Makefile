@@ -17,6 +17,10 @@ corpus:
 run: corpus
 	honggfuzz --timeout=10s --exit_upon_crash -i corpus -- ./main
 
+run-ci: main corpus
+	honggfuzz --timeout=10s --run_time=120s --exit_upon_crash -i corpus -- ./main
+
+
 .PHONY: run
 
 clean:

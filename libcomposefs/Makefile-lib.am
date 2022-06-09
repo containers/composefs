@@ -8,5 +8,5 @@ libcomposefs_la_SOURCES = \
                         $(COMPOSEFSDIR)/lcfs-writer.c \
                         $(COMPOSEFSDIR)/lcfs-writer.h \
                         $(COMPOSEFSDIR)/xalloc-oversized.h
-libcomposefs_la_CFLAGS = $(WARN_CFLAGS) $(COMPOSEFS_HASH_CFLAGS)  $(FSVERITY_CFLAGS)
+libcomposefs_la_CFLAGS = $(WARN_CFLAGS) $(COMPOSEFS_HASH_CFLAGS) $(FSVERITY_CFLAGS)
 libcomposefs_la_LIBADD = $(FSVERITY_LIBS)

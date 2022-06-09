@@ -498,7 +498,8 @@ int main(int argc, char **argv)
 			fclose(to_close);
 	}
 
-	getcwd(cwd, sizeof(cwd));
+	if (getcwd(cwd, sizeof(cwd)) == NULL)
+		error(EXIT_FAILURE, errno, "get current working directory");
 
 	if (lcfs_write_to(root, out_file, write_cb) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
