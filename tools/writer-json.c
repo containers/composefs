@@ -167,7 +167,7 @@ static int fill_xattrs(struct lcfs_node_s *node, yajl_val xattrs)
 			return -1;
 		}
 
-		r = lcfs_node_append_xattr(node, k, v_buffer, written);
+		r = lcfs_node_set_xattr(node, k, v_buffer, written);
 		if (r < 0) {
 			error(0, 0, "append xattr");
 			return -1;

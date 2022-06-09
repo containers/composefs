@@ -41,8 +41,15 @@ struct lcfs_node_s *lcfs_node_ref(struct lcfs_node_s *node);
 void lcfs_node_unref(struct lcfs_node_s *node);
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 					     int buildflags);
-int lcfs_node_append_xattr(struct lcfs_node_s *node, const char *key,
-			   const char *value, size_t value_len);
+
+const char *lcfs_node_get_xattr(struct lcfs_node_s *node, const char *name,
+				size_t *length);
+int lcfs_node_set_xattr(struct lcfs_node_s *node, const char *name,
+			const char *value, size_t value_len);
+int lcfs_node_unset_xattr(struct lcfs_node_s *node, const char *name);
+size_t lcfs_node_get_n_xattr(struct lcfs_node_s *node);
+const char *lcfs_node_get_xattr_name(struct lcfs_node_s *node, size_t index);
+
 int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload);
 
 struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node,
@@ -72,6 +79,10 @@ uint32_t lcfs_node_get_nlink(struct lcfs_node_s *node);
 void lcfs_node_set_nlink(struct lcfs_node_s *node, uint32_t nlink);
 uint64_t lcfs_node_get_size(struct lcfs_node_s *node);
 void lcfs_node_set_size(struct lcfs_node_s *node, uint64_t size);
+void lcfs_node_set_mtime(struct lcfs_node_s *node, struct timespec *time);
+void lcfs_node_get_mtime(struct lcfs_node_s *node, struct timespec *time);
+void lcfs_node_set_ctime(struct lcfs_node_s *node, struct timespec *time);
+void lcfs_node_get_ctime(struct lcfs_node_s *node, struct timespec *time);
 
 const uint8_t *lcfs_node_get_fsverity_digest(struct lcfs_node_s *node);
 void lcfs_node_set_fsverity_digest(struct lcfs_node_s *node,
