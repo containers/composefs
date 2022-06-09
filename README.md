@@ -21,7 +21,7 @@ content files when you mount the filesystem like this:
 This by itself doesn't seem very useful. You could use a single
 squashfs image, or regular directory with the files instead. However,
 the advantage comes if you want to store many such images. By storing
-the files content-adressed (e.g. using the hash of the content to name
+the files content-addressed (e.g. using the hash of the content to name
 the file) shared files need only be stored once, yet can appear in
 multiple mounts. Since these are normal files they will also only be
 stored once in the page cache, meaning that the duplication is avoided
