@@ -661,7 +661,6 @@ static int write_payload_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, 
 static int write_inodes(struct lcfs_ctx_s *ctx, void *file, lcfs_write_cb write_cb) {
 	struct lcfs_node_s *node;
 	int ret;
-	long inode_pos;
 
 	for (node = ctx->root; node != NULL; node = node->next) {
 		ret = write_payload_data(ctx, node, file, write_cb);
