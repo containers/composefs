@@ -115,13 +115,14 @@ static yajl_val get_child(yajl_val node, const char *name, int type)
 	return yajl_tree_get(node, path, type);
 }
 
-static struct lcfs_node_s *
-append_child(struct lcfs_node_s *dir, const char *name)
+static struct lcfs_node_s *append_child(struct lcfs_node_s *dir,
+					const char *name)
 {
 	struct lcfs_node_s *child;
 	struct lcfs_node_s *parent;
 
-	for (parent = dir; parent != NULL; parent = lcfs_node_get_parent (parent)) {
+	for (parent = dir; parent != NULL;
+	     parent = lcfs_node_get_parent(parent)) {
 		if (lcfs_node_get_mode(parent) == 0) {
 			lcfs_node_set_mode(parent, 0755 | S_IFDIR);
 		}
@@ -139,8 +140,7 @@ append_child(struct lcfs_node_s *dir, const char *name)
 	return child;
 }
 
-static int
-fill_xattrs(struct lcfs_node_s *node, yajl_val xattrs)
+static int fill_xattrs(struct lcfs_node_s *node, yajl_val xattrs)
 {
 	size_t i;
 	char v_buffer[4096];
@@ -199,8 +199,7 @@ static struct lcfs_node_s *get_node(struct lcfs_node_s *root, const char *what)
 	return node;
 }
 
-static int fill_file(const char *typ,
-		     struct lcfs_node_s *root,
+static int fill_file(const char *typ, struct lcfs_node_s *root,
 		     struct lcfs_node_s *node, yajl_val entry)
 {
 	const char *payload = NULL;
@@ -300,7 +299,8 @@ static int fill_file(const char *typ,
 		if (tmp) {
 			if (strncmp(tmp, "sha256:", 7) == 0)
 				tmp += 7;
-			snprintf(payload_buffer, sizeof(payload_buffer) - 1, "%.*s/%s", 2, tmp, tmp+2);
+			snprintf(payload_buffer, sizeof(payload_buffer) - 1,
+				 "%.*s/%s", 2, tmp, tmp + 2);
 			payload_buffer[sizeof(payload_buffer) - 1] = '\0';
 			payload = payload_buffer;
 		}
@@ -326,9 +326,8 @@ static int fill_file(const char *typ,
 	return 0;
 }
 
-static struct lcfs_node_s *get_or_add_node(const char *typ,
-					   struct lcfs_node_s *root,
-					   yajl_val entry)
+static struct lcfs_node_s *
+get_or_add_node(const char *typ, struct lcfs_node_s *root, yajl_val entry)
 {
 	yajl_val tmp;
 	char *path, *dpath, *it;
@@ -420,16 +419,14 @@ static void do_file(struct lcfs_node_s *root, FILE *file)
 
 static void usage(const char *argv0)
 {
-	fprintf(stderr,
-		"usage: %s [--out=filedname] jsonfile...\n",
-		argv0);
+	fprintf(stderr, "usage: %s [--out=filedname] jsonfile...\n", argv0);
 }
 
 static int write_cb(void *_file, void *buf, size_t count)
 {
-  FILE *file = _file;
+	FILE *file = _file;
 
-  return fwrite(buf, 1, count, file);
+	return fwrite(buf, 1, count, file);
 }
 
 int main(int argc, char **argv)
@@ -470,10 +467,12 @@ int main(int argc, char **argv)
 	if (out != NULL) {
 		out_file = fopen(out, "w");
 		if (out_file == NULL)
-			error(EXIT_FAILURE, errno, "Failed to open output file");
+			error(EXIT_FAILURE, errno,
+			      "Failed to open output file");
 	} else {
 		if (isatty(1))
-			error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
+			error(EXIT_FAILURE, 0,
+			      "stdout is a tty.  Refusing to use it");
 		out_file = stdout;
 	}
 
@@ -487,12 +486,13 @@ int main(int argc, char **argv)
 
 		if (strcmp(argv[i], "-") == 0) {
 			f = stdin;
-                } else {
+		} else {
 			f = fopen(argv[i], "r");
 			if (f == NULL)
-				error(EXIT_FAILURE, errno, "open `%s`", argv[i]);
+				error(EXIT_FAILURE, errno, "open `%s`",
+				      argv[i]);
 			to_close = f;
-                }
+		}
 		do_file(root, f);
 		if (to_close)
 			fclose(to_close);

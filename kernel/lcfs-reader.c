@@ -10,32 +10,29 @@
 #include "lcfs-reader.h"
 
 #ifndef FUZZING
-# include <linux/string.h>
-# include <linux/kernel_read_file.h>
-# include <linux/vmalloc.h>
-# include <linux/slab.h>
-# include <linux/bsearch.h>
-# include <linux/overflow.h>
-# include <linux/overflow.h>
+#include <linux/string.h>
+#include <linux/kernel_read_file.h>
+#include <linux/vmalloc.h>
+#include <linux/slab.h>
+#include <linux/bsearch.h>
+#include <linux/overflow.h>
+#include <linux/overflow.h>
 #include <linux/unaligned/packed_struct.h>
 #endif
 
 #include "lcfs-fuzzing.h"
 #include "lcfs-verity.h"
 
-#define MIN(a,b) ((a)<(b) ? (a) : (b))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 
-struct lcfs_context_s
-{
+struct lcfs_context_s {
 	struct lcfs_header_s header;
 	struct file *descriptor;
 
 	u64 descriptor_len;
 };
 
-static void *lcfs_read_data(struct lcfs_context_s *ctx,
-			    u64 offset,
-			    u64 size,
+static void *lcfs_read_data(struct lcfs_context_s *ctx, u64 offset, u64 size,
 			    u8 *dest)
 {
 	size_t copied;
@@ -44,8 +41,7 @@ static void *lcfs_read_data(struct lcfs_context_s *ctx,
 	if (offset > ctx->descriptor_len)
 		return ERR_PTR(-EFSCORRUPTED);
 
-	if ((offset + size < offset) ||
-	    (offset + size > ctx->descriptor_len))
+	if ((offset + size < offset) || (offset + size > ctx->descriptor_len))
 		return ERR_PTR(-EFSCORRUPTED);
 
 	copied = 0;
@@ -67,7 +63,8 @@ static void *lcfs_read_data(struct lcfs_context_s *ctx,
 	return dest;
 }
 
-struct lcfs_context_s *lcfs_create_ctx(const char *descriptor_path, const u8 *required_digest)
+struct lcfs_context_s *lcfs_create_ctx(const char *descriptor_path,
+				       const u8 *required_digest)
 {
 	struct lcfs_header_s *header;
 	struct lcfs_context_s *ctx;
@@ -81,15 +78,18 @@ struct lcfs_context_s *lcfs_create_ctx(const char *descriptor_path, const u8 *re
 	if (required_digest) {
 		size_t digest_size;
 		u8 *verity_digest;
-		struct fsverity_info *verity_info = fsverity_get_info(d_inode(descriptor->f_path.dentry));
+		struct fsverity_info *verity_info =
+			fsverity_get_info(d_inode(descriptor->f_path.dentry));
 		if (verity_info == NULL) {
 			pr_err("ERROR: composefs descriptor has no fs-verity digest\n");
 			fput(descriptor);
 			return ERR_PTR(-EINVAL);
 		}
-		verity_digest = lcfs_fsverity_info_get_digest(verity_info, &digest_size);
+		verity_digest = lcfs_fsverity_info_get_digest(verity_info,
+							      &digest_size);
 		if (digest_size != LCFS_DIGEST_SIZE ||
-		    memcmp(required_digest, verity_digest, LCFS_DIGEST_SIZE) != 0) {
+		    memcmp(required_digest, verity_digest, LCFS_DIGEST_SIZE) !=
+			    0) {
 			pr_err("ERROR: composefs descriptor has wrong fs-verity digest\n");
 			fput(descriptor);
 			return ERR_PTR(-EINVAL);
@@ -97,7 +97,8 @@ struct lcfs_context_s *lcfs_create_ctx(const char *descriptor_path, const u8 *re
 	}
 
 	i_size = i_size_read(file_inode(descriptor));
-	if (i_size <= (sizeof(struct lcfs_header_s) + sizeof(struct lcfs_inode_s))) {
+	if (i_size <=
+	    (sizeof(struct lcfs_header_s) + sizeof(struct lcfs_inode_s))) {
 		fput(descriptor);
 		return ERR_PTR(-EINVAL);
 	}
@@ -111,7 +112,8 @@ struct lcfs_context_s *lcfs_create_ctx(const char *descriptor_path, const u8 *re
 	ctx->descriptor = descriptor;
 	ctx->descriptor_len = i_size;
 
-	header = lcfs_read_data(ctx, 0, sizeof(struct lcfs_header_s), (u8 *)&ctx->header);
+	header = lcfs_read_data(ctx, 0, sizeof(struct lcfs_header_s),
+				(u8 *)&ctx->header);
 	if (IS_ERR(header)) {
 		fput(descriptor);
 		kfree(ctx);
@@ -121,9 +123,10 @@ struct lcfs_context_s *lcfs_create_ctx(const char *descriptor_path, const u8 *re
 	header->data_offset = lcfs_u64_from_file(header->data_offset);
 	header->root_inode = lcfs_u64_from_file(header->root_inode);
 
-        if (header->magic != LCFS_MAGIC ||
-            header->data_offset > ctx->descriptor_len ||
-            sizeof(struct lcfs_header_s) + header->root_inode > ctx->descriptor_len) {
+	if (header->magic != LCFS_MAGIC ||
+	    header->data_offset > ctx->descriptor_len ||
+	    sizeof(struct lcfs_header_s) + header->root_inode >
+		    ctx->descriptor_len) {
 		fput(descriptor);
 		kfree(ctx);
 		return ERR_PTR(-EINVAL);
@@ -140,21 +143,15 @@ void lcfs_destroy_ctx(struct lcfs_context_s *ctx)
 	kfree(ctx);
 }
 
-static void *lcfs_get_inode_data(struct lcfs_context_s *ctx,
-				 u64 offset,
-				 u64 size,
-				 u8 *dest)
+static void *lcfs_get_inode_data(struct lcfs_context_s *ctx, u64 offset,
+				 u64 size, u8 *dest)
 {
-	return lcfs_read_data(ctx,
-			      offset + sizeof(struct lcfs_header_s),
-			      size, dest);
+	return lcfs_read_data(ctx, offset + sizeof(struct lcfs_header_s), size,
+			      dest);
 }
 
-static void *lcfs_get_inode_data_max(struct lcfs_context_s *ctx,
-				     u64 offset,
-				     u64 max_size,
-				     u64 *read_size,
-				     u8 *dest)
+static void *lcfs_get_inode_data_max(struct lcfs_context_s *ctx, u64 offset,
+				     u64 max_size, u64 *read_size, u8 *dest)
 {
 	u64 remaining = ctx->descriptor_len - sizeof(struct lcfs_header_s);
 	u64 size;
@@ -171,8 +168,7 @@ static void *lcfs_get_inode_data_max(struct lcfs_context_s *ctx,
 }
 
 static void *lcfs_get_inode_payload(struct lcfs_context_s *ctx,
-				    struct lcfs_inode_s *ino,
-				    u64 index,
+				    struct lcfs_inode_s *ino, u64 index,
 				    u8 *dest)
 {
 	u64 offset = index;
@@ -181,12 +177,12 @@ static void *lcfs_get_inode_payload(struct lcfs_context_s *ctx,
 	if (ino->payload_length > offset)
 		return ERR_PTR(-EINVAL);
 
-	return lcfs_get_inode_data(ctx, offset - ino->payload_length, ino->payload_length, dest);
+	return lcfs_get_inode_data(ctx, offset - ino->payload_length,
+				   ino->payload_length, dest);
 }
 
 static void *lcfs_alloc_inode_payload(struct lcfs_context_s *ctx,
-				      struct lcfs_inode_s *ino,
-				      u64 index)
+				      struct lcfs_inode_s *ino, u64 index)
 {
 	u8 *buf;
 	void *res;
@@ -202,16 +198,13 @@ static void *lcfs_alloc_inode_payload(struct lcfs_context_s *ctx,
 	return res;
 }
 
-
 static void *lcfs_get_vdata(struct lcfs_context_s *ctx,
-			    const struct lcfs_vdata_s vdata,
-			    void *dest)
+			    const struct lcfs_vdata_s vdata, void *dest)
 {
 	if (!dest)
 		return NULL;
 
-	return lcfs_read_data(ctx,
-			      vdata.off + ctx->header.data_offset,
+	return lcfs_read_data(ctx, vdata.off + ctx->header.data_offset,
 			      vdata.len, dest);
 }
 
@@ -232,29 +225,32 @@ static void *lcfs_alloc_vdata(struct lcfs_context_s *ctx,
 	return res;
 }
 
-static u32 lcfs_read_u32(u8 **data) {
-	u32 v = lcfs_u32_from_file (__get_unaligned_cpu32(*data));
+static u32 lcfs_read_u32(u8 **data)
+{
+	u32 v = lcfs_u32_from_file(__get_unaligned_cpu32(*data));
 	*data += sizeof(u32);
 	return v;
 }
 
-static u64 lcfs_read_u64(u8 **data) {
-	u64 v = lcfs_u64_from_file (__get_unaligned_cpu64(*data));
+static u64 lcfs_read_u64(u8 **data)
+{
+	u64 v = lcfs_u64_from_file(__get_unaligned_cpu64(*data));
 	*data += sizeof(u64);
 	return v;
 }
 
-struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
-					u64 index,
+struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx, u64 index,
 					struct lcfs_inode_s *ino)
 {
 	u64 offset = index;
-	u8 buffer[sizeof(struct lcfs_inode_s)]; /* This will fix the maximal encoded size */
+	u8 buffer[sizeof(
+		struct lcfs_inode_s)]; /* This will fix the maximal encoded size */
 	u64 read_size;
 	u64 inode_size;
 	u8 *data;
 
-	data = lcfs_get_inode_data_max(ctx, offset, sizeof(buffer), &read_size, buffer);
+	data = lcfs_get_inode_data_max(ctx, offset, sizeof(buffer), &read_size,
+				       buffer);
 	if (IS_ERR(data))
 		return ERR_CAST(data);
 
@@ -345,8 +341,7 @@ struct lcfs_inode_s *lcfs_get_ino_index(struct lcfs_context_s *ctx,
 }
 
 struct lcfs_inode_s *lcfs_get_root_ino(struct lcfs_context_s *ctx,
-				       struct lcfs_inode_s *ino_buf,
-				       u64 *index)
+				       struct lcfs_inode_s *ino_buf, u64 *index)
 {
 	u64 root_ino = ctx->header.root_inode;
 
@@ -354,14 +349,18 @@ struct lcfs_inode_s *lcfs_get_root_ino(struct lcfs_context_s *ctx,
 	return lcfs_get_ino_index(ctx, root_ino, ino_buf);
 }
 
-const uint8_t *lcfs_get_digest(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino, const char *payload, u8 digest_buf[LCFS_DIGEST_SIZE])
+const uint8_t *lcfs_get_digest(struct lcfs_context_s *ctx,
+			       struct lcfs_inode_s *ino, const char *payload,
+			       u8 digest_buf[LCFS_DIGEST_SIZE])
 {
 	if (LCFS_INODE_FLAG_CHECK(ino->flags, DIGEST)) {
 		return ino->digest;
 	}
 
-	if (LCFS_INODE_FLAG_CHECK(ino->flags, DIGEST_FROM_PAYLOAD && payload != NULL)) {
-		if (lcfs_digest_from_payload(payload, ino->payload_length, digest_buf) == 0)
+	if (LCFS_INODE_FLAG_CHECK(ino->flags,
+				  DIGEST_FROM_PAYLOAD && payload != NULL)) {
+		if (lcfs_digest_from_payload(payload, ino->payload_length,
+					     digest_buf) == 0)
 			return digest_buf;
 	}
 
@@ -369,15 +368,13 @@ const uint8_t *lcfs_get_digest(struct lcfs_context_s *ctx, struct lcfs_inode_s *
 }
 
 struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx,
-				struct lcfs_inode_s *ino,
-				u64 index)
+				struct lcfs_inode_s *ino, u64 index)
 {
 	struct lcfs_dir_s *dir;
 	u8 *data, *data_end;
 	size_t n_dentries, i;
 
-	if ((ino->st_mode & S_IFMT) != S_IFDIR ||
-	    ino->payload_length == 0) {
+	if ((ino->st_mode & S_IFMT) != S_IFDIR || ino->payload_length == 0) {
 		return NULL;
 	}
 
@@ -416,13 +413,13 @@ struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx,
 
 	return dir;
 
- corrupted:
+corrupted:
 	kfree(dir);
 	return ERR_PTR(-EFSCORRUPTED);
 }
 
-
-struct lcfs_xattr_header_s *lcfs_get_xattrs(struct lcfs_context_s *ctx, struct lcfs_inode_s *ino)
+struct lcfs_xattr_header_s *lcfs_get_xattrs(struct lcfs_context_s *ctx,
+					    struct lcfs_inode_s *ino)
 {
 	struct lcfs_xattr_header_s *xattrs = NULL;
 	u8 *data, *data_end;
@@ -440,7 +437,7 @@ struct lcfs_xattr_header_s *lcfs_get_xattrs(struct lcfs_context_s *ctx, struct l
 	if (IS_ERR(xattrs))
 		return ERR_CAST(xattrs);
 
-	n_xattrs = xattrs->n_attr = lcfs_u16_from_file (xattrs->n_attr);
+	n_xattrs = xattrs->n_attr = lcfs_u16_from_file(xattrs->n_attr);
 
 	/* Verify that array fits */
 	if (ino->xattrs.len < lcfs_xattr_header_size(n_xattrs))
@@ -452,8 +449,10 @@ struct lcfs_xattr_header_s *lcfs_get_xattrs(struct lcfs_context_s *ctx, struct l
 	/* Verify and convert all keys and value sizes upfront */
 	for (i = 0; i < n_xattrs; i++) {
 		struct lcfs_xattr_element_s *e = &xattrs->attr[i];
-		uint16_t key_len = e->key_length = lcfs_u16_from_file(e->key_length);
-		uint16_t value_len = e->value_length = lcfs_u16_from_file(e->value_length);
+		uint16_t key_len = e->key_length =
+			lcfs_u16_from_file(e->key_length);
+		uint16_t value_len = e->value_length =
+			lcfs_u16_from_file(e->value_length);
 		if (key_len > XATTR_NAME_MAX)
 			goto corrupted;
 
@@ -474,13 +473,13 @@ struct lcfs_xattr_header_s *lcfs_get_xattrs(struct lcfs_context_s *ctx, struct l
 
 	return xattrs;
 
- corrupted:
+corrupted:
 	kfree(xattrs);
 	return ERR_PTR(-EFSCORRUPTED);
 }
 
-
-ssize_t lcfs_list_xattrs(struct lcfs_xattr_header_s *xattrs, char *names, size_t size)
+ssize_t lcfs_list_xattrs(struct lcfs_xattr_header_s *xattrs, char *names,
+			 size_t size)
 {
 	u8 *data;
 	size_t n_xattrs = 0, i;
@@ -512,7 +511,8 @@ ssize_t lcfs_list_xattrs(struct lcfs_xattr_header_s *xattrs, char *names, size_t
 	return copied;
 }
 
-int lcfs_get_xattr(struct lcfs_xattr_header_s *xattrs, const char *name, void *value, size_t size)
+int lcfs_get_xattr(struct lcfs_xattr_header_s *xattrs, const char *name,
+		   void *value, size_t size)
 {
 	size_t name_len = strlen(name);
 	size_t n_xattrs = 0, i;
@@ -559,7 +559,8 @@ int lcfs_get_xattr(struct lcfs_xattr_header_s *xattrs, const char *name, void *v
 	return -ENODATA;
 }
 
-int lcfs_dir_iterate(struct lcfs_dir_s *dir, loff_t first, lcfs_dir_iter_cb cb, void *private)
+int lcfs_dir_iterate(struct lcfs_dir_s *dir, loff_t first, lcfs_dir_iter_cb cb,
+		     void *private)
 {
 	size_t i, n_dentries;
 	u8 *data;
@@ -586,8 +587,7 @@ int lcfs_dir_iterate(struct lcfs_dir_s *dir, loff_t first, lcfs_dir_iter_cb cb, 
 		if (i < first)
 			continue;
 
-		if (!cb(private, name, name_len,
-			dir->dentries[i].inode_index,
+		if (!cb(private, name, name_len, dir->dentries[i].inode_index,
 			dir->dentries[i].d_type))
 			break;
 	}
@@ -622,7 +622,8 @@ u32 lcfs_dir_get_link_count(struct lcfs_dir_s *dir)
 	return count;
 }
 
-int lcfs_lookup(struct lcfs_dir_s *dir, const char *name, size_t name_len, u64 *index)
+int lcfs_lookup(struct lcfs_dir_s *dir, const char *name, size_t name_len,
+		u64 *index)
 {
 	size_t i, n_dentries;
 	u8 *data;
@@ -651,8 +652,7 @@ int lcfs_lookup(struct lcfs_dir_s *dir, const char *name, size_t name_len, u64 *
 }
 
 char *lcfs_dup_payload_path(struct lcfs_context_s *ctx,
-			    struct lcfs_inode_s *ino,
-			    u64 index)
+			    struct lcfs_inode_s *ino, u64 index)
 {
 	const char *v;
 	u8 *path;
@@ -662,8 +662,7 @@ char *lcfs_dup_payload_path(struct lcfs_context_s *ctx,
 		return ERR_PTR(-EINVAL);
 	}
 
-	if (ino->payload_length == 0 ||
-	    ino->payload_length > PATH_MAX)
+	if (ino->payload_length == 0 || ino->payload_length > PATH_MAX)
 		return ERR_PTR(-EFSCORRUPTED);
 
 	path = kmalloc(ino->payload_length + 1, GFP_KERNEL);
