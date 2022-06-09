@@ -72,6 +72,10 @@ uint32_t lcfs_node_get_nlink(struct lcfs_node_s *node);
 void lcfs_node_set_nlink(struct lcfs_node_s *node, uint32_t nlink);
 uint64_t lcfs_node_get_size(struct lcfs_node_s *node);
 void lcfs_node_set_size(struct lcfs_node_s *node, uint64_t size);
+void lcfs_node_set_mtime(struct lcfs_node_s *node, struct timespec *time);
+void lcfs_node_get_mtime(struct lcfs_node_s *node, struct timespec *time);
+void lcfs_node_set_ctime(struct lcfs_node_s *node, struct timespec *time);
+void lcfs_node_get_ctime(struct lcfs_node_s *node, struct timespec *time);
 
 const uint8_t *lcfs_node_get_fsverity_digest(struct lcfs_node_s *node);
 void lcfs_node_set_fsverity_digest(struct lcfs_node_s *node,

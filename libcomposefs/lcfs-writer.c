@@ -1085,6 +1085,26 @@ void lcfs_node_set_size(struct lcfs_node_s *node, uint64_t size)
 	node->inode.st_size = size;
 }
 
+void lcfs_node_set_mtime(struct lcfs_node_s *node, struct timespec *time)
+{
+	node->inode.st_mtim = *time;
+}
+
+void lcfs_node_get_mtime(struct lcfs_node_s *node, struct timespec *time)
+{
+	*time = node->inode.st_mtim;
+}
+
+void lcfs_node_set_ctime(struct lcfs_node_s *node, struct timespec *time)
+{
+	node->inode.st_ctim = *time;
+}
+
+void lcfs_node_get_ctime(struct lcfs_node_s *node, struct timespec *time)
+{
+	*time = node->inode.st_ctim;
+}
+
 struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node,
 					   const char *name)
 {
