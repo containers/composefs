@@ -70,3 +70,21 @@ jobs:
     - name: run fuzzer
       run: |
             make -C fuzzing run-ci
+
+  clang-formatter:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+    - name: checkout
+      uses: actions/checkout@v2
+
+    - name: install dependencies
+      run: |
+            sudo apt-get update -y
+            sudo apt-get install -y make clang-format
+
+    - name: check formatting
+      run: |
+            sudo docker build -t clang-format hacking/clang-format
+            sudo docker run --rm -w /src -v ${PWD}:/src clang-format
