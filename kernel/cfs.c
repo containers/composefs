@@ -40,7 +40,6 @@ struct cfs_info {
 
 	struct vfsmount *root_mnt;
 
-	char *descriptor_path;
 	char *base_path;
 	struct file *base;
 	bool noverity;
@@ -350,7 +349,6 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 {
 	struct cfs_info *fsi = root->d_sb->s_fs_info;
 
-	seq_printf(m, ",descriptor=%s", fsi->descriptor_path);
 	if (fsi->noverity)
 		seq_printf(m, ",noverity");
 	if (fsi->base_path)
@@ -412,8 +410,6 @@ static void cfs_put_super(struct super_block *sb)
 		kern_unmount(fsi->root_mnt);
 	if (fsi->lcfs_ctx)
 		lcfs_destroy_ctx(fsi->lcfs_ctx);
-	if (fsi->descriptor_path)
-		kfree(fsi->descriptor_path);
 	if (fsi->base)
 		fput(fsi->base);
 	if (fsi->base_path)
@@ -433,14 +429,12 @@ static const struct super_operations cfs_ops = {
 };
 
 enum cfs_param {
-	Opt_descriptor_file,
 	Opt_base_path,
 	Opt_digest,
 	Opt_verity,
 };
 
 const struct fs_parameter_spec cfs_parameters[] = {
-	fsparam_string("descriptor", Opt_descriptor_file),
 	fsparam_string("basedir", Opt_base_path),
 	fsparam_string("digest", Opt_digest),
 	fsparam_flag_no("verity", Opt_verity),
@@ -454,16 +448,12 @@ static int cfs_parse_param(struct fs_context *fc, struct fs_parameter *param)
 	int opt, r;
 
 	opt = fs_parse(fc, cfs_parameters, param, &result);
+	if (opt == -ENOPARAM)
+		return vfs_parse_fs_param_source(fc, param);
 	if (opt < 0)
 		return opt;
 
 	switch (opt) {
-	case Opt_descriptor_file:
-		kfree(fsi->descriptor_path);
-		/* Take ownership.  */
-		fsi->descriptor_path = param->string;
-		param->string = NULL;
-		break;
 	case Opt_base_path:
 		kfree(fsi->base_path);
 		/* Take ownership.  */
@@ -528,7 +518,7 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 		base = f;
 	}
 
-	ctx = lcfs_create_ctx(fsi->descriptor_path, fsi->has_digest ? fsi->digest : NULL);
+	ctx = lcfs_create_ctx(fc->source, fsi->has_digest ? fsi->digest : NULL);
 	if (IS_ERR(ctx)) {
 		ret = PTR_ERR(ctx);
 		goto fail;

@@ -67,7 +67,7 @@ static void *lcfs_read_data(struct lcfs_context_s *ctx,
 	return dest;
 }
 
-struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path, const u8 *required_digest)
+struct lcfs_context_s *lcfs_create_ctx(const char *descriptor_path, const u8 *required_digest)
 {
 	struct lcfs_header_s *header;
 	struct lcfs_context_s *ctx;
