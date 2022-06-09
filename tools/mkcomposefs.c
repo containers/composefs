@@ -486,7 +486,9 @@ int main(int argc, char **argv)
 		error(EXIT_FAILURE, errno, "load current directory node");
 
 	if (absolute_path) {
-		getcwd(pathbuf, sizeof(pathbuf));
+		if (getcwd(pathbuf, sizeof(pathbuf)) == NULL)
+			error(EXIT_FAILURE, errno,
+			      "get current working directory");
 		strncat(pathbuf, "/", sizeof(pathbuf) - 1);
 		strncat(pathbuf, dir_path, sizeof(pathbuf) - 1);
 		absolute_prefix = canonicalize_file_name(pathbuf);
