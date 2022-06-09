@@ -41,3 +41,26 @@ jobs:
             ./autogen.sh
             ./configure CFLAGS='-Wall -Werror'
             make -j $(nproc)
+
+  fuzzer:
+    runs-on: fedora-latest
+    strategy:
+      fail-fast: false
+    steps:
+    - name: checkout
+      uses: actions/checkout@v2
+
+    - name: install dependencies
+      run: |
+            yum install -y automake libtool autotools-dev git make gcc libyajl-dev fsverity-utils-devel honggfuzz
+            find $(pwd) -name '.git' -exec bash -c 'git config --global --add safe.directory ${0%/.git}' {} \;
+
+    - name: build
+      run: |
+            ./autogen.sh
+            ./configure CFLAGS='-Wall -Werror'
+            make -j $(nproc)
+
+    - name: run fuzzer
+      run: |
+            make -C fuzzing run-ci
