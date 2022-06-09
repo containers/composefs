@@ -43,13 +43,12 @@ static void digest_to_path(const uint8_t *csum, char *buf)
 		if (i == 1)
 			buf[j++] = '/';
 		buf[j] = hexchars[byte >> 4];
-		buf[j+1] = hexchars[byte & 0xF];
+		buf[j + 1] = hexchars[byte & 0xF];
 	}
 	buf[j] = '\0';
 }
 
-static int ensure_dir (const char *path,
-		       mode_t      mode)
+static int ensure_dir(const char *path, mode_t mode)
 {
 	struct stat buf;
 
@@ -72,9 +71,7 @@ static int ensure_dir (const char *path,
 	return 0;
 }
 
-
-static int mkdir_parents (const char *pathname,
-			  int         mode)
+static int mkdir_parents(const char *pathname, int mode)
 {
 	char *fn = NULL;
 	char *p;
@@ -97,7 +94,7 @@ static int mkdir_parents (const char *pathname,
 			break;
 		*p = '\0';
 
-		if (ensure_dir (fn, mode) != 0) {
+		if (ensure_dir(fn, mode) != 0) {
 			free(fn);
 			return -1;
 		}
@@ -111,18 +108,17 @@ static int mkdir_parents (const char *pathname,
 	return 0;
 }
 
-static int write_to_fd (int         fd,
-			const char *content,
-			ssize_t     len)
+static int write_to_fd(int fd, const char *content, ssize_t len)
 {
 	ssize_t res;
 
-	while (len > 0)  {
-		res = write (fd, content, len);
+	while (len > 0) {
+		res = write(fd, content, len);
 		if (res < 0 && errno == EINTR)
 			continue;
 		if (res <= 0) {
-			if (res == 0) /* Unexpected short write, should not happen when writing to a file */
+			if (res ==
+			    0) /* Unexpected short write, should not happen when writing to a file */
 				errno = ENOSPC;
 			return -1;
 		}
@@ -134,7 +130,7 @@ static int write_to_fd (int         fd,
 }
 
 #define BUFSIZE 8192
-static int copy_file_data (int sfd, int dfd)
+static int copy_file_data(int sfd, int dfd)
 {
 	char buffer[BUFSIZE];
 	ssize_t bytes_read;
@@ -150,14 +146,16 @@ static int copy_file_data (int sfd, int dfd)
 		if (bytes_read == 0)
 			break;
 
-		if (write_to_fd (dfd, buffer, bytes_read) != 0)
+		if (write_to_fd(dfd, buffer, bytes_read) != 0)
 			return -1;
 	}
 
 	return 0;
 }
 
-static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base, const char *dst, mode_t mode, bool try_enable_fsverity)
+static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
+					 const char *dst, mode_t mode,
+					 bool try_enable_fsverity)
 {
 	char pathbuf[PATH_MAX];
 	char tmppath[PATH_MAX];
@@ -170,7 +168,7 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base, 
 	strncat(pathbuf, "/", sizeof(pathbuf) - 1);
 	strncat(pathbuf, dst, sizeof(pathbuf) - 1);
 
-	ret = mkdir_parents (pathbuf, 0755);
+	ret = mkdir_parents(pathbuf, 0755);
 	if (ret < 0)
 		return ret;
 
@@ -184,50 +182,56 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base, 
 	if (dfd == -1)
 		return -1;
 
-	sfd = open (src, O_CLOEXEC | O_RDONLY);
+	sfd = open(src, O_CLOEXEC | O_RDONLY);
 	if (sfd == -1) {
 		errsv = errno;
 		unlink(tmppath);
-		close (dfd);
+		close(dfd);
 		errno = errsv;
 		return -1;
 	}
 
-	res = copy_file_data (sfd, dfd);
+	res = copy_file_data(sfd, dfd);
 	if (res < 0) {
 		errsv = errno;
 		unlink(tmppath);
-		close (sfd);
-		close (dfd);
+		close(sfd);
+		close(dfd);
 		errno = errsv;
 		return res;
 	}
-	close (sfd);
+	close(sfd);
 
 	res = fsync(dfd);
 	if (res < 0) {
 		errsv = errno;
 		unlink(tmppath);
-		close (dfd);
+		close(dfd);
 		errno = errsv;
 		return res;
 	}
-	close (dfd);
+	close(dfd);
 
 	if (try_enable_fsverity) {
-
 		/* Try to enable fsverity */
 		dfd = open(tmppath, O_CLOEXEC | O_RDONLY);
 		if (dfd < 0) {
 			errsv = errno;
 			unlink(tmppath);
-			close (dfd);
+			close(dfd);
 			errno = errsv;
 			return res;
 		}
 
 		if (fstat(dfd, &statbuf) == 0) {
-			struct libfsverity_merkle_tree_params params = { 1, FS_VERITY_HASH_ALG_SHA256, statbuf.st_size, 4096, 0, NULL };
+			struct libfsverity_merkle_tree_params params = {
+				1,
+				FS_VERITY_HASH_ALG_SHA256,
+				statbuf.st_size,
+				4096,
+				0,
+				NULL
+			};
 
 			res = libfsverity_enable(dfd, &params);
 			if (res < 0) {
@@ -248,19 +252,18 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base, 
 	return 0;
 }
 
-
-static int fill_payload(struct lcfs_node_s *node,
-			char *path, size_t len, size_t path_start_offset,
-                        bool by_digest, const char *digest_store_path)
+static int fill_payload(struct lcfs_node_s *node, char *path, size_t len,
+			size_t path_start_offset, bool by_digest,
+			const char *digest_store_path)
 {
 	size_t old_len = len;
 	const char *fname;
 	int ret;
 
-        fname = lcfs_node_get_name(node);
+	fname = lcfs_node_get_name(node);
 
 	if (fname) {
-		if (len == 0 || path[len-1] == '/')
+		if (len == 0 || path[len - 1] == '/')
 			ret = sprintf(path + len, "%s", fname);
 		else
 			ret = sprintf(path + len, "/%s", fname);
@@ -274,8 +277,10 @@ static int fill_payload(struct lcfs_node_s *node,
 
 		n_children = lcfs_node_get_n_children(node);
 		for (i = 0; i < n_children; i++) {
-			struct lcfs_node_s *child = lcfs_node_get_child(node, i);
-			ret = fill_payload(child, path, len, path_start_offset, by_digest, digest_store_path);
+			struct lcfs_node_s *child =
+				lcfs_node_get_child(node, i);
+			ret = fill_payload(child, path, len, path_start_offset,
+					   by_digest, digest_store_path);
 			if (ret < 0)
 				return ret;
 			path[len] = '\0';
@@ -297,18 +302,21 @@ static int fill_payload(struct lcfs_node_s *node,
 			digest = lcfs_node_get_fsverity_digest(node);
 
 		if (digest) { /* Zero size files don't have a digest (since they are non-backed */
-			char digest_path[LCFS_DIGEST_SIZE*2 + 2];
+			char digest_path[LCFS_DIGEST_SIZE * 2 + 2];
 			digest_to_path(digest, digest_path);
 
 			if (digest_store_path) {
-				ret = copy_file_with_dirs_if_needed(path, digest_store_path, digest_path, 0644, true);
+				ret = copy_file_with_dirs_if_needed(
+					path, digest_store_path, digest_path,
+					0644, true);
 				if (ret < 0)
 					return ret;
 			}
 
 			ret = lcfs_node_set_payload(node, digest_path);
 		} else {
-			ret = lcfs_node_set_payload(node, path + path_start_offset);
+			ret = lcfs_node_set_payload(node,
+						    path + path_start_offset);
 		}
 		if (ret < 0)
 			return ret;
@@ -335,9 +343,9 @@ static void usage(const char *argv0)
 
 static int write_cb(void *_file, void *buf, size_t count)
 {
-  FILE *file = _file;
+	FILE *file = _file;
 
-  return fwrite(buf, 1, count, file);
+	return fwrite(buf, 1, count, file);
 }
 
 int main(int argc, char **argv)
@@ -458,16 +466,19 @@ int main(int argc, char **argv)
 		buildflags |= LCFS_BUILD_COMPUTE_DIGEST; /* implied */
 
 	if (absolute_path && by_digest)
-		error(EXIT_FAILURE, 0, "Can't specify both --absolute and --by-digest");
+		error(EXIT_FAILURE, 0,
+		      "Can't specify both --absolute and --by-digest");
 
 	if (strcmp(out, "-") == 0) {
 		if (isatty(1))
-			error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
+			error(EXIT_FAILURE, 0,
+			      "stdout is a tty.  Refusing to use it");
 		out_file = stdout;
-        } else {
+	} else {
 		out_file = fopen(out, "w");
 		if (out_file == NULL)
-			error(EXIT_FAILURE, errno, "Failed to open output file");
+			error(EXIT_FAILURE, errno,
+			      "Failed to open output file");
 	}
 
 	root = lcfs_build(NULL, AT_FDCWD, dir_path, "", buildflags);
@@ -489,7 +500,8 @@ int main(int argc, char **argv)
 			strncat(pathbuf, "/", sizeof(pathbuf) - 1);
 		path_start_offset = strlen(pathbuf);
 	}
-	fill_payload(root, pathbuf, strlen(pathbuf), path_start_offset, by_digest, digest_store_path);
+	fill_payload(root, pathbuf, strlen(pathbuf), path_start_offset,
+		     by_digest, digest_store_path);
 
 	if (lcfs_write_to(root, out_file, write_cb) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");

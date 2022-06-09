@@ -39,67 +39,54 @@ typedef int (*lcfs_write_cb)(void *file, void *buf, size_t count);
 struct lcfs_node_s *lcfs_node_new(void);
 struct lcfs_node_s *lcfs_node_ref(struct lcfs_node_s *node);
 void lcfs_node_unref(struct lcfs_node_s *node);
-struct lcfs_node_s *lcfs_load_node_from_file(int dirfd,
-					     const char *fname,
+struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 					     int buildflags);
-int lcfs_node_append_xattr(struct lcfs_node_s *node,
-			   const char *key,
+int lcfs_node_append_xattr(struct lcfs_node_s *node, const char *key,
 			   const char *value, size_t value_len);
-int lcfs_node_set_payload(struct lcfs_node_s *node,
-			  const char *payload);
+int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload);
 
 struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node,
 					   const char *name);
 struct lcfs_node_s *lcfs_node_get_parent(struct lcfs_node_s *node);
-int lcfs_node_add_child(struct lcfs_node_s *parent,
-			struct lcfs_node_s *child, /* Takes ownership on success */
-			const char *name);
-int lcfs_node_remove_child(struct lcfs_node_s *parent,
-			   const char *name);
+int lcfs_node_add_child(
+	struct lcfs_node_s *parent,
+	struct lcfs_node_s *child, /* Takes ownership on success */
+	const char *name);
+int lcfs_node_remove_child(struct lcfs_node_s *parent, const char *name);
 const char *lcfs_node_get_name(struct lcfs_node_s *node);
 size_t lcfs_node_get_n_children(struct lcfs_node_s *node);
-struct lcfs_node_s * lcfs_node_get_child(struct lcfs_node_s *node, size_t i);
+struct lcfs_node_s *lcfs_node_get_child(struct lcfs_node_s *node, size_t i);
 void lcfs_node_make_hardlink(struct lcfs_node_s *node,
 			     struct lcfs_node_s *target);
 
 bool lcfs_node_dirp(struct lcfs_node_s *node);
 uint32_t lcfs_node_get_mode(struct lcfs_node_s *node);
-void lcfs_node_set_mode(struct lcfs_node_s *node,
-			uint32_t mode);
+void lcfs_node_set_mode(struct lcfs_node_s *node, uint32_t mode);
 uint32_t lcfs_node_get_uid(struct lcfs_node_s *node);
-void lcfs_node_set_uid(struct lcfs_node_s *node,
-		       uint32_t uid);
+void lcfs_node_set_uid(struct lcfs_node_s *node, uint32_t uid);
 uint32_t lcfs_node_get_gid(struct lcfs_node_s *node);
-void lcfs_node_set_gid(struct lcfs_node_s *node,
-		       uint32_t gid);
+void lcfs_node_set_gid(struct lcfs_node_s *node, uint32_t gid);
 uint32_t lcfs_node_get_rdev(struct lcfs_node_s *node);
-void lcfs_node_set_rdev(struct lcfs_node_s *node,
-			uint32_t rdev);
+void lcfs_node_set_rdev(struct lcfs_node_s *node, uint32_t rdev);
 uint32_t lcfs_node_get_nlink(struct lcfs_node_s *node);
-void lcfs_node_set_nlink(struct lcfs_node_s *node,
-			 uint32_t nlink);
+void lcfs_node_set_nlink(struct lcfs_node_s *node, uint32_t nlink);
 uint64_t lcfs_node_get_size(struct lcfs_node_s *node);
-void lcfs_node_set_size(struct lcfs_node_s *node,
-			uint64_t size);
+void lcfs_node_set_size(struct lcfs_node_s *node, uint64_t size);
 
 const uint8_t *lcfs_node_get_fsverity_digest(struct lcfs_node_s *node);
 void lcfs_node_set_fsverity_digest(struct lcfs_node_s *node,
-                                   uint8_t digest[32]);
+				   uint8_t digest[32]);
 
-int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node,
-                                        void *file,
-                                        uint64_t size,
-                                        lcfs_read_cb read_cb);
+int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node, void *file,
+					uint64_t size, lcfs_read_cb read_cb);
 
-int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node,
-                                   int fd,
-                                   uint64_t size);
+int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node, int fd,
+				   uint64_t size);
 
 struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
 			       const char *fname, const char *name,
 			       int buildflags);
 
 int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb);
-
 
 #endif
