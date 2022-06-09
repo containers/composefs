@@ -840,7 +840,7 @@ static int read_xattrs(struct lcfs_node_s *ret, int dirfd, const char *fname)
 			return r;
 		}
 
-		r = lcfs_node_append_xattr(ret, it, value, value_size);
+		r = lcfs_node_set_xattr(ret, it, value, value_size);
 		if (r < 0) {
 			close(fd);
 			free(list);
@@ -1348,11 +1348,78 @@ fail:
 	return NULL;
 }
 
-int lcfs_node_append_xattr(struct lcfs_node_s *node, const char *key,
-			   const char *value, size_t value_len)
+size_t lcfs_node_get_n_xattr(struct lcfs_node_s *node)
+{
+	return node->n_xattrs;
+}
+
+const char *lcfs_node_get_xattr_name(struct lcfs_node_s *node, size_t index)
+{
+	if (index >= node->n_xattrs)
+		return NULL;
+
+	return node->xattrs[index].key;
+}
+
+static ssize_t find_xattr(struct lcfs_node_s *node, const char *name)
+{
+	ssize_t i;
+	for (i = 0; i < node->n_xattrs; i++) {
+		struct lcfs_xattr_s *xattr = &node->xattrs[i];
+		if (strcmp(name, xattr->key) == 0)
+			return i;
+	}
+	return -1;
+}
+
+const char *lcfs_node_get_xattr(struct lcfs_node_s *node, const char *name,
+				size_t *length)
+{
+	ssize_t index = find_xattr(node, name);
+
+	if (index >= 0) {
+		struct lcfs_xattr_s *xattr = &node->xattrs[index];
+		*length = xattr->value_len;
+		return xattr->value;
+	}
+
+	return NULL;
+}
+
+int lcfs_node_unset_xattr(struct lcfs_node_s *node, const char *name)
+{
+	ssize_t index = find_xattr(node, name);
+
+	if (index >= 0) {
+		if (index != node->n_xattrs - 1)
+			node->xattrs[index] = node->xattrs[node->n_xattrs - 1];
+		node->n_xattrs--;
+	}
+
+	return -1;
+}
+
+int lcfs_node_set_xattr(struct lcfs_node_s *node, const char *name,
+			const char *value, size_t value_len)
 {
 	struct lcfs_xattr_s *xattrs;
 	char *k, *v;
+	ssize_t index = find_xattr(node, name);
+
+	if (index >= 0) {
+		/* Already set, replace */
+		struct lcfs_xattr_s *xattr = &node->xattrs[index];
+		v = memdup(value, value_len);
+		if (v == NULL) {
+			errno = ENOMEM;
+			return -1;
+		}
+		free(xattr->value);
+		xattr->value = v;
+		xattr->value_len = value_len;
+
+		return 0;
+	}
 
 	xattrs = realloc(node->xattrs,
 			 (node->n_xattrs + 1) * sizeof(struct lcfs_xattr_s));
@@ -1362,7 +1429,7 @@ int lcfs_node_append_xattr(struct lcfs_node_s *node, const char *key,
 	}
 	node->xattrs = xattrs;
 
-	k = strdup(key);
+	k = strdup(name);
 	v = memdup(value, value_len);
 	if (k == NULL || v == NULL) {
 		free(k);
