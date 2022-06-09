@@ -15,7 +15,7 @@ You pass the filename of the blob as well as the base directory for the
 content files when you mount the filesystem like this:
 
 ```
-# mount composefs -t composefs -o descriptor=/path/to/blob,basedir=/path/to/content /mnt
+# mount /path/to/blob -t composefs -o basedir=/path/to/content /mnt
 ```
 
 This by itself doesn't seem very useful. You could use a single
@@ -98,15 +98,14 @@ How to build:
 Once it is loaded, it can be used as:
 
 ```
-# mount composefs -t composefs -o descriptor=/path/to/blob,basedir=$BASE_DIR  /mnt
+# mount /path/to/blob -t composefs -o basedir=$BASE_DIR  /mnt
 ```
 
 Mount options:
 
-`descriptor`: the path to the binary blob that was generated with the user space tools.
 `basedir`: is the directory to use as a base when resolving relative content paths.
-'noverity': Don't verify that target files have the right fs-verity digest. Useful if the fs doesn't support fs-verity but the descriptor has digests enabled.
-`digest`: A fs-verity sha256 digest that the descriptor file must match.
+'noverity': Don't verify that target files have the right fs-verity digest. Useful if the fs doesn't support fs-verity but the image has digests enabled.
+`digest`: A fs-verity sha256 digest that the image file must match.
 
 ## SELinux issues
 

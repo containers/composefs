@@ -17,7 +17,7 @@ static inline void *ERR_CAST(const void *ptr)
 
 struct lcfs_context_s;
 
-struct lcfs_context_s *lcfs_create_ctx(char *descriptor_path,
+struct lcfs_context_s *lcfs_create_ctx(const char *descriptor_path,
                                        const u8 *required_digest);
 
 void lcfs_destroy_ctx(struct lcfs_context_s *ctx);
