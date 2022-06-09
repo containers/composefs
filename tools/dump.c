@@ -30,6 +30,7 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/mman.h>
+#include <inttypes.h>
 
 static bool is_dir(const struct lcfs_inode_s *d)
 {
@@ -250,7 +251,9 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 			digest_to_string(ino.digest, digest_str);
 		}
 
-		printf("name:%.*s|ino:%zu|mode:%o|nlinks:%u|uid:%d|gid:%d|rdev:%d|size:%lu|mtim:%ld.%ld|ctim:%ld.%ld|nxargs:%d|digest:%s|payload:%s\n",
+		printf("name:%.*s|ino:%" PRIu64
+		       "|mode:%o|nlinks:%u|uid:%d|gid:%d|rdev:%d|size:%" PRIu64
+		       "|mtim:%ld.%ld|ctim:%ld.%ld|nxargs:%d|digest:%s|payload:%s\n",
 		       (int)name_len, name, index, ino.st_mode, ino.st_nlink,
 		       ino.st_uid, ino.st_gid, ino.st_rdev, ino.st_size,
 		       ino.st_mtim.tv_sec, ino.st_mtim.tv_nsec,
