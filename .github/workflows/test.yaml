@@ -64,3 +64,20 @@ jobs:
     - name: run fuzzer
       run: |
             make -C fuzzing run-ci
+
+  clang-formatter:
+    runs-on: fedora-latest
+    strategy:
+      fail-fast: false
+    steps:
+    - name: checkout
+      uses: actions/checkout@v2
+
+    - name: install dependencies
+      run: |
+            yum install -y make clang-tools-extra
+
+    - name: check formatting
+      run: |
+            make -C hacking clang-format
+            git diff --exit-code
