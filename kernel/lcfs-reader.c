@@ -367,6 +367,23 @@ const uint8_t *lcfs_get_digest(struct lcfs_context_s *ctx,
 	return NULL;
 }
 
+static bool lcfs_validate_filename(const char *name, size_t name_len)
+{
+	if (name_len == 0)
+		return false;
+
+	if (name_len == 1 && name[0] == '.')
+		return false;
+
+	if (name_len == 2 && name[0] == '.' && name[1] == '.')
+		return false;
+
+	if (memchr(name, '/', name_len) != NULL)
+		return false;
+
+	return true;
+}
+
 struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx,
 				struct lcfs_inode_s *ino, u64 index)
 {
@@ -404,6 +421,10 @@ struct lcfs_dir_s *lcfs_get_dir(struct lcfs_context_s *ctx,
 		/* name needs to fit in data */
 		if (data_end - data < name_len)
 			goto corrupted;
+
+		if (!lcfs_validate_filename(data, name_len))
+			goto corrupted;
+
 		data += name_len;
 	}
 
