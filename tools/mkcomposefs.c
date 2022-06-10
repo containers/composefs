@@ -33,6 +33,19 @@
 #include <getopt.h>
 #include <libfsverity.h>
 
+static void digest_to_string(const uint8_t *csum, char *buf)
+{
+	static const char hexchars[] = "0123456789abcdef";
+	uint32_t i, j;
+
+	for (i = 0, j = 0; i < 32; i++, j += 2) {
+		uint8_t byte = csum[i];
+		buf[j] = hexchars[byte >> 4];
+		buf[j + 1] = hexchars[byte & 0xF];
+	}
+	buf[j] = '\0';
+}
+
 static void digest_to_path(const uint8_t *csum, char *buf)
 {
 	static const char hexchars[] = "0123456789abcdef";
@@ -340,6 +353,7 @@ static void usage(const char *argv0)
 #define OPT_COMPUTE_DIGEST 106
 #define OPT_BY_DIGEST 107
 #define OPT_DIGEST_STORE 108
+#define OPT_PRINT_DIGEST 109
 
 static ssize_t write_cb(void *_file, void *buf, size_t count)
 {
@@ -393,12 +407,19 @@ int main(int argc, char **argv)
 			flag: NULL,
 			val: OPT_DIGEST_STORE
 		},
+		{
+			name: "print-digest",
+			has_arg: no_argument,
+			flag: NULL,
+			val: OPT_PRINT_DIGEST
+		},
 		{},
 	};
 	const char *bin = argv[0];
 	int buildflags = 0;
 	bool absolute_path = false;
 	bool by_digest = false;
+	bool print_digest = false;
 	struct lcfs_node_s *root;
 	const char *out = NULL;
 	const char *dir_path = NULL;
@@ -406,6 +427,7 @@ int main(int argc, char **argv)
 	char *absolute_prefix = NULL;
 	size_t path_start_offset;
 	char pathbuf[PATH_MAX];
+	uint8_t digest[LCFS_DIGEST_SIZE];
 	int opt;
 	FILE *out_file;
 
@@ -431,6 +453,9 @@ int main(int argc, char **argv)
 			break;
 		case OPT_DIGEST_STORE:
 			digest_store_path = optarg;
+			break;
+		case OPT_PRINT_DIGEST:
+			print_digest = true;
 			break;
 		case ':':
 			fprintf(stderr, "option needs a value\n");
@@ -505,8 +530,15 @@ int main(int argc, char **argv)
 	fill_payload(root, pathbuf, strlen(pathbuf), path_start_offset,
 		     by_digest, digest_store_path);
 
-	if (lcfs_write_to(root, out_file, write_cb, NULL) < 0)
+	if (lcfs_write_to(root, out_file, write_cb,
+			  print_digest ? digest : NULL) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
+
+	if (print_digest) {
+		char digest_str[LCFS_DIGEST_SIZE * 2 + 1] = { 0 };
+		digest_to_string(digest, digest_str);
+		printf("%s\n", digest_str);
+	}
 
 	lcfs_node_unref(root);
 	return 0;
