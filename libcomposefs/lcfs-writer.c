@@ -32,7 +32,7 @@
 #include <dirent.h>
 #include <sys/xattr.h>
 #include <assert.h>
-#include <libfsverity.h>
+#include <lcfs-fsverity.h>
 
 /* In memory representation used to build the file.  */
 
@@ -869,54 +869,49 @@ struct lcfs_node_s *lcfs_node_new(void)
 }
 
 int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node, void *file,
-					uint64_t file_size,
 					lcfs_read_cb read_cb)
 {
-	struct libfsverity_merkle_tree_params params = {
-		1, FS_VERITY_HASH_ALG_SHA256, file_size, 4096, 0, NULL
-	};
-	struct libfsverity_digest *computed_digest;
-	int r;
+	uint8_t digest[32];
+	uint8_t buffer[4096];
+	ssize_t n_read;
+	FsVerityContext *ctx;
 
-	r = libfsverity_compute_digest(file, read_cb, &params,
-				       &computed_digest);
-	if (r < 0) {
-		errno = -r;
+	ctx = lcfs_fsverity_context_new();
+	if (ctx == NULL) {
+		errno = ENOMEM;
 		return -1;
 	}
 
-	assert(computed_digest->digest_size == LCFS_DIGEST_SIZE);
+	while (true) {
+		n_read = read_cb(file, buffer, sizeof(buffer));
+		if (n_read < 0) {
+			lcfs_fsverity_context_free(ctx);
+			errno = ENODATA;
+			return -1;
+		}
+		if (n_read == 0)
+			break;
+		lcfs_fsverity_context_update(ctx, buffer, n_read);
+	}
 
-	lcfs_node_set_fsverity_digest(node, computed_digest->digest);
-	free(computed_digest);
+	lcfs_fsverity_context_get_digest(ctx, digest);
+	lcfs_node_set_fsverity_digest(node, digest);
+
+	lcfs_fsverity_context_free(ctx);
 
 	return 0;
 }
 
-static int fsverity_read_cb(void *_fd, void *_buf, size_t count)
+static int fsverity_read_cb(void *_fd, void *buf, size_t count)
 {
 	int fd = *(int *)_fd;
-	char *buf = _buf;
-
-	while (count) {
-		ssize_t n = read(fd, buf, count);
-		if (n < 0) {
-			return -errno;
-		}
-		if (n == 0) {
-			return -EIO;
-		}
-		buf += n;
-		count -= n;
-	}
-	return 0;
+	return read(fd, buf, count);
 }
 
-int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node, int fd,
-				   uint64_t size)
+int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node, int fd)
 {
 	int _fd = fd;
-	return lcfs_node_set_fsverity_from_content(node, &_fd, size,
+	return lcfs_node_set_fsverity_from_content(node, &_fd,
 						   fsverity_read_cb);
 }
 
@@ -957,7 +952,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 				lcfs_node_unref(ret);
 				return NULL;
 			}
-			r = lcfs_node_set_fsverity_from_fd(ret, fd, sb.st_size);
+			r = lcfs_node_set_fsverity_from_fd(ret, fd);
 			close(fd);
 			if (r < 0) {
 				lcfs_node_unref(ret);

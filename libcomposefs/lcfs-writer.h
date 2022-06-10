@@ -89,10 +89,9 @@ void lcfs_node_set_fsverity_digest(struct lcfs_node_s *node,
 				   uint8_t digest[32]);
 
 int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node, void *file,
-					uint64_t size, lcfs_read_cb read_cb);
+					lcfs_read_cb read_cb);
 
-int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node, int fd,
-				   uint64_t size);
+int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node, int fd);
 
 struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
 			       const char *fname, const char *name,
