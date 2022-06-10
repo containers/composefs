@@ -902,7 +902,7 @@ int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node, void *file,
 	return 0;
 }
 
-static int fsverity_read_cb(void *_fd, void *buf, size_t count)
+static ssize_t fsverity_read_cb(void *_fd, void *buf, size_t count)
 {
 	int fd = *(int *)_fd;
 	return read(fd, buf, count);

@@ -422,7 +422,7 @@ static void usage(const char *argv0)
 	fprintf(stderr, "usage: %s [--out=filedname] jsonfile...\n", argv0);
 }
 
-static int write_cb(void *_file, void *buf, size_t count)
+static ssize_t write_cb(void *_file, void *buf, size_t count)
 {
 	FILE *file = _file;
 

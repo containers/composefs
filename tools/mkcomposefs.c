@@ -341,7 +341,7 @@ static void usage(const char *argv0)
 #define OPT_BY_DIGEST 107
 #define OPT_DIGEST_STORE 108
 
-static int write_cb(void *_file, void *buf, size_t count)
+static ssize_t write_cb(void *_file, void *buf, size_t count)
 {
 	FILE *file = _file;
 

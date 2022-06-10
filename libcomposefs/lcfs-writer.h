@@ -33,8 +33,8 @@ enum {
 	LCFS_BUILD_COMPUTE_DIGEST = (1 << 3),
 };
 
-typedef int (*lcfs_read_cb)(void *file, void *buf, size_t count);
-typedef int (*lcfs_write_cb)(void *file, void *buf, size_t count);
+typedef ssize_t (*lcfs_read_cb)(void *file, void *buf, size_t count);
+typedef ssize_t (*lcfs_write_cb)(void *file, void *buf, size_t count);
 
 struct lcfs_node_s *lcfs_node_new(void);
 struct lcfs_node_s *lcfs_node_ref(struct lcfs_node_s *node);
