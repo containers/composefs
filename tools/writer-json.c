@@ -422,7 +422,7 @@ static void usage(const char *argv0)
 	fprintf(stderr, "usage: %s [--out=filedname] jsonfile...\n", argv0);
 }
 
-static int write_cb(void *_file, void *buf, size_t count)
+static ssize_t write_cb(void *_file, void *buf, size_t count)
 {
 	FILE *file = _file;
 
@@ -501,7 +501,7 @@ int main(int argc, char **argv)
 	if (getcwd(cwd, sizeof(cwd)) == NULL)
 		error(EXIT_FAILURE, errno, "get current working directory");
 
-	if (lcfs_write_to(root, out_file, write_cb) < 0)
+	if (lcfs_write_to(root, out_file, write_cb, NULL) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
 
 	lcfs_node_unref(root);

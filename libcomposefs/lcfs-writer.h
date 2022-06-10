@@ -33,8 +33,8 @@ enum {
 	LCFS_BUILD_COMPUTE_DIGEST = (1 << 3),
 };
 
-typedef int (*lcfs_read_cb)(void *file, void *buf, size_t count);
-typedef int (*lcfs_write_cb)(void *file, void *buf, size_t count);
+typedef ssize_t (*lcfs_read_cb)(void *file, void *buf, size_t count);
+typedef ssize_t (*lcfs_write_cb)(void *file, void *buf, size_t count);
 
 struct lcfs_node_s *lcfs_node_new(void);
 struct lcfs_node_s *lcfs_node_ref(struct lcfs_node_s *node);
@@ -89,15 +89,15 @@ void lcfs_node_set_fsverity_digest(struct lcfs_node_s *node,
 				   uint8_t digest[32]);
 
 int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node, void *file,
-					uint64_t size, lcfs_read_cb read_cb);
+					lcfs_read_cb read_cb);
 
-int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node, int fd,
-				   uint64_t size);
+int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node, int fd);
 
 struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
 			       const char *fname, const char *name,
 			       int buildflags);
 
-int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb);
+int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
+		  uint8_t *digest_out);
 
 #endif
