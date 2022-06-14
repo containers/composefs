@@ -511,12 +511,18 @@ int main(int argc, char **argv)
 		error(EXIT_FAILURE, errno, "load current directory node");
 
 	if (absolute_path) {
-		if (getcwd(pathbuf, sizeof(pathbuf)) == NULL)
-			error(EXIT_FAILURE, errno,
-			      "get current working directory");
-		strncat(pathbuf, "/", sizeof(pathbuf) - 1);
+		pathbuf[0] = '\0';
+		if (dir_path[0] != '/') {
+			if (getcwd(pathbuf, sizeof(pathbuf)) == NULL)
+				error(EXIT_FAILURE, errno,
+				      "get current working directory");
+			strncat(pathbuf, "/", sizeof(pathbuf) - 1);
+		}
 		strncat(pathbuf, dir_path, sizeof(pathbuf) - 1);
 		absolute_prefix = canonicalize_file_name(pathbuf);
+		if (absolute_prefix == NULL)
+			error(EXIT_FAILURE, errno, "Failed to canonicalize %s",
+			      pathbuf);
 		strncpy(pathbuf, absolute_prefix, sizeof(pathbuf) - 1);
 		free(absolute_prefix);
 		strncat(pathbuf, "/", sizeof(pathbuf) - 1);
