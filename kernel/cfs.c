@@ -35,13 +35,18 @@ MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 
 #include "lcfs-verity.h"
 
+#define CFS_MAX_STACK 500
+
 struct cfs_info {
 	struct lcfs_context_s *lcfs_ctx;
 
 	struct vfsmount *root_mnt;
 
 	char *base_path;
-	struct file *base;
+
+	size_t n_bases;
+	struct file **bases;
+
 	bool noverity;
 	bool has_digest;
 	uint8_t digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
@@ -81,6 +86,27 @@ static const struct address_space_operations cfs_aops = {
 };
 
 static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size);
+
+/* copied from overlayfs.  */
+static unsigned int cfs_split_lowerdirs(char *str)
+{
+	unsigned int ctr = 1;
+	char *s, *d;
+
+	for (s = d = str;; s++, d++) {
+		if (*s == '\\') {
+			s++;
+		} else if (*s == ':') {
+			*d = '\0';
+			ctr++;
+			continue;
+		}
+		*d = *s;
+		if (!*s)
+			break;
+	}
+	return ctr;
+}
 
 static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 				    struct super_block *sb, ino_t ino_num,
@@ -406,13 +432,17 @@ static void cfs_free_inode(struct inode *inode)
 static void cfs_put_super(struct super_block *sb)
 {
 	struct cfs_info *fsi = sb->s_fs_info;
+	size_t i;
 
 	if (fsi->root_mnt)
 		kern_unmount(fsi->root_mnt);
 	if (fsi->lcfs_ctx)
 		lcfs_destroy_ctx(fsi->lcfs_ctx);
-	if (fsi->base)
-		fput(fsi->base);
+	if (fsi->bases) {
+		for (i = 0; i < fsi->n_bases; i++)
+			fput(fsi->bases[i]);
+		kfree(fsi->bases);
+	}
 	if (fsi->base_path)
 		kfree(fsi->base_path);
 
@@ -479,8 +509,9 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 {
 	struct cfs_info *fsi = sb->s_fs_info;
 	struct vfsmount *root_mnt = NULL;
+	struct file **bases = NULL;
 	struct path rootpath = {};
-	struct file *base = NULL;
+	size_t numlower = 0;
 	struct inode *inode;
 	void *ctx;
 	int ret;
@@ -509,14 +540,44 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	}
 
 	if (fsi->base_path) {
+		char *lower, *splitlower = NULL;
+		size_t i;
 		struct file *f;
 
-		f = filp_open(fsi->base_path, O_PATH, 0);
-		if (IS_ERR(f)) {
-			ret = PTR_ERR(f);
+		ret = -ENOMEM;
+		splitlower = kstrdup(fsi->base_path, GFP_KERNEL);
+		if (!splitlower)
+			goto fail;
+
+		ret = -EINVAL;
+		numlower = cfs_split_lowerdirs(splitlower);
+		if (numlower > CFS_MAX_STACK) {
+			pr_err("too many lower directories, limit is %d\n",
+			       CFS_MAX_STACK);
+			kfree(splitlower);
 			goto fail;
 		}
-		base = f;
+
+		ret = -ENOMEM;
+		bases = kcalloc(numlower, sizeof(struct file *), GFP_KERNEL);
+		if (!bases) {
+			kfree(splitlower);
+			goto fail;
+		}
+
+		lower = splitlower;
+		for (i = 0; i < numlower; i++) {
+			f = filp_open(lower, O_PATH, 0);
+			if (IS_ERR(f)) {
+				ret = PTR_ERR(f);
+				kfree(splitlower);
+				goto fail;
+			}
+			bases[i] = f;
+
+			lower = strchr(lower, '\0') + 1;
+		}
+		kfree(splitlower);
 	}
 
 	ctx = lcfs_create_ctx(fc->source, fsi->has_digest ? fsi->digest : NULL);
@@ -545,11 +606,19 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	sb->s_time_gran = 1;
 
 	fsi->root_mnt = root_mnt;
-	fsi->base = base;
+	fsi->bases = bases;
+	fsi->n_bases = numlower;
 	return 0;
 fail:
-	if (base)
-		fput(base);
+	if (bases) {
+		size_t i;
+
+		for (i = 0; i < numlower; i++) {
+			if (bases[i])
+				fput(bases[i]);
+		}
+		kfree(bases);
+	}
 	if (root_mnt)
 		kern_unmount(root_mnt);
 	if (fsi->lcfs_ctx) {
@@ -568,6 +637,23 @@ static const struct fs_context_operations cfs_context_ops = {
 	.parse_param = cfs_parse_param,
 	.get_tree = cfs_get_tree,
 };
+
+static struct file *open_base_file(struct cfs_info *fsi, struct inode *inode,
+				   struct file *file)
+{
+	struct cfs_inode *cino = CFS_I(inode);
+	struct file *real_file;
+	size_t i;
+
+	for (i = 0; i < fsi->n_bases; i++) {
+		real_file = file_open_root(&(fsi->bases[i]->f_path),
+					   cino->real_path, file->f_flags, 0);
+		if (!IS_ERR(real_file) || PTR_ERR(real_file) != -ENOENT)
+			return real_file;
+	}
+
+	return ERR_PTR(-ENOENT);
+}
 
 static int cfs_open_file(struct inode *inode, struct file *file)
 {
@@ -588,12 +674,11 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 
 	/* FIXME: prevent loops opening files.  */
 
-	if (fsi->base == NULL || cino->real_path[0] == '/') {
+	if (fsi->n_bases == 0 || cino->real_path[0] == '/') {
 		real_file = file_open_root_mnt(fsi->root_mnt, cino->real_path,
 					       file->f_flags, 0);
 	} else {
-		real_file = file_open_root(&(fsi->base->f_path),
-					   cino->real_path, file->f_flags, 0);
+		real_file = open_base_file(fsi, inode, file);
 	}
 
 	if (IS_ERR(real_file)) {
