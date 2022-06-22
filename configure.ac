@@ -12,7 +12,7 @@ AM_INIT_AUTOMAKE([1.11.2 -Wno-portability foreign tar-ustar no-dist-gzip dist-xz
 AC_PROG_CC
 
 PKG_CHECK_MODULES(FSVERITY, libfsverity)
-PKG_CHECK_MODULES(LIBCRYPTO, libcrypto,[
+PKG_CHECK_MODULES(LCFS_DEP_CRYPTO, libcrypto,[
       AC_DEFINE([HAVE_OPENSSL], 1, [Define if we have openssl])
       with_openssl=yes
 ],[

@@ -10,5 +10,5 @@ libcomposefs_la_SOURCES = \
                         $(COMPOSEFSDIR)/lcfs-writer.c \
                         $(COMPOSEFSDIR)/lcfs-writer.h \
                         $(COMPOSEFSDIR)/xalloc-oversized.h
-libcomposefs_la_CFLAGS = $(WARN_CFLAGS) $(COMPOSEFS_HASH_CFLAGS) $(LIBCRYPTO_CFLAGS)
-libcomposefs_la_LIBADD = $(LIBCRYPTO_LIBS)
+libcomposefs_la_CFLAGS = $(WARN_CFLAGS) $(COMPOSEFS_HASH_CFLAGS) $(LCFS_DEP_CRYPTO_CFLAGS)
+libcomposefs_la_LIBADD = $(LCFS_DEP_CRYPTO_LIBS)
