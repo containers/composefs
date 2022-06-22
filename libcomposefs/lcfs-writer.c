@@ -21,6 +21,7 @@
 
 #include "lcfs.h"
 #include "lcfs-writer.h"
+#include "lcfs-fsverity.h"
 #include "hash.h"
 
 #include <errno.h>
@@ -32,7 +33,6 @@
 #include <dirent.h>
 #include <sys/xattr.h>
 #include <assert.h>
-#include <lcfs-fsverity.h>
 
 /* In memory representation used to build the file.  */
 
