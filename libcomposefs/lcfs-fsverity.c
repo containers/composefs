@@ -16,7 +16,7 @@
 #define SHA256_DATASIZE 64
 #define SHA256_DIGEST_LEN 32
 
-#ifdef USE_OPENSSL
+#ifdef HAVE_OPENSSL
 /* For sha256 computation */
 #include <openssl/evp.h>
 
@@ -307,7 +307,7 @@ struct FsVerityContext {
 	uint32_t buffer_pos[FSVERITY_MAX_LEVELS];
 	uint32_t max_level;
 	uint64_t file_size;
-#ifdef USE_OPENSSL
+#ifdef HAVE_OPENSSL
 	EVP_MD_CTX *md_ctx;
 #endif
 };
@@ -320,7 +320,7 @@ FsVerityContext *lcfs_fsverity_context_new(void)
 	if (ctx == NULL)
 		return NULL;
 
-#ifdef USE_OPENSSL
+#ifdef HAVE_OPENSSL
 	ctx->md_ctx = EVP_MD_CTX_create();
 	if (ctx->md_ctx == NULL) {
 		free(ctx);
@@ -333,7 +333,7 @@ FsVerityContext *lcfs_fsverity_context_new(void)
 
 void lcfs_fsverity_context_free(FsVerityContext *ctx)
 {
-#ifdef USE_OPENSSL
+#ifdef HAVE_OPENSSL
 	EVP_MD_CTX_destroy(ctx->md_ctx);
 #endif
 	free(ctx);
@@ -342,7 +342,7 @@ void lcfs_fsverity_context_free(FsVerityContext *ctx)
 static void do_sha256(FsVerityContext *ctx, const uint8_t *data,
 		      size_t data_len, uint8_t *digest)
 {
-#ifdef USE_OPENSSL
+#ifdef HAVE_OPENSSL
 	const EVP_MD *md = EVP_sha256();
 	int ret;
 
