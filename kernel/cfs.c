@@ -687,19 +687,18 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 
 	/* If metadata records a digest for the file, ensure it is there and correct before using the contents */
 	if (cino->has_digest && !fsi->noverity) {
-		size_t digest_size;
-		u8 *verity_digest;
-		struct fsverity_info *verity_info =
-			fsverity_get_info(d_inode(real_file->f_path.dentry));
-		if (verity_info == NULL) {
+		u8 verity_digest[FS_VERITY_MAX_DIGEST_SIZE];
+		enum hash_algo verity_algo;
+		int res;
+		res = fsverity_get_digest(d_inode(real_file->f_path.dentry),
+					  verity_digest, &verity_algo);
+		if (res < 0) {
 			pr_warn("WARNING: composefs backing file '%pd' unexpectedly had no fs-verity digest\n",
 				real_file->f_path.dentry);
 			fput(real_file);
 			return -EIO;
 		}
-		verity_digest = lcfs_fsverity_info_get_digest(verity_info,
-							      &digest_size);
-		if (digest_size != LCFS_DIGEST_SIZE ||
+		if (verity_algo != HASH_ALGO_SHA256 ||
 		    memcmp(cino->digest, verity_digest, LCFS_DIGEST_SIZE) !=
 			    0) {
 			pr_warn("WARNING: composefs backing file '%pd' has the wrong fs-verity digest\n",
