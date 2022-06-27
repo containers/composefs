@@ -1,7 +1,7 @@
 #ifndef _LCFS_READER_H
 #define _LCFS_READER_H
 
-#include "lcfs.h"
+#include "cfs.h"
 
 #define EFSCORRUPTED EUCLEAN /* Filesystem is corrupted */
 

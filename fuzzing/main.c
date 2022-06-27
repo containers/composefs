@@ -1,6 +1,6 @@
 #define _GNU_SOURCE
 
-#include "../kernel/lcfs-reader.h"
+#include "../kernel/cfs-reader.h"
 
 #include <stddef.h>
 #include <fcntl.h>

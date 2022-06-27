@@ -28,12 +28,12 @@
 #include <linux/exportfs.h>
 #include <linux/version.h>
 
-#include "lcfs-reader.h"
+#include "cfs-reader.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 
-#include "lcfs-verity.h"
+#include "cfs-verity.h"
 
 #define CFS_MAX_STACK 500
 

@@ -6,8 +6,8 @@
  * This file is released under the GPL.
  */
 
-#include "lcfs.h"
-#include "lcfs-reader.h"
+#include "cfs.h"
+#include "cfs-reader.h"
 
 #ifndef FUZZING
 #include <linux/string.h>
@@ -20,8 +20,8 @@
 #include <linux/unaligned/packed_struct.h>
 #endif
 
-#include "lcfs-fuzzing.h"
-#include "lcfs-verity.h"
+#include "cfs-fuzzing.h"
+#include "cfs-verity.h"
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 

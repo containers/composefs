@@ -2,4 +2,4 @@
 
 obj-m += composefs.o
 
-composefs-objs += lcfs-reader.o cfs.o
+composefs-objs += cfs-reader.o cfs.o
