@@ -38,7 +38,7 @@ MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 #define CFS_MAX_STACK 500
 
 struct cfs_info {
-	struct lcfs_context_s *lcfs_ctx;
+	struct cfs_context_s *cfs_ctx;
 
 	struct vfsmount *root_mnt;
 
@@ -49,17 +49,17 @@ struct cfs_info {
 
 	bool noverity;
 	bool has_digest;
-	uint8_t digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
+	uint8_t digest[CFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
 };
 
 struct cfs_inode {
 	struct inode
 		vfs_inode; /* must be first for clear in otfs_alloc_inode to work */
 	char *real_path;
-	struct lcfs_xattr_header_s *xattrs;
-	struct lcfs_dir_s *dir;
+	struct cfs_xattr_header_s *xattrs;
+	struct cfs_dir_s *dir;
 	bool has_digest;
-	uint8_t digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
+	uint8_t digest[CFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
 };
 
 static inline struct cfs_inode *CFS_I(struct inode *inode)
@@ -108,23 +108,23 @@ static unsigned int cfs_split_lowerdirs(char *str)
 	return ctr;
 }
 
-static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
+static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 				    struct super_block *sb, ino_t ino_num,
-				    struct lcfs_inode_s *ino,
+				    struct cfs_inode_s *ino,
 				    const struct inode *dir)
 {
 	char *target_link = NULL;
 	char *real_path = NULL;
-	struct lcfs_xattr_header_s *xattrs = NULL;
+	struct cfs_xattr_header_s *xattrs = NULL;
 	struct cfs_inode *cino;
 	struct inode *inode = NULL;
-	struct lcfs_dir_s *dirdata = NULL;
-	u8 digest_buf[LCFS_DIGEST_SIZE];
+	struct cfs_dir_s *dirdata = NULL;
+	u8 digest_buf[CFS_DIGEST_SIZE];
 	const uint8_t *digest;
 	int ret;
 
 	if ((ino->st_mode & S_IFMT) == S_IFLNK) {
-		target_link = lcfs_dup_payload_path(ctx, ino, ino_num);
+		target_link = cfs_dup_payload_path(ctx, ino, ino_num);
 		if (IS_ERR(target_link)) {
 			ret = PTR_ERR(target_link);
 			target_link = NULL;
@@ -133,7 +133,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 	}
 
 	if ((ino->st_mode & S_IFMT) == S_IFREG && ino->payload_length != 0) {
-		real_path = lcfs_dup_payload_path(ctx, ino, ino_num);
+		real_path = cfs_dup_payload_path(ctx, ino, ino_num);
 		if (IS_ERR(real_path)) {
 			ret = PTR_ERR(real_path);
 			real_path = NULL;
@@ -142,7 +142,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 	}
 
 	if ((ino->st_mode & S_IFMT) == S_IFDIR) {
-		dirdata = lcfs_get_dir(ctx, ino, ino_num);
+		dirdata = cfs_get_dir(ctx, ino, ino_num);
 		if (IS_ERR(dirdata)) {
 			ret = PTR_ERR(dirdata);
 			dirdata = NULL;
@@ -150,12 +150,12 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		}
 
 		/* We compute nlink instead of unnecessary storing it in the file */
-		ino->st_nlink = lcfs_dir_get_link_count(dirdata);
+		ino->st_nlink = cfs_dir_get_link_count(dirdata);
 	}
 
-	digest = lcfs_get_digest(ctx, ino, real_path, digest_buf);
+	digest = cfs_get_digest(ctx, ino, real_path, digest_buf);
 
-	xattrs = lcfs_get_xattrs(ctx, ino);
+	xattrs = cfs_get_xattrs(ctx, ino);
 	if (IS_ERR(xattrs)) {
 		ret = PTR_ERR(xattrs);
 		xattrs = NULL;
@@ -174,7 +174,7 @@ static struct inode *cfs_make_inode(struct lcfs_context_s *ctx,
 		cino->dir = dirdata;
 		cino->has_digest = digest != NULL;
 		if (cino->has_digest)
-			memcpy(cino->digest, digest, LCFS_DIGEST_SIZE);
+			memcpy(cino->digest, digest, CFS_DIGEST_SIZE);
 
 		inode->i_ino = ino_num;
 		set_nlink(inode, ino->st_nlink);
@@ -235,15 +235,15 @@ fail:
 static struct inode *cfs_get_root_inode(struct super_block *sb)
 {
 	struct cfs_info *fsi = sb->s_fs_info;
-	struct lcfs_inode_s ino_buf;
-	struct lcfs_inode_s *ino;
+	struct cfs_inode_s ino_buf;
+	struct cfs_inode_s *ino;
 	u64 index;
 
-	ino = lcfs_get_root_ino(fsi->lcfs_ctx, &ino_buf, &index);
+	ino = cfs_get_root_ino(fsi->cfs_ctx, &ino_buf, &index);
 	if (IS_ERR(ino))
 		return ERR_CAST(ino);
 
-	return cfs_make_inode(fsi->lcfs_ctx, sb, index, ino, NULL);
+	return cfs_make_inode(fsi->cfs_ctx, sb, index, ino, NULL);
 }
 
 static bool cfs_iterate_cb(void *private, const char *name, int name_len,
@@ -267,7 +267,7 @@ static int cfs_iterate(struct file *file, struct dir_context *ctx)
 	if (!dir_emit_dots(file, ctx))
 		return 0;
 
-	return lcfs_dir_iterate(cino->dir, ctx->pos - 2, cfs_iterate_cb, ctx);
+	return cfs_dir_iterate(cino->dir, ctx->pos - 2, cfs_iterate_cb, ctx);
 }
 
 struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
@@ -275,25 +275,25 @@ struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 {
 	struct cfs_info *fsi = dir->i_sb->s_fs_info;
 	struct cfs_inode *cino = CFS_I(dir);
-	struct lcfs_inode_s ino_buf;
+	struct cfs_inode_s ino_buf;
 	struct inode *inode;
-	struct lcfs_inode_s *ino_s;
+	struct cfs_inode_s *ino_s;
 	u64 index;
 	int ret;
 
 	if (dentry->d_name.len > NAME_MAX)
 		return ERR_PTR(-ENAMETOOLONG);
 
-	ret = lcfs_lookup(cino->dir, dentry->d_name.name, dentry->d_name.len,
-			  &index);
+	ret = cfs_dir_lookup(cino->dir, dentry->d_name.name, dentry->d_name.len,
+			     &index);
 	if (ret == 0)
 		goto return_negative;
 
-	ino_s = lcfs_get_ino_index(fsi->lcfs_ctx, index, &ino_buf);
+	ino_s = cfs_get_ino_index(fsi->cfs_ctx, index, &ino_buf);
 	if (IS_ERR(ino_s))
 		return ERR_CAST(ino_s);
 
-	inode = cfs_make_inode(fsi->lcfs_ctx, dir->i_sb, index, ino_s, dir);
+	inode = cfs_make_inode(fsi->cfs_ctx, dir->i_sb, index, ino_s, dir);
 	if (inode)
 		return d_splice_alias(inode, dentry);
 
@@ -323,7 +323,7 @@ static void digest_to_string(const uint8_t *digest, char *buf)
 	static const char hexchars[] = "0123456789abcdef";
 	uint32_t i, j;
 
-	for (i = 0, j = 0; i < LCFS_DIGEST_SIZE; i++, j += 2) {
+	for (i = 0, j = 0; i < CFS_DIGEST_SIZE; i++, j += 2) {
 		uint8_t byte = digest[i];
 		buf[j] = hexchars[byte >> 4];
 		buf[j + 1] = hexchars[byte & 0xF];
@@ -346,7 +346,7 @@ static int digest_from_string(const char *digest_str, uint8_t *digest)
 {
 	size_t i, j;
 
-	for (i = 0, j = 0; i < LCFS_DIGEST_SIZE; i += 1, j += 2) {
+	for (i = 0, j = 0; i < CFS_DIGEST_SIZE; i += 1, j += 2) {
 		int big, little;
 
 		if (digest_str[j] == 0 || digest_str[j + 1] == 0)
@@ -379,7 +379,7 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 	if (fsi->base_path)
 		seq_printf(m, ",basedir=%s", fsi->base_path);
 	if (fsi->has_digest) {
-		char buf[LCFS_DIGEST_SIZE * 2 + 1];
+		char buf[CFS_DIGEST_SIZE * 2 + 1];
 		digest_to_string(fsi->digest, buf);
 		seq_printf(m, ",digest=%s", buf);
 	}
@@ -436,8 +436,8 @@ static void cfs_put_super(struct super_block *sb)
 
 	if (fsi->root_mnt)
 		kern_unmount(fsi->root_mnt);
-	if (fsi->lcfs_ctx)
-		lcfs_destroy_ctx(fsi->lcfs_ctx);
+	if (fsi->cfs_ctx)
+		cfs_destroy_ctx(fsi->cfs_ctx);
 	if (fsi->bases) {
 		for (i = 0; i < fsi->n_bases; i++)
 			fput(fsi->bases[i]);
@@ -522,7 +522,7 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	/* Set up the inode allocator early */
 	sb->s_op = &cfs_ops;
 	sb->s_flags |= SB_RDONLY;
-	sb->s_magic = LCFS_MAGIC;
+	sb->s_magic = CFS_MAGIC;
 	sb->s_xattr = cfs_xattr_handlers;
 	sb->s_export_op = &cfs_export_operations;
 
@@ -580,13 +580,13 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 		kfree(splitlower);
 	}
 
-	ctx = lcfs_create_ctx(fc->source, fsi->has_digest ? fsi->digest : NULL);
+	ctx = cfs_create_ctx(fc->source, fsi->has_digest ? fsi->digest : NULL);
 	if (IS_ERR(ctx)) {
 		ret = PTR_ERR(ctx);
 		goto fail;
 	}
 	/* Must be set before calling cfs_get_inode.  */
-	fsi->lcfs_ctx = ctx;
+	fsi->cfs_ctx = ctx;
 
 	inode = cfs_get_root_inode(sb);
 	if (IS_ERR(inode)) {
@@ -621,9 +621,9 @@ fail:
 	}
 	if (root_mnt)
 		kern_unmount(root_mnt);
-	if (fsi->lcfs_ctx) {
-		lcfs_destroy_ctx(fsi->lcfs_ctx);
-		fsi->lcfs_ctx = NULL;
+	if (fsi->cfs_ctx) {
+		cfs_destroy_ctx(fsi->cfs_ctx);
+		fsi->cfs_ctx = NULL;
 	}
 	return ret;
 }
@@ -699,8 +699,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 			return -EIO;
 		}
 		if (verity_algo != HASH_ALGO_SHA256 ||
-		    memcmp(cino->digest, verity_digest, LCFS_DIGEST_SIZE) !=
-			    0) {
+		    memcmp(cino->digest, verity_digest, CFS_DIGEST_SIZE) != 0) {
 			pr_warn("WARNING: composefs backing file '%pd' has the wrong fs-verity digest\n",
 				real_file->f_path.dentry);
 			fput(real_file);
@@ -832,15 +831,15 @@ static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 
 	ino = ilookup(sb, inode_index);
 	if (!ino) {
-		struct lcfs_inode_s inode_buf;
-		struct lcfs_inode_s *inode;
+		struct cfs_inode_s inode_buf;
+		struct cfs_inode_s *inode;
 
-		inode = lcfs_get_ino_index(fsi->lcfs_ctx, inode_index,
-					   &inode_buf);
+		inode = cfs_get_ino_index(fsi->cfs_ctx, inode_index,
+					  &inode_buf);
 		if (IS_ERR(inode))
 			return ERR_CAST(inode);
 
-		ino = cfs_make_inode(fsi->lcfs_ctx, sb, inode_index, inode,
+		ino = cfs_make_inode(fsi->cfs_ctx, sb, inode_index, inode,
 				     NULL);
 		if (IS_ERR(ino))
 			return ERR_CAST(ino);
@@ -884,7 +883,7 @@ static int cfs_getxattr(const struct xattr_handler *handler,
 {
 	struct cfs_inode *cino = CFS_I(inode);
 
-	return lcfs_get_xattr(cino->xattrs, name, value, size);
+	return cfs_get_xattr(cino->xattrs, name, value, size);
 }
 
 static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size)
@@ -892,7 +891,7 @@ static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size)
 	struct inode *inode = d_inode(dentry);
 	struct cfs_inode *cino = CFS_I(inode);
 
-	return lcfs_list_xattrs(cino->xattrs, names, size);
+	return cfs_list_xattrs(cino->xattrs, names, size);
 }
 
 static const struct file_operations cfs_file_operations = {
