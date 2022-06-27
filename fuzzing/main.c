@@ -1,6 +1,6 @@
 #define _GNU_SOURCE
 
-#include "../kernel/lcfs-reader.h"
+#include "../kernel/cfs-reader.h"
 
 #include <stddef.h>
 #include <fcntl.h>
@@ -14,7 +14,7 @@
 
 struct test_context_s
 {
-	struct lcfs_context_s *ctx;
+	struct cfs_context_s *ctx;
 	int dirs_left;
 };
 
@@ -26,10 +26,10 @@ int LLVMFuzzerInitialize(int *argc, char ***argv)
 bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int dtype)
 {
 	struct test_context_s *test_ctx = private;
-	struct lcfs_xattr_header_s *xattrs;
-	struct lcfs_inode_s *s_ino;
-	struct lcfs_inode_s buffer;
-	struct lcfs_dir_s *dir;
+	struct cfs_xattr_header_s *xattrs;
+	struct cfs_inode_s *s_ino;
+	struct cfs_inode_s buffer;
+	struct cfs_dir_s *dir;
 	loff_t out_size;
 	char *out_path;
 	char *payload;
@@ -39,38 +39,38 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 
 	test_ctx->dirs_left--;
 
-	s_ino = lcfs_get_ino_index(test_ctx->ctx, ino, &buffer);
+	s_ino = cfs_get_ino_index(test_ctx->ctx, ino, &buffer);
 	if (IS_ERR(s_ino))
 		return true;
 
-	payload = lcfs_dup_payload_path(test_ctx->ctx, s_ino, ino);
+	payload = cfs_dup_payload_path(test_ctx->ctx, s_ino, ino);
 	if (!IS_ERR(payload)) {
-		u8 digest_buf[LCFS_DIGEST_SIZE];
-		lcfs_get_digest(test_ctx->ctx, s_ino, payload, digest_buf);
+		u8 digest_buf[CFS_DIGEST_SIZE];
+		cfs_get_digest(test_ctx->ctx, s_ino, payload, digest_buf);
 		free(payload);
 	}
 
-	xattrs = lcfs_get_xattrs(test_ctx->ctx, s_ino);
+	xattrs = cfs_get_xattrs(test_ctx->ctx, s_ino);
 	if (!IS_ERR(xattrs)) {
 		ssize_t xattrs_len;
 		char names[512] = {0, };
 		char value[512];
                 char *it;
 
-		xattrs_len = lcfs_list_xattrs(xattrs, names, sizeof(names));
+		xattrs_len = cfs_list_xattrs(xattrs, names, sizeof(names));
 		if (xattrs_len < 0)
 			return true;
 
                 for (it = names; *it; it += strlen (it))
-                  lcfs_get_xattr(xattrs, it, value, sizeof(value));
+                  cfs_get_xattr(xattrs, it, value, sizeof(value));
 
 		free(xattrs);
 	}
 
-	dir = lcfs_get_dir(test_ctx->ctx, s_ino, ino);
+	dir = cfs_get_dir(test_ctx->ctx, s_ino, ino);
 	if (!IS_ERR(dir)) {
-		lcfs_dir_get_link_count(dir);
-		lcfs_dir_iterate(dir, 0, iter_cb, test_ctx);
+		cfs_dir_get_link_count(dir);
+		cfs_dir_iterate(dir, 0, iter_cb, test_ctx);
 		free(dir);
 	}
 	return true;
@@ -97,9 +97,9 @@ ssize_t safe_write(int fd, const void *buf, ssize_t count)
 	return written;
 }
 
-static struct lcfs_context_s *create_ctx(uint8_t *buf, size_t len)
+static struct cfs_context_s *create_ctx(uint8_t *buf, size_t len)
 {
-	struct lcfs_context_s *ctx;
+	struct cfs_context_s *ctx;
 	char proc_path[64];
 	int fd;
 
@@ -113,7 +113,7 @@ static struct lcfs_context_s *create_ctx(uint8_t *buf, size_t len)
 	}
 
 	sprintf(proc_path, "/proc/self/fd/%d", fd);
-	ctx = lcfs_create_ctx(proc_path, NULL);
+	ctx = cfs_create_ctx(proc_path, NULL);
 	close(fd);
 	if (IS_ERR(ctx)) {
 		return NULL;
@@ -124,21 +124,21 @@ static struct lcfs_context_s *create_ctx(uint8_t *buf, size_t len)
 
 int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 {
-	struct lcfs_xattr_header_s *xattrs = NULL;
+	struct cfs_xattr_header_s *xattrs = NULL;
 	const size_t max_dirs = 10;
-	u8 digest_out[LCFS_DIGEST_SIZE];
+	u8 digest_out[CFS_DIGEST_SIZE];
 	struct test_context_s test_ctx;
-	struct lcfs_context_s *ctx;
-	struct lcfs_inode_s ino_buf;
-	struct lcfs_inode_s *ino;
-	struct lcfs_dir_s *dir;
+	struct cfs_context_s *ctx;
+	struct cfs_inode_s ino_buf;
+	struct cfs_inode_s *ino;
+	struct cfs_dir_s *dir;
 	char name[NAME_MAX];
 	char value[256];
 	u64 index;
 	u64 off;
 	int fd;
 
-	lcfs_digest_from_payload((const char *) buf, len, digest_out);
+	cfs_digest_from_payload((const char *) buf, len, digest_out);
 
 	ctx = create_ctx(buf, len);
 	if (ctx == NULL)
@@ -149,46 +149,46 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 
 	if (len >= sizeof (u64)) {
 		off = *((u64 *) buf);
-		lcfs_get_ino_index(ctx, off, &ino_buf);
+		cfs_get_ino_index(ctx, off, &ino_buf);
 	}
 
 	memcpy(name, buf, min(len, NAME_MAX - 1));
 	name[min(len, NAME_MAX - 1)] = '\0';
 
 	for (off = 0; off < 1000; off++) {
-		ino = lcfs_get_ino_index(ctx, off, &ino_buf);
+		ino = cfs_get_ino_index(ctx, off, &ino_buf);
 		if (!IS_ERR(ino)) {
-			struct lcfs_dir_s *dir;
+			struct cfs_dir_s *dir;
 
-			dir = lcfs_get_dir(ctx, ino, off);
+			dir = cfs_get_dir(ctx, ino, off);
 			if (!IS_ERR(dir)) {
-				lcfs_dir_get_link_count(dir);
+				cfs_dir_get_link_count(dir);
 	                        if (dir) {
-					lcfs_lookup(dir, name, strlen(name), &index);
-					lcfs_dir_iterate(dir, 0, iter_cb, &test_ctx);
+					cfs_dir_lookup(dir, name, strlen(name), &index);
+					cfs_dir_iterate(dir, 0, iter_cb, &test_ctx);
                                 }
 				free(dir);
 			}
 		}
 	}
 
-	ino = lcfs_get_root_ino(ctx, &ino_buf, &index);
+	ino = cfs_get_root_ino(ctx, &ino_buf, &index);
 	if (IS_ERR(ino))
 		goto cleanup;
 
-	xattrs = lcfs_get_xattrs(ctx, ino);
+	xattrs = cfs_get_xattrs(ctx, ino);
 	if (!IS_ERR(xattrs))
 		free(xattrs);
 
-	dir = lcfs_get_dir(ctx, ino, index);
+	dir = cfs_get_dir(ctx, ino, index);
 	if (IS_ERR(dir))
 		goto cleanup;
 
-	lcfs_dir_iterate(dir, 0, iter_cb, &test_ctx);
+	cfs_dir_iterate(dir, 0, iter_cb, &test_ctx);
 	free(dir);
 
 cleanup:
-	lcfs_destroy_ctx(ctx);
+	cfs_destroy_ctx(ctx);
 
 	return 0;
 }

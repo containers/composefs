@@ -1,10 +1,10 @@
 all: main main-run-single run
 
-main: main.c ../kernel/lcfs.h ../kernel/lcfs-fuzzing.h ../kernel/lcfs-reader.h ../kernel/lcfs-reader.c  ../tools/read-file.h ../tools/read-file.c
-	HFUZZ_CC_UBSAN=1 HFUZZ_CC_ASAN=1 hfuzz-clang -fsanitize-coverage=trace-pc-guard,trace-cmp,trace-div,indirect-calls -I ../kernel -DSTANDALONE_COMPOSEFS=1 -DFUZZING=1 main.c ../kernel/lcfs-reader.c ../tools/read-file.c -o $@
+main: main.c ../kernel/cfs.h ../kernel/cfs-fuzzing.h ../kernel/cfs-reader.h ../kernel/cfs-reader.c  ../tools/read-file.h ../tools/read-file.c
+	HFUZZ_CC_UBSAN=1 HFUZZ_CC_ASAN=1 hfuzz-clang -fsanitize-coverage=trace-pc-guard,trace-cmp,trace-div,indirect-calls -I ../kernel -DSTANDALONE_COMPOSEFS=1 -DFUZZING=1 main.c ../kernel/cfs-reader.c ../tools/read-file.c -o $@
 
-main-run-single: main.c ../kernel/lcfs.h ../kernel/lcfs-fuzzing.h ../kernel/lcfs-reader.h ../kernel/lcfs-reader.c  ../tools/read-file.h ../tools/read-file.c
-	$(CC) -ggdb3 -I ../kernel -DFUZZING=1 -DFUZZING_RUN_SINGLE=1 -DSTANDALONE_COMPOSEFS=1 main.c ../kernel/lcfs-reader.c ../tools/read-file.c -o $@
+main-run-single: main.c ../kernel/cfs.h ../kernel/cfs-fuzzing.h ../kernel/cfs-reader.h ../kernel/cfs-reader.c  ../tools/read-file.h ../tools/read-file.c
+	$(CC) -ggdb3 -I ../kernel -DFUZZING=1 -DFUZZING_RUN_SINGLE=1 -DSTANDALONE_COMPOSEFS=1 main.c ../kernel/cfs-reader.c ../tools/read-file.c -o $@
 
 corpus:
 	rm -rf corpus_
