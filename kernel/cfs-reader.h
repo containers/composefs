@@ -5,16 +5,6 @@
 
 #define EFSCORRUPTED EUCLEAN /* Filesystem is corrupted */
 
-#ifdef FUZZING
-static inline void *ERR_CAST(const void *ptr)
-{
-	return (void *)ptr;
-}
-#define ERR_PTR(x) ((void *)((long)x))
-#define PTR_ERR(x) ((long)x)
-#define IS_ERR(x) ((unsigned long)(void *)(x) >= (unsigned long)-4096)
-#endif
-
 struct cfs_context_s;
 
 struct cfs_context_s *cfs_create_ctx(const char *descriptor_path,
@@ -30,7 +20,7 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 
 const uint8_t *cfs_get_digest(struct cfs_context_s *ctx,
 			      struct cfs_inode_s *ino, const char *payload,
-			      u8 digest_buf[CFS_DIGEST_SIZE]);
+			      u8 digest_buf[SHA256_DIGEST_SIZE]);
 
 struct cfs_dir_s *cfs_get_dir(struct cfs_context_s *ctx,
 			      struct cfs_inode_s *ino, u64 index);

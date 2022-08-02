@@ -10,10 +10,6 @@
 
 #ifdef FUZZING
 
-#define FS_VERITY_MAX_DIGEST_SIZE SHA512_DIGEST_SIZE
-
-enum hash_algo { HASH_ALGO_SHA256 };
-
 static inline int fsverity_get_digest(struct inode *inode,
 				      u8 digest[FS_VERITY_MAX_DIGEST_SIZE],
 				      enum hash_algo *alg)

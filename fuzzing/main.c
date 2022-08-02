@@ -45,7 +45,7 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 
 	payload = cfs_dup_payload_path(test_ctx->ctx, s_ino, ino);
 	if (!IS_ERR(payload)) {
-		u8 digest_buf[CFS_DIGEST_SIZE];
+		u8 digest_buf[SHA256_DIGEST_SIZE];
 		cfs_get_digest(test_ctx->ctx, s_ino, payload, digest_buf);
 		free(payload);
 	}
@@ -75,8 +75,6 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 	}
 	return true;
 }
-
-#define min(a,b) ((a)<(b)?(a):(b))
 
 ssize_t safe_write(int fd, const void *buf, ssize_t count)
 {
@@ -126,7 +124,7 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 {
 	struct cfs_xattr_header_s *xattrs = NULL;
 	const size_t max_dirs = 10;
-	u8 digest_out[CFS_DIGEST_SIZE];
+	u8 digest_out[SHA256_DIGEST_SIZE];
 	struct test_context_s test_ctx;
 	struct cfs_context_s *ctx;
 	struct cfs_inode_s ino_buf;

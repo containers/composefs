@@ -1,4 +1,15 @@
 #ifdef FUZZING
+
+#include <stdio.h>
+#include <sys/types.h>
+#include <stdint.h>
+#include <stdbool.h>
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+#define timespec64 timespec
+
 #define GFP_KERNEL 0
 #include <stdio.h>
 #include <errno.h>
@@ -9,7 +20,19 @@
 #include <sys/stat.h>
 #include <endian.h>
 
+#define SHA256_DIGEST_SIZE 32
 #define SHA512_DIGEST_SIZE 64
+#define FS_VERITY_MAX_DIGEST_SIZE SHA512_DIGEST_SIZE
+
+enum hash_algo { HASH_ALGO_SHA256 };
+
+static inline void *ERR_CAST(const void *ptr)
+{
+	return (void *)ptr;
+}
+#define ERR_PTR(x) ((void *)((long)x))
+#define PTR_ERR(x) ((long)x)
+#define IS_ERR(x) ((unsigned long)(void *)(x) >= (unsigned long)-4096)
 
 #define kfree free
 #define vfree free
@@ -125,6 +148,36 @@ static inline u64 __get_unaligned_cpu64(const void *p)
 static inline struct fsverity_info *fsverity_get_info(const struct inode *inode)
 {
 	return NULL;
+}
+
+static inline u16 cpu_to_le16(u16 val)
+{
+	return htole16(val);
+}
+
+static inline u32 cpu_to_le32(u32 val)
+{
+	return htole32(val);
+}
+
+static inline u64 cpu_to_le64(u64 val)
+{
+	return htole64(val);
+}
+
+static inline u16 le16_to_cpu(u16 val)
+{
+	return le16toh(val);
+}
+
+static inline u32 le32_to_cpu(u32 val)
+{
+	return le32toh(val);
+}
+
+static inline u64 le64_to_cpu(u64 val)
+{
+	return le64toh(val);
 }
 
 #endif

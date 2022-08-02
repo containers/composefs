@@ -2,6 +2,7 @@
  * composefs
  *
  * Copyright (C) 2021 Giuseppe Scrivano
+ * Copyright (C) 2022 Alexander Larsson
  *
  * This file is released under the GPL.
  */
@@ -9,63 +10,23 @@
 #ifndef _CFS_H
 #define _CFS_H
 
-#ifdef FUZZING
-#include <stdio.h>
-#include <sys/types.h>
-#include <stdint.h>
-#include <stdbool.h>
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-#define timespec64 timespec
-#endif
-
 #include <linux/types.h>
 #include <linux/fs.h>
 #include <linux/stat.h>
 
-#ifndef FUZZING
+#ifdef FUZZING
+#include "cfs-fuzzing.h"
+#else
+
 #include <linux/byteorder/generic.h>
+#include <crypto/sha2.h>
+
 #endif
 
 #define CFS_VERSION 1
 
-#define CFS_DIGEST_SIZE 32
-
 #define CFS_MAGIC 0xc078629aU
 
-#ifdef FUZZING
-static inline u16 cfs_u16_to_file(u16 val)
-{
-	return htole16(val);
-}
-
-static inline u32 cfs_u32_to_file(u32 val)
-{
-	return htole32(val);
-}
-
-static inline u64 cfs_u64_to_file(u64 val)
-{
-	return htole64(val);
-}
-
-static inline u16 cfs_u16_from_file(u16 val)
-{
-	return le16toh(val);
-}
-
-static inline u32 cfs_u32_from_file(u32 val)
-{
-	return le32toh(val);
-}
-
-static inline u64 cfs_u64_from_file(u64 val)
-{
-	return le64toh(val);
-}
-#else
 static inline u16 cfs_u16_to_file(u16 val)
 {
 	return cpu_to_le16(val);
@@ -95,7 +56,6 @@ static inline u64 cfs_u64_from_file(u64 val)
 {
 	return le64_to_cpu(val);
 }
-#endif
 
 static inline int cfs_xdigit_value(char c)
 {
@@ -110,7 +70,7 @@ static inline int cfs_xdigit_value(char c)
 
 static inline int cfs_digest_from_payload(const char *payload,
 					  size_t payload_len,
-					  u8 digest_out[CFS_DIGEST_SIZE])
+					  u8 digest_out[SHA256_DIGEST_SIZE])
 {
 	const char *p, *end;
 	u8 last_digit = 0;
@@ -127,7 +87,7 @@ static inline int cfs_digest_from_payload(const char *payload,
 		if (*p == '.')
 			break;
 
-		if (n_nibbles == CFS_DIGEST_SIZE * 2)
+		if (n_nibbles == SHA256_DIGEST_SIZE * 2)
 			return -1; /* Too long */
 
 		digit = cfs_xdigit_value(*p);
@@ -143,7 +103,7 @@ static inline int cfs_digest_from_payload(const char *payload,
 		last_digit = digit;
 	}
 
-	if (n_nibbles != CFS_DIGEST_SIZE * 2)
+	if (n_nibbles != SHA256_DIGEST_SIZE * 2)
 		return -1; /* Too short */
 
 	return 0;
@@ -220,7 +180,7 @@ struct cfs_inode_s {
 
 	struct cfs_vdata_s xattrs; /* ref to variable data */
 
-	u8 digest[CFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
+	u8 digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 
 	struct timespec64 st_mtim; /* Time of last modification.  */
 	struct timespec64 st_ctim; /* Time of last status change.  */
@@ -240,7 +200,7 @@ static inline u32 cfs_inode_encoded_size(u32 flags)
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS, sizeof(u32) * 2) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, CFS_DIGEST_SIZE);
+	       CFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, SHA256_DIGEST_SIZE);
 }
 
 struct cfs_dentry_s {
@@ -252,7 +212,6 @@ struct cfs_dentry_s {
 } __attribute__((packed));
 
 struct cfs_dir_s {
-	/* Index of struct cfs_inode_s */
 	u32 n_dentries;
 	struct cfs_dentry_s dentries[];
 } __attribute__((packed));
