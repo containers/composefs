@@ -49,7 +49,7 @@ struct cfs_info {
 
 	bool noverity;
 	bool has_digest;
-	uint8_t digest[CFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
+	uint8_t digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 };
 
 struct cfs_inode {
@@ -59,7 +59,7 @@ struct cfs_inode {
 	struct cfs_xattr_header_s *xattrs;
 	struct cfs_dir_s *dir;
 	bool has_digest;
-	uint8_t digest[CFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
+	uint8_t digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 };
 
 static inline struct cfs_inode *CFS_I(struct inode *inode)
@@ -119,7 +119,7 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 	struct cfs_inode *cino;
 	struct inode *inode = NULL;
 	struct cfs_dir_s *dirdata = NULL;
-	u8 digest_buf[CFS_DIGEST_SIZE];
+	u8 digest_buf[SHA256_DIGEST_SIZE];
 	const uint8_t *digest;
 	int ret;
 
@@ -174,7 +174,7 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 		cino->dir = dirdata;
 		cino->has_digest = digest != NULL;
 		if (cino->has_digest)
-			memcpy(cino->digest, digest, CFS_DIGEST_SIZE);
+			memcpy(cino->digest, digest, SHA256_DIGEST_SIZE);
 
 		inode->i_ino = ino_num;
 		set_nlink(inode, ino->st_nlink);
@@ -323,7 +323,7 @@ static void digest_to_string(const uint8_t *digest, char *buf)
 	static const char hexchars[] = "0123456789abcdef";
 	uint32_t i, j;
 
-	for (i = 0, j = 0; i < CFS_DIGEST_SIZE; i++, j += 2) {
+	for (i = 0, j = 0; i < SHA256_DIGEST_SIZE; i++, j += 2) {
 		uint8_t byte = digest[i];
 		buf[j] = hexchars[byte >> 4];
 		buf[j + 1] = hexchars[byte & 0xF];
@@ -346,7 +346,7 @@ static int digest_from_string(const char *digest_str, uint8_t *digest)
 {
 	size_t i, j;
 
-	for (i = 0, j = 0; i < CFS_DIGEST_SIZE; i += 1, j += 2) {
+	for (i = 0, j = 0; i < SHA256_DIGEST_SIZE; i += 1, j += 2) {
 		int big, little;
 
 		if (digest_str[j] == 0 || digest_str[j + 1] == 0)
@@ -379,7 +379,7 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 	if (fsi->base_path)
 		seq_printf(m, ",basedir=%s", fsi->base_path);
 	if (fsi->has_digest) {
-		char buf[CFS_DIGEST_SIZE * 2 + 1];
+		char buf[SHA256_DIGEST_SIZE * 2 + 1];
 		digest_to_string(fsi->digest, buf);
 		seq_printf(m, ",digest=%s", buf);
 	}
@@ -699,7 +699,8 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 			return -EIO;
 		}
 		if (verity_algo != HASH_ALGO_SHA256 ||
-		    memcmp(cino->digest, verity_digest, CFS_DIGEST_SIZE) != 0) {
+		    memcmp(cino->digest, verity_digest, SHA256_DIGEST_SIZE) !=
+			    0) {
 			pr_warn("WARNING: composefs backing file '%pd' has the wrong fs-verity digest\n",
 				real_file->f_path.dentry);
 			fput(real_file);

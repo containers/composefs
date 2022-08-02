@@ -24,8 +24,6 @@
 
 #define CFS_VERSION 1
 
-#define CFS_DIGEST_SIZE 32
-
 #define CFS_MAGIC 0xc078629aU
 
 static inline u16 cfs_u16_to_file(u16 val)
@@ -71,7 +69,7 @@ static inline int cfs_xdigit_value(char c)
 
 static inline int cfs_digest_from_payload(const char *payload,
 					  size_t payload_len,
-					  u8 digest_out[CFS_DIGEST_SIZE])
+					  u8 digest_out[SHA256_DIGEST_SIZE])
 {
 	const char *p, *end;
 	u8 last_digit = 0;
@@ -88,7 +86,7 @@ static inline int cfs_digest_from_payload(const char *payload,
 		if (*p == '.')
 			break;
 
-		if (n_nibbles == CFS_DIGEST_SIZE * 2)
+		if (n_nibbles == SHA256_DIGEST_SIZE * 2)
 			return -1; /* Too long */
 
 		digit = cfs_xdigit_value(*p);
@@ -104,7 +102,7 @@ static inline int cfs_digest_from_payload(const char *payload,
 		last_digit = digit;
 	}
 
-	if (n_nibbles != CFS_DIGEST_SIZE * 2)
+	if (n_nibbles != SHA256_DIGEST_SIZE * 2)
 		return -1; /* Too short */
 
 	return 0;
@@ -181,7 +179,7 @@ struct cfs_inode_s {
 
 	struct cfs_vdata_s xattrs; /* ref to variable data */
 
-	u8 digest[CFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
+	u8 digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 
 	struct timespec64 st_mtim; /* Time of last modification.  */
 	struct timespec64 st_ctim; /* Time of last status change.  */
@@ -201,7 +199,7 @@ static inline u32 cfs_inode_encoded_size(u32 flags)
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS, sizeof(u32) * 2) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, CFS_DIGEST_SIZE);
+	       CFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, SHA256_DIGEST_SIZE);
 }
 
 struct cfs_dentry_s {

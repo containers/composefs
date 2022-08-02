@@ -86,8 +86,8 @@ struct cfs_context_s *cfs_create_ctx(const char *descriptor_path,
 			return ERR_PTR(res);
 		}
 		if (verity_algo != HASH_ALGO_SHA256 ||
-		    memcmp(required_digest, verity_digest, CFS_DIGEST_SIZE) !=
-			    0) {
+		    memcmp(required_digest, verity_digest,
+			   SHA256_DIGEST_SIZE) != 0) {
 			pr_err("ERROR: composefs descriptor has wrong fs-verity digest\n");
 			fput(descriptor);
 			return ERR_PTR(-EINVAL);
@@ -330,7 +330,7 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 	}
 
 	if (CFS_INODE_FLAG_CHECK(ino->flags, DIGEST)) {
-		memcpy(ino->digest, data, CFS_DIGEST_SIZE);
+		memcpy(ino->digest, data, SHA256_DIGEST_SIZE);
 		data += 32;
 	}
 
@@ -348,7 +348,7 @@ struct cfs_inode_s *cfs_get_root_ino(struct cfs_context_s *ctx,
 
 const uint8_t *cfs_get_digest(struct cfs_context_s *ctx,
 			      struct cfs_inode_s *ino, const char *payload,
-			      u8 digest_buf[CFS_DIGEST_SIZE])
+			      u8 digest_buf[SHA256_DIGEST_SIZE])
 {
 	if (CFS_INODE_FLAG_CHECK(ino->flags, DIGEST)) {
 		return ino->digest;
