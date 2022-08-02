@@ -211,7 +211,6 @@ struct cfs_dentry_s {
 } __attribute__((packed));
 
 struct cfs_dir_s {
-	/* Index of struct cfs_inode_s */
 	u32 n_dentries;
 	struct cfs_dentry_s dentries[];
 } __attribute__((packed));
