@@ -54,8 +54,9 @@ struct cfs_info {
 };
 
 struct cfs_inode {
-	struct inode
-		vfs_inode; /* must be first for clear in otfs_alloc_inode to work */
+	/* must be first for clear in cfs_alloc_inode to work */
+	struct inode vfs_inode;
+
 	char *real_path;
 	struct cfs_xattr_header_s *xattrs;
 	struct cfs_dir_s *dir;
