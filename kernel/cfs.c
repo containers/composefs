@@ -943,7 +943,6 @@ static struct file_system_type cfs_type = {
 	.name = "composefs",
 	.init_fs_context = cfs_init_fs_context,
 	.parameters = cfs_parameters,
-	.fs_flags = FS_USERNS_MOUNT,
 	.kill_sb = kill_anon_super,
 };
 
