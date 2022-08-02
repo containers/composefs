@@ -76,8 +76,6 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 	return true;
 }
 
-#define min(a,b) ((a)<(b)?(a):(b))
-
 ssize_t safe_write(int fd, const void *buf, ssize_t count)
 {
 	ssize_t written = 0;

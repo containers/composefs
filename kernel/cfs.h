@@ -9,24 +9,17 @@
 #ifndef _CFS_H
 #define _CFS_H
 
-#ifdef FUZZING
-#include <stdio.h>
-#include <sys/types.h>
-#include <stdint.h>
-#include <stdbool.h>
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-#define timespec64 timespec
-#endif
-
 #include <linux/types.h>
 #include <linux/fs.h>
 #include <linux/stat.h>
 
-#ifndef FUZZING
+#ifdef FUZZING
+#include "cfs-fuzzing.h"
+#else
+
 #include <linux/byteorder/generic.h>
+#include <crypto/sha2.h>
+
 #endif
 
 #define CFS_VERSION 1
@@ -35,37 +28,6 @@ typedef uint64_t u64;
 
 #define CFS_MAGIC 0xc078629aU
 
-#ifdef FUZZING
-static inline u16 cfs_u16_to_file(u16 val)
-{
-	return htole16(val);
-}
-
-static inline u32 cfs_u32_to_file(u32 val)
-{
-	return htole32(val);
-}
-
-static inline u64 cfs_u64_to_file(u64 val)
-{
-	return htole64(val);
-}
-
-static inline u16 cfs_u16_from_file(u16 val)
-{
-	return le16toh(val);
-}
-
-static inline u32 cfs_u32_from_file(u32 val)
-{
-	return le32toh(val);
-}
-
-static inline u64 cfs_u64_from_file(u64 val)
-{
-	return le64toh(val);
-}
-#else
 static inline u16 cfs_u16_to_file(u16 val)
 {
 	return cpu_to_le16(val);
@@ -95,7 +57,6 @@ static inline u64 cfs_u64_from_file(u64 val)
 {
 	return le64_to_cpu(val);
 }
-#endif
 
 static inline int cfs_xdigit_value(char c)
 {

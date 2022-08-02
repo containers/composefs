@@ -20,7 +20,6 @@
 #include <linux/unaligned/packed_struct.h>
 #endif
 
-#include "cfs-fuzzing.h"
 #include "cfs-verity.h"
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
