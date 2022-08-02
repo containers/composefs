@@ -2,6 +2,7 @@
  * composefs
  *
  * Copyright (C) 2021 Giuseppe Scrivano
+ * Copyright (C) 2022 Alexander Larsson
  *
  * This file is released under the GPL.
  */
