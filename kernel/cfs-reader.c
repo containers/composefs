@@ -413,7 +413,7 @@ struct cfs_dir_s *cfs_get_dir(struct cfs_context_s *ctx,
 	/* Verify and convert all dentries upfront */
 	for (i = 0; i < n_dentries; i++) {
 		struct cfs_dentry_s *d = &dir->dentries[i];
-		u16 name_len = d->name_len = cfs_u16_from_file(d->name_len);
+		u32 name_len = d->name_len;
 		d->inode_index = cfs_u64_from_file(d->inode_index);
 
 		/* name needs to fit in data */

@@ -272,8 +272,7 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 
 		namedata = (char *)dir + lcfs_dir_size(n_dentries);
 		for (i = 0; i < n_dentries; i++) {
-			child_name_len =
-				lcfs_u16_from_file(dir->dentries[i].name_len);
+			child_name_len = dir->dentries[i].name_len;
 			dump_inode(inode_data, vdata, namedata, child_name_len,
 				   lcfs_u64_from_file(
 					   dir->dentries[i].inode_index),
@@ -308,8 +307,7 @@ static uint64_t find_child(const uint8_t *inode_data, uint64_t current,
 	name_len = strlen(name);
 	namedata = (char *)dir + lcfs_dir_size(n_dentries);
 	for (i = 0; i < n_dentries; i++) {
-		size_t child_name_len =
-			lcfs_u16_from_file(dir->dentries[i].name_len);
+		size_t child_name_len = dir->dentries[i].name_len;
 		if (name_len == child_name_len &&
 		    memcmp(name, namedata, name_len) == 0) {
 			return lcfs_u64_from_file(dir->dentries[i].inode_index);

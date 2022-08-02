@@ -206,9 +206,8 @@ static inline u32 cfs_inode_encoded_size(u32 flags)
 struct cfs_dentry_s {
 	/* Index of struct cfs_inode_s */
 	u64 inode_index;
-	u16 name_len;
+	u8 name_len;
 	u8 d_type;
-	u8 pad;
 } __attribute__((packed));
 
 struct cfs_dir_s {

@@ -27,6 +27,8 @@
 
 #define LCFS_DIGEST_SIZE 32
 
+#define LCFS_MAX_NAME_LENGTH 255 /* max len of file name excluding NULL */
+
 #define LCFS_MAGIC 0xc078629aU
 
 static inline uint16_t lcfs_u16_to_file(uint16_t val)
@@ -209,9 +211,8 @@ static inline uint32_t lcfs_inode_encoded_size(uint32_t flags)
 struct lcfs_dentry_s {
 	/* Index of struct lcfs_inode_s */
 	uint64_t inode_index;
-	uint16_t name_len;
+	uint8_t name_len;
 	uint8_t d_type;
-	uint8_t pad;
 } __attribute__((packed));
 
 struct lcfs_dir_s {

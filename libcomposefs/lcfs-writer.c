@@ -300,7 +300,8 @@ static ssize_t compute_payload_size(struct lcfs_node_s *node)
 				struct lcfs_node_s *child = node->children[i];
 				/* Need valid names for all children */
 				if (child->name == NULL ||
-				    strlen(child->name) > UINT16_MAX) {
+				    strlen(child->name) >
+					    LCFS_MAX_NAME_LENGTH) {
 					errno = EINVAL;
 					return -1;
 				}
@@ -679,10 +680,8 @@ static int write_payload_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 
 			dentry.inode_index =
 				lcfs_u64_to_file(target_child->inode_index);
-			dentry.name_len =
-				lcfs_u16_to_file(strlen(dirent_child->name));
+			dentry.name_len = strlen(dirent_child->name);
 			dentry.d_type = node_get_dtype(target_child);
-			dentry.pad = 0;
 			ret = lcfs_write(ctx, &dentry, sizeof(dentry));
 			if (ret < 0)
 				return ret;
@@ -1216,6 +1215,11 @@ int lcfs_node_add_child(struct lcfs_node_s *parent, struct lcfs_node_s *child,
 
 	if ((parent->inode.st_mode & S_IFMT) != S_IFDIR) {
 		errno = ENOTDIR;
+		return -1;
+	}
+
+	if (strlen(name) > LCFS_MAX_NAME_LENGTH) {
+		errno = ENAMETOOLONG;
 		return -1;
 	}
 
