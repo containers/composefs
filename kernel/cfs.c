@@ -57,9 +57,10 @@ struct cfs_inode {
 	/* must be first for clear in cfs_alloc_inode to work */
 	struct inode vfs_inode;
 
+	u32 payload_length;
 	char *real_path;
 	struct cfs_xattr_header_s *xattrs;
-	struct cfs_dir_s *dir;
+	struct cfs_dir_data_s dir_data;
 	bool has_digest;
 	uint8_t digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 };
@@ -120,10 +121,10 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 	struct cfs_xattr_header_s *xattrs = NULL;
 	struct cfs_inode *cino;
 	struct inode *inode = NULL;
-	struct cfs_dir_s *dirdata = NULL;
 	u8 digest_buf[SHA256_DIGEST_SIZE];
 	const uint8_t *digest;
-	int ret;
+	struct cfs_dir_data_s dir_data;
+	int ret, res;
 
 	if ((ino->st_mode & S_IFMT) == S_IFLNK) {
 		target_link = cfs_dup_payload_path(ctx, ino, ino_num);
@@ -144,15 +145,11 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 	}
 
 	if ((ino->st_mode & S_IFMT) == S_IFDIR) {
-		dirdata = cfs_get_dir(ctx, ino, ino_num);
-		if (IS_ERR(dirdata)) {
-			ret = PTR_ERR(dirdata);
-			dirdata = NULL;
+		res = cfs_get_dir_data(ctx, ino, ino_num, &dir_data);
+		if (res < 0) {
+			ret = res;
 			goto fail;
 		}
-
-		/* We compute nlink instead of unnecessary storing it in the file */
-		ino->st_nlink = cfs_dir_get_link_count(dirdata);
 	}
 
 	digest = cfs_get_digest(ctx, ino, real_path, digest_buf);
@@ -172,8 +169,10 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 		mapping_set_unevictable(inode->i_mapping);
 
 		cino = CFS_I(inode);
+		cino->payload_length = ino->payload_length;
 		cino->xattrs = xattrs;
-		cino->dir = dirdata;
+		if ((ino->st_mode & S_IFMT) == S_IFDIR)
+			cino->dir_data = dir_data;
 		cino->has_digest = digest != NULL;
 		if (cino->has_digest)
 			memcpy(cino->digest, digest, SHA256_DIGEST_SIZE);
@@ -227,8 +226,6 @@ fail:
 		kfree(real_path);
 	if (xattrs)
 		kfree(xattrs);
-	if (dirdata)
-		kfree(dirdata);
 	if (target_link)
 		kfree(target_link);
 	return ERR_PTR(ret);
@@ -264,12 +261,16 @@ static bool cfs_iterate_cb(void *private, const char *name, int name_len,
 
 static int cfs_iterate(struct file *file, struct dir_context *ctx)
 {
-	struct cfs_inode *cino = CFS_I(file->f_inode);
+	struct inode *inode = file->f_inode;
+	struct cfs_info *fsi = inode->i_sb->s_fs_info;
+	struct cfs_inode *cino = CFS_I(inode);
 
 	if (!dir_emit_dots(file, ctx))
 		return 0;
 
-	return cfs_dir_iterate(cino->dir, ctx->pos - 2, cfs_iterate_cb, ctx);
+	return cfs_dir_iterate(fsi->cfs_ctx, cino->payload_length, inode->i_ino,
+			       &cino->dir_data, ctx->pos - 2, cfs_iterate_cb,
+			       ctx);
 }
 
 struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
@@ -286,8 +287,9 @@ struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 	if (dentry->d_name.len > NAME_MAX)
 		return ERR_PTR(-ENAMETOOLONG);
 
-	ret = cfs_dir_lookup(cino->dir, dentry->d_name.name, dentry->d_name.len,
-			     &index);
+	ret = cfs_dir_lookup(fsi->cfs_ctx, cino->payload_length, dir->i_ino,
+			     &cino->dir_data, dentry->d_name.name,
+			     dentry->d_name.len, &index);
 	if (ret < 0)
 		return ERR_PTR(ret);
 	if (ret == 0)
@@ -424,8 +426,6 @@ static void cfs_destroy_inode(struct inode *inode)
 		kfree(cino->real_path);
 	if (cino->xattrs)
 		kfree(cino->xattrs);
-	if (cino->dir)
-		kfree(cino->dir);
 }
 
 static void cfs_free_inode(struct inode *inode)

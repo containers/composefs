@@ -263,21 +263,38 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 	}
 
 	if (dirp && recurse && ino.payload_length != 0) {
-		const char *namedata;
 		const struct lcfs_dir_s *dir;
-		size_t n_dentries, child_name_len;
+		const uint8_t *chunkdata;
+		size_t n_chunks;
+		int j;
 
 		dir = (const struct lcfs_dir_s *)payload_data;
-		n_dentries = lcfs_u32_from_file(dir->n_dentries);
+		n_chunks = lcfs_u32_from_file(dir->n_chunks);
+		chunkdata = payload_data + lcfs_dir_size(n_chunks);
 
-		namedata = (char *)dir + lcfs_dir_size(n_dentries);
-		for (i = 0; i < n_dentries; i++) {
-			child_name_len = dir->dentries[i].name_len;
-			dump_inode(inode_data, vdata, namedata, child_name_len,
-				   lcfs_u64_from_file(
-					   dir->dentries[i].inode_index),
-				   rec + 1, extended, xattrs, recurse);
-			namedata += child_name_len;
+		for (j = 0; j < n_chunks; j++) {
+			const struct lcfs_dir_chunk_s *chunk = &dir->chunks[j];
+			size_t n_dentries =
+				lcfs_u16_from_file(chunk->n_dentries);
+			size_t chunk_size =
+				lcfs_u16_from_file(chunk->chunk_size);
+			const struct lcfs_dentry_s *dentries;
+			const char *namedata;
+
+			dentries = (const struct lcfs_dentry_s *)chunkdata;
+			namedata = (const char *)chunkdata +
+				   sizeof(struct lcfs_dentry_s) * n_dentries;
+			chunkdata += chunk_size;
+
+			for (i = 0; i < n_dentries; i++) {
+				size_t child_name_len = dentries[i].name_len;
+				dump_inode(inode_data, vdata, namedata,
+					   child_name_len,
+					   lcfs_u64_from_file(
+						   dentries[i].inode_index),
+					   rec + 1, extended, xattrs, recurse);
+				namedata += child_name_len;
+			}
 		}
 	}
 
@@ -289,9 +306,9 @@ static uint64_t find_child(const uint8_t *inode_data, uint64_t current,
 {
 	struct lcfs_inode_s ino;
 	const uint8_t *payload_data;
-	const char *namedata;
+	const uint8_t *chunkdata;
 	const struct lcfs_dir_s *dir;
-	size_t i, n_dentries, name_len;
+	size_t i, j, n_chunks, name_len;
 
 	decode_inode(inode_data, current, &ino, &payload_data);
 
@@ -302,17 +319,31 @@ static uint64_t find_child(const uint8_t *inode_data, uint64_t current,
 		return UINT64_MAX;
 
 	dir = (const struct lcfs_dir_s *)payload_data;
-	n_dentries = lcfs_u32_from_file(dir->n_dentries);
+	n_chunks = lcfs_u32_from_file(dir->n_chunks);
+	chunkdata = payload_data + lcfs_dir_size(n_chunks);
 
-	name_len = strlen(name);
-	namedata = (char *)dir + lcfs_dir_size(n_dentries);
-	for (i = 0; i < n_dentries; i++) {
-		size_t child_name_len = dir->dentries[i].name_len;
-		if (name_len == child_name_len &&
-		    memcmp(name, namedata, name_len) == 0) {
-			return lcfs_u64_from_file(dir->dentries[i].inode_index);
+	for (j = 0; j < n_chunks; j++) {
+		const struct lcfs_dir_chunk_s *chunk = &dir->chunks[j];
+		size_t n_dentries = lcfs_u16_from_file(chunk->n_dentries);
+		size_t chunk_size = lcfs_u16_from_file(chunk->chunk_size);
+		const struct lcfs_dentry_s *dentries;
+		const char *namedata;
+
+		dentries = (const struct lcfs_dentry_s *)chunkdata;
+		namedata = (const char *)chunkdata +
+			   sizeof(struct lcfs_dentry_s) * n_dentries;
+		chunkdata += chunk_size;
+
+		name_len = strlen(name);
+		for (i = 0; i < n_dentries; i++) {
+			size_t child_name_len = dentries[i].name_len;
+			if (name_len == child_name_len &&
+			    memcmp(name, namedata, name_len) == 0) {
+				return lcfs_u64_from_file(
+					dentries[i].inode_index);
+			}
+			namedata += child_name_len;
 		}
-		namedata += child_name_len;
 	}
 
 	return UINT64_MAX;
