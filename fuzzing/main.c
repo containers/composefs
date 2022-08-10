@@ -29,10 +29,11 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 	struct cfs_xattr_header_s *xattrs;
 	struct cfs_inode_s *s_ino;
 	struct cfs_inode_s buffer;
-	struct cfs_dir_s *dir;
+	struct cfs_dir_data_s dirdata;
 	loff_t out_size;
 	char *out_path;
 	char *payload;
+	int res;
 
         if (test_ctx->dirs_left == 0)
 		return false;
@@ -67,11 +68,9 @@ bool iter_cb(void *private, const char *name, int namelen, u64 ino, unsigned int
 		free(xattrs);
 	}
 
-	dir = cfs_get_dir(test_ctx->ctx, s_ino, ino);
-	if (!IS_ERR(dir)) {
-		cfs_dir_get_link_count(dir);
-		cfs_dir_iterate(dir, 0, iter_cb, test_ctx);
-		free(dir);
+	res = cfs_get_dir_data(test_ctx->ctx, s_ino, ino, &dirdata);
+	if (res >= 0) {
+		cfs_dir_iterate(test_ctx->ctx, s_ino->payload_length, ino, &dirdata, 0, iter_cb, test_ctx);
 	}
 	return true;
 }
@@ -129,12 +128,13 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 	struct cfs_context_s *ctx;
 	struct cfs_inode_s ino_buf;
 	struct cfs_inode_s *ino;
-	struct cfs_dir_s *dir;
+	struct cfs_dir_data_s dirdata;
 	char name[NAME_MAX];
 	char value[256];
 	u64 index;
 	u64 off;
 	int fd;
+	int res;
 
 	cfs_digest_from_payload((const char *) buf, len, digest_out);
 
@@ -156,16 +156,12 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 	for (off = 0; off < 1000; off++) {
 		ino = cfs_get_ino_index(ctx, off, &ino_buf);
 		if (!IS_ERR(ino)) {
-			struct cfs_dir_s *dir;
-
-			dir = cfs_get_dir(ctx, ino, off);
-			if (!IS_ERR(dir)) {
-				cfs_dir_get_link_count(dir);
-	                        if (dir) {
-					cfs_dir_lookup(dir, name, strlen(name), &index);
-					cfs_dir_iterate(dir, 0, iter_cb, &test_ctx);
-                                }
-				free(dir);
+			res = cfs_get_dir_data(ctx, ino, off, &dirdata);
+			if (res >= 0) {
+				if ((ino->st_mode & S_IFMT) == S_IFDIR) {
+					cfs_dir_lookup(ctx, ino->payload_length, off, &dirdata, name, strlen(name), &index);
+					cfs_dir_iterate(ctx, ino->payload_length, off, &dirdata, 0, iter_cb, &test_ctx);
+				}
 			}
 		}
 	}
@@ -178,12 +174,11 @@ int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 	if (!IS_ERR(xattrs))
 		free(xattrs);
 
-	dir = cfs_get_dir(ctx, ino, index);
-	if (IS_ERR(dir))
+	res = cfs_get_dir_data(ctx, ino, index, &dirdata);
+	if (res < 0)
 		goto cleanup;
 
-	cfs_dir_iterate(dir, 0, iter_cb, &test_ctx);
-	free(dir);
+	cfs_dir_iterate(ctx, ino->payload_length, index, &dirdata, 0, iter_cb, &test_ctx);
 
 cleanup:
 	cfs_destroy_ctx(ctx);

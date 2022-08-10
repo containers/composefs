@@ -296,8 +296,10 @@ struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 		return ERR_CAST(ino_s);
 
 	inode = cfs_make_inode(fsi->cfs_ctx, dir->i_sb, index, ino_s, dir);
-	if (inode)
-		return d_splice_alias(inode, dentry);
+	if (IS_ERR(inode))
+		return ERR_CAST(inode);
+
+	return d_splice_alias(inode, dentry);
 
 return_negative:
 	d_add(dentry, NULL);
