@@ -940,6 +940,7 @@ static int cfs_init_fs_context(struct fs_context *fc)
 }
 
 static struct file_system_type cfs_type = {
+	.owner = THIS_MODULE,
 	.name = "composefs",
 	.init_fs_context = cfs_init_fs_context,
 	.parameters = cfs_parameters,
