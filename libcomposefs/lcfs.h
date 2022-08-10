@@ -28,6 +28,7 @@
 #define LCFS_DIGEST_SIZE 32
 
 #define LCFS_MAX_DIR_CHUNK_SIZE 4096
+#define LCFS_MAX_XATTRS_SIZE 4096
 
 #define LCFS_MAX_NAME_LENGTH 255 /* max len of file name excluding NULL */
 

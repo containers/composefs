@@ -492,6 +492,10 @@ struct cfs_xattr_header_s *cfs_get_xattrs(struct cfs_context_s *ctx,
 	if (ino->xattrs.len < sizeof(struct cfs_xattr_header_s))
 		return ERR_PTR(-EFSCORRUPTED);
 
+	/* Don't allocate arbitriary size xattrs */
+	if (ino->xattrs.len > CFS_MAX_XATTRS_SIZE)
+		return ERR_PTR(-EFSCORRUPTED);
+
 	xattrs = cfs_alloc_vdata(ctx, ino->xattrs);
 	if (IS_ERR(xattrs))
 		return ERR_CAST(xattrs);

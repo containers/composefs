@@ -28,6 +28,7 @@
 #define CFS_MAGIC 0xc078629aU
 
 #define CFS_MAX_DIR_CHUNK_SIZE 4096
+#define CFS_MAX_XATTRS_SIZE 4096
 
 static inline u16 cfs_u16_to_file(u16 val)
 {

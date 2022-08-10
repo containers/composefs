@@ -512,6 +512,13 @@ static int compute_xattrs(struct lcfs_ctx_s *ctx)
 		}
 		header_len = lcfs_xattr_header_size(node->n_xattrs);
 		buffer_len = header_len + data_length;
+
+		/* Limit to max xattrs size */
+		if (buffer_len > LCFS_MAX_XATTRS_SIZE) {
+			errno = EINVAL;
+			return -1;
+		}
+
 		buffer = calloc(1, buffer_len);
 		if (buffer == NULL) {
 			errno = ENOMEM;
