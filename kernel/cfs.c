@@ -288,6 +288,8 @@ struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 
 	ret = cfs_dir_lookup(cino->dir, dentry->d_name.name, dentry->d_name.len,
 			     &index);
+	if (ret < 0)
+		return ERR_PTR(ret);
 	if (ret == 0)
 		goto return_negative;
 
