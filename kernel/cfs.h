@@ -27,6 +27,9 @@
 
 #define CFS_MAGIC 0xc078629aU
 
+#define CFS_MAX_DIR_CHUNK_SIZE 4096
+#define CFS_MAX_XATTRS_SIZE 4096
+
 static inline u16 cfs_u16_to_file(u16 val)
 {
 	return cpu_to_le16(val);
@@ -151,6 +154,7 @@ enum cfs_inode_flags {
 
 #define CFS_INODE_DEFAULT_MODE 0100644
 #define CFS_INODE_DEFAULT_NLINK 1
+#define CFS_INODE_DEFAULT_NLINK_DIR 2
 #define CFS_INODE_DEFAULT_UIDGID 0
 #define CFS_INODE_DEFAULT_RDEV 0
 #define CFS_INODE_DEFAULT_TIMES 0
@@ -206,18 +210,23 @@ static inline u32 cfs_inode_encoded_size(u32 flags)
 struct cfs_dentry_s {
 	/* Index of struct cfs_inode_s */
 	u64 inode_index;
-	u16 name_len;
+	u8 name_len;
 	u8 d_type;
-	u8 pad;
+} __attribute__((packed));
+
+struct cfs_dir_chunk_s {
+	u16 n_dentries;
+	u16 chunk_size;
 } __attribute__((packed));
 
 struct cfs_dir_s {
-	u32 n_dentries;
-	struct cfs_dentry_s dentries[];
+	u32 n_chunks;
+	struct cfs_dir_chunk_s chunks[];
 } __attribute__((packed));
 
-#define cfs_dir_size(_n_dentries)                                              \
-	(sizeof(struct cfs_dir_s) + (_n_dentries) * sizeof(struct cfs_dentry_s))
+#define cfs_dir_size(_n_chunks)                                                \
+	(sizeof(struct cfs_dir_s) +                                            \
+	 (_n_chunks) * sizeof(struct cfs_dir_chunk_s))
 
 /* xattr representation.  */
 struct cfs_xattr_element_s {

@@ -27,6 +27,11 @@
 
 #define LCFS_DIGEST_SIZE 32
 
+#define LCFS_MAX_DIR_CHUNK_SIZE 4096
+#define LCFS_MAX_XATTRS_SIZE 4096
+
+#define LCFS_MAX_NAME_LENGTH 255 /* max len of file name excluding NULL */
+
 #define LCFS_MAGIC 0xc078629aU
 
 static inline uint16_t lcfs_u16_to_file(uint16_t val)
@@ -153,6 +158,7 @@ enum lcfs_inode_flags {
 
 #define LCFS_INODE_DEFAULT_MODE 0100644
 #define LCFS_INODE_DEFAULT_NLINK 1
+#define LCFS_INODE_DEFAULT_NLINK_DIR 2
 #define LCFS_INODE_DEFAULT_UIDGID 0
 #define LCFS_INODE_DEFAULT_RDEV 0
 #define LCFS_INODE_DEFAULT_TIMES 0
@@ -209,20 +215,23 @@ static inline uint32_t lcfs_inode_encoded_size(uint32_t flags)
 struct lcfs_dentry_s {
 	/* Index of struct lcfs_inode_s */
 	uint64_t inode_index;
-	uint16_t name_len;
+	uint8_t name_len;
 	uint8_t d_type;
-	uint8_t pad;
+} __attribute__((packed));
+
+struct lcfs_dir_chunk_s {
+	uint16_t n_dentries;
+	uint16_t chunk_size;
 } __attribute__((packed));
 
 struct lcfs_dir_s {
-	/* Index of struct lcfs_inode_s */
-	uint32_t n_dentries;
-	struct lcfs_dentry_s dentries[];
+	uint32_t n_chunks;
+	struct lcfs_dir_chunk_s chunks[];
 } __attribute__((packed));
 
-#define lcfs_dir_size(_n_dentries)                                             \
+#define lcfs_dir_size(_n_chunks)                                               \
 	(sizeof(struct lcfs_dir_s) +                                           \
-	 (_n_dentries) * sizeof(struct lcfs_dentry_s))
+	 (_n_chunks) * sizeof(struct lcfs_dir_chunk_s))
 
 /* xattr representation.  */
 struct lcfs_xattr_element_s {
