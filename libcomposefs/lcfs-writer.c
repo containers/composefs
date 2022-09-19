@@ -499,11 +499,10 @@ static int compute_xattrs(struct lcfs_ctx_s *ctx)
 	int r;
 
 	for (node = ctx->root; node != NULL; node = node->next) {
-		qsort(node->xattrs, node->n_xattrs, sizeof(node->xattrs[0]),
-		      cmp_xattr);
-
 		if (node->n_xattrs == 0)
 			continue;
+
+		/* compute_tree canonicalized the xattr order already */
 
 		data_length = 0;
 		for (i = 0; i < node->n_xattrs; i++) {
