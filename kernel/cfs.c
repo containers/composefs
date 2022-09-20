@@ -220,8 +220,8 @@ static int cfs_iterate(struct file *file, struct dir_context *ctx)
 			       ctx->pos - 2, cfs_iterate_cb, ctx);
 }
 
-struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
-			  unsigned int flags)
+static struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
+				 unsigned int flags)
 {
 	struct cfs_info *fsi = dir->i_sb->s_fs_info;
 	struct cfs_inode *cino = CFS_I(dir);
