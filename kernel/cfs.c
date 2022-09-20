@@ -330,7 +330,7 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 	struct cfs_info *fsi = root->d_sb->s_fs_info;
 
 	if (fsi->noverity)
-		seq_printf(m, ",noverity");
+		seq_puts(m, ",noverity");
 	if (fsi->base_path)
 		seq_printf(m, ",basedir=%s", fsi->base_path);
 	if (fsi->has_digest) {
