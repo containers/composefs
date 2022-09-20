@@ -23,9 +23,6 @@
 static char *cfs_dup_payload_path(struct cfs_context_s *ctx,
 				  struct cfs_inode_s *ino, u64 index);
 
-static struct cfs_xattr_header_s *cfs_get_xattrs(struct cfs_context_s *ctx,
-						 struct cfs_inode_s *ino);
-
 static void cfs_buf_put(struct cfs_buf *buf)
 {
 	if (buf->page) {
@@ -237,38 +234,6 @@ static void *cfs_get_vdata_buf(struct cfs_context_s *ctx, u64 offset, u32 len,
 		return ERR_PTR(-EINVAL);
 
 	return cfs_get_buf(ctx, ctx->header.data_offset + offset, len, buf);
-}
-
-static void *cfs_read_vdata(struct cfs_context_s *ctx, u64 offset, u32 len,
-			    void *dest)
-{
-	if (!dest)
-		return NULL;
-
-	return cfs_read_data(ctx, ctx->header.data_offset + offset, len, dest);
-}
-
-static void *cfs_get_vdata(struct cfs_context_s *ctx,
-			   const struct cfs_vdata_s vdata, void *dest)
-{
-	return cfs_read_vdata(ctx, vdata.off, vdata.len, dest);
-}
-
-static void *cfs_alloc_vdata(struct cfs_context_s *ctx,
-			     const struct cfs_vdata_s vdata)
-{
-	u8 *buf;
-	void *res;
-
-	buf = kmalloc(vdata.len, GFP_KERNEL);
-	if (!buf)
-		return ERR_PTR(-ENOMEM);
-
-	res = cfs_get_vdata(ctx, vdata, buf);
-	if (IS_ERR(res))
-		kfree(buf);
-
-	return res;
 }
 
 static u32 cfs_read_u32(u8 **data)
@@ -509,7 +474,6 @@ int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 	int ret = 0;
 	size_t i;
 	char *path_payload = NULL;
-	struct cfs_xattr_header_s *xattrs;
 
 	inode_data->payload_length = ino->payload_length;
 
@@ -546,12 +510,18 @@ int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 
 	inode_data->has_digest = ret != 0;
 
-	xattrs = cfs_get_xattrs(ctx, ino);
-	if (IS_ERR(xattrs)) {
-		ret = PTR_ERR(xattrs);
-		goto fail;
+	inode_data->xattrs_offset = ino->xattrs.off;
+	inode_data->xattrs_len = ino->xattrs.len;
+
+	if (inode_data->xattrs_len != 0) {
+		/* Validate xattr size */
+		if (inode_data->xattrs_len <
+			    sizeof(struct cfs_xattr_header_s) ||
+		    inode_data->xattrs_len > CFS_MAX_XATTRS_SIZE) {
+			ret = -EFSCORRUPTED;
+			goto fail;
+		}
 	}
-	inode_data->xattrs = xattrs;
 
 	return 0;
 
@@ -567,157 +537,144 @@ void cfs_inode_data_put(struct cfs_inode_data_s *inode_data)
 		kfree(inode_data->path_payload);
 		inode_data->path_payload = NULL;
 	}
-	if (inode_data->xattrs) {
-		kfree(inode_data->xattrs);
-		inode_data->xattrs = NULL;
-	}
 }
 
-static struct cfs_xattr_header_s *cfs_get_xattrs(struct cfs_context_s *ctx,
-						 struct cfs_inode_s *ino)
-{
-	struct cfs_xattr_header_s *xattrs = NULL;
-	u8 *data, *data_end;
-	size_t n_xattrs, i;
-
-	if (ino->xattrs.len == 0) {
-		return NULL;
-	}
-
-	/* Gotta be large enought to fit the n_attr */
-	if (ino->xattrs.len < sizeof(struct cfs_xattr_header_s))
-		return ERR_PTR(-EFSCORRUPTED);
-
-	/* Don't allocate arbitriary size xattrs */
-	if (ino->xattrs.len > CFS_MAX_XATTRS_SIZE)
-		return ERR_PTR(-EFSCORRUPTED);
-
-	xattrs = cfs_alloc_vdata(ctx, ino->xattrs);
-	if (IS_ERR(xattrs))
-		return ERR_CAST(xattrs);
-
-	n_xattrs = xattrs->n_attr = cfs_u16_from_file(xattrs->n_attr);
-
-	/* Verify that array fits */
-	if (ino->xattrs.len < cfs_xattr_header_size(n_xattrs))
-		goto corrupted;
-
-	data = ((u8 *)xattrs) + cfs_xattr_header_size(n_xattrs);
-	data_end = ((u8 *)xattrs) + ino->xattrs.len;
-
-	/* Verify and convert all keys and value sizes upfront */
-	for (i = 0; i < n_xattrs; i++) {
-		struct cfs_xattr_element_s *e = &xattrs->attr[i];
-		uint16_t key_len = e->key_length =
-			cfs_u16_from_file(e->key_length);
-		uint16_t value_len = e->value_length =
-			cfs_u16_from_file(e->value_length);
-		if (key_len > XATTR_NAME_MAX)
-			goto corrupted;
-
-		/* key needs to fit in data */
-		if (data_end - data < key_len)
-			goto corrupted;
-		data += key_len;
-
-		/* value needs to fit in data */
-		if (data_end - data < value_len)
-			goto corrupted;
-		data += value_len;
-	}
-
-	/* No unexpected data at the end */
-	if (data != data_end)
-		goto corrupted;
-
-	return xattrs;
-
-corrupted:
-	kfree(xattrs);
-	return ERR_PTR(-EFSCORRUPTED);
-}
-
-ssize_t cfs_list_xattrs(struct cfs_inode_data_s *inode_data, char *names,
+ssize_t cfs_list_xattrs(struct cfs_context_s *ctx,
+			struct cfs_inode_data_s *inode_data, char *names,
 			size_t size)
 {
-	u8 *data;
+	u8 *data, *data_end;
 	size_t n_xattrs = 0, i;
 	ssize_t copied = 0;
-	struct cfs_xattr_header_s *xattrs = inode_data->xattrs;
+	const struct cfs_xattr_header_s *xattrs;
+	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
 
-	if (xattrs == NULL)
+	if (inode_data->xattrs_len == 0)
 		return 0;
 
-	/* The contents was verified in cfs_get_xattrs, so trust it here */
-	n_xattrs = xattrs->n_attr;
+	/* xattrs_len basic size req was verified in cfs_init_inode_data */
+
+	xattrs = cfs_get_vdata_buf(ctx, inode_data->xattrs_offset,
+				   inode_data->xattrs_len, &vdata_buf);
+	if (IS_ERR(xattrs))
+		return PTR_ERR(xattrs);
+
+	n_xattrs = cfs_u16_from_file(xattrs->n_attr);
+
+	/* Verify that array fits */
+	if (inode_data->xattrs_len < cfs_xattr_header_size(n_xattrs)) {
+		copied = -EFSCORRUPTED;
+		goto exit;
+	}
 
 	data = ((u8 *)xattrs) + cfs_xattr_header_size(n_xattrs);
+	data_end = ((u8 *)xattrs) + inode_data->xattrs_len;
 
 	for (i = 0; i < n_xattrs; i++) {
-		uint16_t key_len = xattrs->attr[i].key_length;
-		uint16_t value_len = xattrs->attr[i].value_length;
+		const struct cfs_xattr_element_s *e = &xattrs->attr[i];
+		uint16_t this_key_len = cfs_u16_from_file(e->key_length);
+		uint16_t this_value_len = cfs_u16_from_file(e->value_length);
+		const char *this_key, *this_value;
+
+		if (this_key_len > XATTR_NAME_MAX ||
+		    /* key and data needs to fit in data */
+		    data_end - data < this_key_len + this_value_len) {
+			copied = -EFSCORRUPTED;
+			goto exit;
+		}
+
+		this_key = data;
+		this_value = data + this_key_len;
+		data += this_key_len + this_value_len;
 
 		if (size) {
-			if (size - copied < key_len + 1)
-				return -E2BIG;
+			if (size - copied < this_key_len + 1) {
+				copied = -E2BIG;
+				goto exit;
+			}
 
-			memcpy(names + copied, data, key_len);
-			names[copied + key_len] = '\0';
+			memcpy(names + copied, this_key, this_key_len);
+			names[copied + this_key_len] = '\0';
 		}
-		data += key_len + value_len;
-		copied += key_len + 1;
+
+		copied += this_key_len + 1;
 	}
+
+exit:
+	cfs_buf_put(&vdata_buf);
 
 	return copied;
 }
 
-int cfs_get_xattr(struct cfs_inode_data_s *inode_data, const char *name,
+int cfs_get_xattr(struct cfs_context_s *ctx,
+		  struct cfs_inode_data_s *inode_data, const char *name,
 		  void *value, size_t size)
 {
 	size_t name_len = strlen(name);
 	size_t n_xattrs = 0, i;
-	struct cfs_xattr_header_s *xattrs = inode_data->xattrs;
-	u8 *data;
+	struct cfs_xattr_header_s *xattrs;
+	u8 *data, *data_end;
+	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
+	int res;
 
-	if (xattrs == 0)
+	if (inode_data->xattrs_len == 0)
 		return -ENODATA;
 
-	if (name_len > XATTR_NAME_MAX)
-		return -ENODATA;
+	/* xattrs_len basic size req was verified in cfs_init_inode_data */
 
-	/* The contents was verified in cfs_get_xattrs, so trust it here */
-	n_xattrs = xattrs->n_attr;
+	xattrs = cfs_get_vdata_buf(ctx, inode_data->xattrs_offset,
+				   inode_data->xattrs_len, &vdata_buf);
+	if (IS_ERR(xattrs))
+		return PTR_ERR(xattrs);
+
+	n_xattrs = cfs_u16_from_file(xattrs->n_attr);
+
+	/* Verify that array fits */
+	if (inode_data->xattrs_len < cfs_xattr_header_size(n_xattrs)) {
+		res = -EFSCORRUPTED;
+		goto exit;
+	}
 
 	data = ((u8 *)xattrs) + cfs_xattr_header_size(n_xattrs);
+	data_end = ((u8 *)xattrs) + inode_data->xattrs_len;
 
 	for (i = 0; i < n_xattrs; i++) {
-		char *this_key;
-		u8 *this_value;
-		uint16_t key_len = xattrs->attr[i].key_length;
-		uint16_t value_len = xattrs->attr[i].value_length;
+		const struct cfs_xattr_element_s *e = &xattrs->attr[i];
+		uint16_t this_key_len = cfs_u16_from_file(e->key_length);
+		uint16_t this_value_len = cfs_u16_from_file(e->value_length);
+		const char *this_key, *this_value;
 
-		this_key = (char *)data;
-		data += key_len;
+		if (this_key_len > XATTR_NAME_MAX ||
+		    /* key and data needs to fit in data */
+		    data_end - data < this_key_len + this_value_len) {
+			res = -EFSCORRUPTED;
+			goto exit;
+		}
 
-		this_value = data;
-		data += value_len;
+		this_key = data;
+		this_value = data + this_key_len;
+		data += this_key_len + this_value_len;
 
-		if (key_len != name_len)
-			continue;
-
-		if (memcmp(this_key, name, name_len) != 0)
+		if (this_key_len != name_len ||
+		    memcmp(this_key, name, name_len) != 0)
 			continue;
 
 		if (size > 0) {
-			if (size < value_len)
-				return -E2BIG;
-			memcpy(value, this_value, value_len);
+			if (size < this_value_len) {
+				res = -E2BIG;
+				goto exit;
+			}
+			memcpy(value, this_value, this_value_len);
 		}
 
-		return value_len;
+		res = this_value_len;
+		goto exit;
 	}
 
-	return -ENODATA;
+	res = -ENODATA;
+
+exit:
+	return res;
 }
 
 static struct cfs_dir_s *

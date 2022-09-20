@@ -24,7 +24,8 @@ struct cfs_inode_data_s {
 	u32 n_dir_chunks;
 	struct cfs_dir_chunk_s preloaded_dir_chunks[CFS_N_PRELOAD_DIR_CHUNKS];
 
-	struct cfs_xattr_header_s *xattrs;
+	u64 xattrs_offset;
+	u32 xattrs_len;
 
 	bool has_digest;
 	uint8_t digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
@@ -55,9 +56,11 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 			u64 index, struct cfs_inode_data_s *data);
 
-ssize_t cfs_list_xattrs(struct cfs_inode_data_s *inode_data, char *names,
+ssize_t cfs_list_xattrs(struct cfs_context_s *ctx,
+			struct cfs_inode_data_s *inode_data, char *names,
 			size_t size);
-int cfs_get_xattr(struct cfs_inode_data_s *inode_data, const char *name,
+int cfs_get_xattr(struct cfs_context_s *ctx,
+		  struct cfs_inode_data_s *inode_data, const char *name,
 		  void *value, size_t size);
 
 typedef bool (*cfs_dir_iter_cb)(void *private, const char *name, int namelen,

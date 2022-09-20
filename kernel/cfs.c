@@ -823,17 +823,20 @@ static int cfs_getxattr(const struct xattr_handler *handler,
 			struct dentry *unused2, struct inode *inode,
 			const char *name, void *value, size_t size)
 {
+	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 	struct cfs_inode *cino = CFS_I(inode);
 
-	return cfs_get_xattr(&cino->inode_data, name, value, size);
+	return cfs_get_xattr(&fsi->cfs_ctx, &cino->inode_data, name, value,
+			     size);
 }
 
 static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size)
 {
 	struct inode *inode = d_inode(dentry);
+	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 	struct cfs_inode *cino = CFS_I(inode);
 
-	return cfs_list_xattrs(&cino->inode_data, names, size);
+	return cfs_list_xattrs(&fsi->cfs_ctx, &cino->inode_data, names, size);
 }
 
 static const struct file_operations cfs_file_operations = {
