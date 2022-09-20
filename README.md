@@ -103,9 +103,9 @@ Once it is loaded, it can be used as:
 
 Mount options:
 
-`basedir`: is the directory to use as a base when resolving relative content paths.
-'noverity': Don't verify that target files have the right fs-verity digest. Useful if the fs doesn't support fs-verity but the image has digests enabled.
-`digest`: A fs-verity sha256 digest that the image file must match.
+- `basedir`: is the directory to use as a base when resolving relative content paths.
+- `noverity`: Don't verify that target files have the right fs-verity digest. Useful if the fs doesn't support fs-verity but the image has digests enabled.
+- `digest`: A fs-verity sha256 digest that the image file must match.
 
 ## SELinux issues
 
