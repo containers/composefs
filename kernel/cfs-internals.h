@@ -23,6 +23,9 @@ struct cfs_inode_data_s {
 	char *path_payload; /* Real pathname for files, target for symlinks */
 	u32 n_dir_chunks;
 	struct cfs_dir_chunk_s preloaded_dir_chunks[CFS_N_PRELOAD_DIR_CHUNKS];
+
+	bool has_digest;
+	uint8_t digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 };
 
 struct cfs_context_s {
@@ -46,10 +49,6 @@ struct cfs_inode_s *cfs_get_root_ino(struct cfs_context_s *ctx,
 
 struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 				      struct cfs_inode_s *buffer);
-
-const uint8_t *cfs_get_digest(struct cfs_context_s *ctx,
-			      struct cfs_inode_s *ino, const char *payload,
-			      u8 digest_buf[SHA256_DIGEST_SIZE]);
 
 int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 			u64 index, struct cfs_inode_data_s *data);

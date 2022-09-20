@@ -392,22 +392,27 @@ struct cfs_inode_s *cfs_get_root_ino(struct cfs_context_s *ctx,
 	return cfs_get_ino_index(ctx, root_ino, ino_buf);
 }
 
-const uint8_t *cfs_get_digest(struct cfs_context_s *ctx,
-			      struct cfs_inode_s *ino, const char *payload,
-			      u8 digest_buf[SHA256_DIGEST_SIZE])
+static int cfs_get_digest(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
+			  const char *payload,
+			  u8 digest_out[SHA256_DIGEST_SIZE])
 {
+	int r;
+
 	if (CFS_INODE_FLAG_CHECK(ino->flags, DIGEST)) {
-		return ino->digest;
+		memcpy(digest_out, ino->digest, SHA256_DIGEST_SIZE);
+		return 1;
 	}
 
-	if (CFS_INODE_FLAG_CHECK(ino->flags,
-				 DIGEST_FROM_PAYLOAD && payload != NULL)) {
-		if (cfs_digest_from_payload(payload, ino->payload_length,
-					    digest_buf) == 0)
-			return digest_buf;
+	if (payload != NULL &&
+	    CFS_INODE_FLAG_CHECK(ino->flags, DIGEST_FROM_PAYLOAD)) {
+		r = cfs_digest_from_payload(payload, ino->payload_length,
+					    digest_out);
+		if (r < 0)
+			return r;
+		return 1;
 	}
 
-	return NULL;
+	return 0;
 }
 
 static bool cfs_validate_filename(const char *name, size_t name_len)
@@ -527,6 +532,12 @@ int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 		}
 	}
 	inode_data->path_payload = path_payload;
+
+	ret = cfs_get_digest(ctx, ino, path_payload, inode_data->digest);
+	if (ret < 0)
+		goto fail;
+
+	inode_data->has_digest = ret != 0;
 
 	return 0;
 

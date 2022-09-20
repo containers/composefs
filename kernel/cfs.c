@@ -55,8 +55,6 @@ struct cfs_inode {
 
 	struct cfs_xattr_header_s *xattrs;
 	struct cfs_inode_data_s inode_data;
-	bool has_digest;
-	uint8_t digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 };
 
 static inline struct cfs_inode *CFS_I(struct inode *inode)
@@ -113,8 +111,6 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 	struct cfs_xattr_header_s *xattrs = NULL;
 	struct cfs_inode *cino;
 	struct inode *inode = NULL;
-	u8 digest_buf[SHA256_DIGEST_SIZE];
-	const uint8_t *digest;
 	struct cfs_inode_data_s inode_data = { 0 };
 	int ret, res;
 
@@ -123,8 +119,6 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 		ret = res;
 		goto fail;
 	}
-
-	digest = cfs_get_digest(ctx, ino, inode_data.path_payload, digest_buf);
 
 	xattrs = cfs_get_xattrs(ctx, ino);
 	if (IS_ERR(xattrs)) {
@@ -143,9 +137,6 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 		cino = CFS_I(inode);
 		cino->inode_data = inode_data;
 		cino->xattrs = xattrs;
-		cino->has_digest = digest != NULL;
-		if (cino->has_digest)
-			memcpy(cino->digest, digest, SHA256_DIGEST_SIZE);
 
 		inode->i_ino = ino_num;
 		set_nlink(inode, ino->st_nlink);
@@ -647,7 +638,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	}
 
 	/* If metadata records a digest for the file, ensure it is there and correct before using the contents */
-	if (cino->has_digest && !fsi->noverity) {
+	if (cino->inode_data.has_digest && !fsi->noverity) {
 		u8 verity_digest[FS_VERITY_MAX_DIGEST_SIZE];
 		enum hash_algo verity_algo;
 		int res;
@@ -660,8 +651,8 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 			return -EIO;
 		}
 		if (verity_algo != HASH_ALGO_SHA256 ||
-		    memcmp(cino->digest, verity_digest, SHA256_DIGEST_SIZE) !=
-			    0) {
+		    memcmp(cino->inode_data.digest, verity_digest,
+			   SHA256_DIGEST_SIZE) != 0) {
 			pr_warn("WARNING: composefs backing file '%pd' has the wrong fs-verity digest\n",
 				real_file->f_path.dentry);
 			fput(real_file);
