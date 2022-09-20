@@ -827,17 +827,64 @@ exit:
 	return res;
 }
 
+#define BEFORE_CHUNK 1
+#define AFTER_CHUNK 2
+// -1 => error, 0 == hit, 1 == name is before chunk, 2 == name is after chunk
+static int cfs_dir_lookup_in_chunk(const char *name, size_t name_len,
+				   struct cfs_dentry_s *dentries,
+				   size_t n_dentries, char *namedata,
+				   char *namedata_end, u64 *index_out)
+{
+	int start_dentry, end_dentry;
+	int cmp;
+
+	// This should not happen in a valid fs, and if it does we don't know if
+	// the name is before or after the chunk.
+	if (n_dentries == 0) {
+		return -EFSCORRUPTED;
+	}
+
+	start_dentry = 0;
+	end_dentry = n_dentries - 1;
+	while (start_dentry <= end_dentry) {
+		int mid_dentry = start_dentry + (end_dentry - start_dentry) / 2;
+		struct cfs_dentry_s *dentry = &dentries[mid_dentry];
+		size_t dentry_name_len = dentry->name_len;
+		char *dentry_name = (char *)namedata + dentry->name_offset;
+
+		/* name needs to fit in namedata */
+		if (dentry_name >= namedata_end ||
+		    namedata_end - dentry_name < dentry_name_len) {
+			return -EFSCORRUPTED;
+		}
+
+		cmp = memcmp2(name, name_len, dentry_name, dentry_name_len);
+		if (cmp == 0) {
+			*index_out = cfs_u64_from_file(dentry->inode_index);
+			return 0;
+		}
+
+		if (cmp > 0) {
+			start_dentry = mid_dentry + 1;
+		} else {
+			end_dentry = mid_dentry - 1;
+		}
+	}
+
+	return cmp > 0 ? AFTER_CHUNK : BEFORE_CHUNK;
+}
+
 int cfs_dir_lookup(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 		   struct cfs_dir_data_s *dirdata, const char *name,
 		   size_t name_len, u64 *index_out)
 {
-	size_t i, j, n_chunks;
+	int n_chunks, start_chunk, end_chunk;
 	char *namedata, *namedata_end;
 	struct cfs_dir_chunk_s *chunks;
 	struct cfs_dentry_s *dentries;
 	void *chunks_buf;
 	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
-	int res;
+	int res, r;
 
 	n_chunks = dirdata->n_chunks;
 	if (n_chunks == 0)
@@ -849,11 +896,16 @@ int cfs_dir_lookup(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 		return PTR_ERR(chunks);
 	}
 
-	for (i = 0; i < n_chunks; i++) {
+	start_chunk = 0;
+	end_chunk = n_chunks - 1;
+
+	while (start_chunk <= end_chunk) {
+		int mid_chunk = start_chunk + (end_chunk - start_chunk) / 2;
+
 		/* Chunks info are verified/converted in cfs_dir_read_chunk_header */
-		u64 chunk_offset = chunks[i].chunk_offset;
-		size_t chunk_size = chunks[i].chunk_size;
-		size_t n_dentries = chunks[i].n_dentries;
+		u64 chunk_offset = chunks[mid_chunk].chunk_offset;
+		size_t chunk_size = chunks[mid_chunk].chunk_size;
+		size_t n_dentries = chunks[mid_chunk].n_dentries;
 
 		/* Read chunk dentries from page cache */
 		dentries = cfs_get_vdata_buf(ctx, chunk_offset, chunk_size,
@@ -867,38 +919,25 @@ int cfs_dir_lookup(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 			   sizeof(struct cfs_dentry_s) * n_dentries;
 		namedata_end = ((u8 *)dentries) + chunk_size;
 
-		for (j = 0; j < n_dentries; j++) {
-			struct cfs_dentry_s *dentry = &dentries[j];
-			size_t dentry_name_len = dentry->name_len;
-			char *dentry_name =
-				(char *)namedata + dentry->name_offset;
-			int cmp;
-
-			/* name needs to fit in namedata */
-			if (dentry_name >= namedata_end ||
-			    namedata_end - dentry_name < dentry_name_len) {
-				res = -EFSCORRUPTED;
-				goto exit;
-			}
-
-			cmp = memcmp2(name, name_len, dentry_name,
-				      dentry_name_len);
-
-			if (cmp == 0) {
-				*index_out =
-					cfs_u64_from_file(dentry->inode_index);
-				res = 1;
-				goto exit;
-			}
-
-			/* Names are sorted, so exit early if dentry_name is past name */
-			if (cmp < 0)
-				goto notfound;
+		r = cfs_dir_lookup_in_chunk(name, name_len, dentries,
+					    n_dentries, namedata, namedata_end,
+					    index_out);
+		if (r < 0) {
+			res = r; /* error */
+			goto exit;
+		} else if (r == 0) {
+			res = 1; /* found it */
+			goto exit;
+		} else if (r == AFTER_CHUNK) {
+			start_chunk = mid_chunk + 1;
+		} else /* before */ {
+			end_chunk = mid_chunk - 1;
 		}
 	}
 
-notfound:
+	/* not found */
 	res = 0;
+
 exit:
 	if (chunks_buf)
 		kfree(chunks_buf);
