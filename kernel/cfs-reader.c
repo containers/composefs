@@ -20,9 +20,6 @@
 #include <linux/unaligned/packed_struct.h>
 #include <linux/sched/mm.h>
 
-static char *cfs_dup_payload_path(struct cfs_context_s *ctx,
-				  struct cfs_inode_s *ino, u64 index);
-
 static void cfs_buf_put(struct cfs_buf *buf)
 {
 	if (buf->page) {
@@ -464,6 +461,36 @@ struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 	}
 
 	return dir;
+}
+
+static char *cfs_dup_payload_path(struct cfs_context_s *ctx,
+				  struct cfs_inode_s *ino, u64 index)
+{
+	const char *v;
+	u8 *path;
+
+	if ((ino->st_mode & S_IFMT) != S_IFREG &&
+	    (ino->st_mode & S_IFMT) != S_IFLNK) {
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (ino->payload_length == 0 || ino->payload_length > PATH_MAX)
+		return ERR_PTR(-EFSCORRUPTED);
+
+	path = kmalloc(ino->payload_length + 1, GFP_KERNEL);
+	if (!path)
+		return ERR_PTR(-ENOMEM);
+
+	v = cfs_get_inode_payload(ctx, ino, index, path);
+	if (IS_ERR(v)) {
+		kfree(path);
+		return ERR_CAST(v);
+	}
+
+	/* zero terminate */
+	path[ino->payload_length] = 0;
+
+	return (char *)path;
 }
 
 int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
@@ -932,34 +959,4 @@ exit:
 		kfree(chunks_buf);
 	cfs_buf_put(&vdata_buf);
 	return res;
-}
-
-static char *cfs_dup_payload_path(struct cfs_context_s *ctx,
-				  struct cfs_inode_s *ino, u64 index)
-{
-	const char *v;
-	u8 *path;
-
-	if ((ino->st_mode & S_IFMT) != S_IFREG &&
-	    (ino->st_mode & S_IFMT) != S_IFLNK) {
-		return ERR_PTR(-EINVAL);
-	}
-
-	if (ino->payload_length == 0 || ino->payload_length > PATH_MAX)
-		return ERR_PTR(-EFSCORRUPTED);
-
-	path = kmalloc(ino->payload_length + 1, GFP_KERNEL);
-	if (!path)
-		return ERR_PTR(-ENOMEM);
-
-	v = cfs_get_inode_payload(ctx, ino, index, path);
-	if (IS_ERR(v)) {
-		kfree(path);
-		return ERR_CAST(v);
-	}
-
-	/* zero terminate */
-	path[ino->payload_length] = 0;
-
-	return (char *)path;
 }
