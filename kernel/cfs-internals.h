@@ -9,15 +9,6 @@
 #define CFS_MAX_STACK 500
 #define CFS_N_PRELOAD_DIR_CHUNKS 4
 
-struct cfs_buf {
-	struct page *page;
-	void *base;
-};
-#define CFS_VDATA_BUF_INIT                                                     \
-	{                                                                      \
-		NULL, NULL                                                     \
-	}
-
 struct cfs_inode_data_s {
 	u32 payload_length;
 	char *path_payload; /* Real pathname for files, target for symlinks */

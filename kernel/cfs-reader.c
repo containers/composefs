@@ -20,6 +20,15 @@
 #include <linux/unaligned/packed_struct.h>
 #include <linux/sched/mm.h>
 
+struct cfs_buf {
+	struct page *page;
+	void *base;
+};
+#define CFS_VDATA_BUF_INIT                                                     \
+	{                                                                      \
+		NULL, NULL                                                     \
+	}
+
 static void cfs_buf_put(struct cfs_buf *buf)
 {
 	if (buf->page) {
