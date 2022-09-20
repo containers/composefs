@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * composefs
  *
@@ -88,9 +89,8 @@ static inline int cfs_digest_from_payload(const char *payload,
 			return -1; /* Too long */
 
 		digit = cfs_xdigit_value(*p);
-		if (digit == -1) {
+		if (digit == -1)
 			return -1; /* Not hex digit */
-		}
 
 		n_nibbles++;
 		if ((n_nibbles % 2) == 0) {
@@ -109,7 +109,7 @@ static inline int cfs_digest_from_payload(const char *payload,
 struct cfs_vdata_s {
 	u64 off;
 	u32 len;
-} __attribute__((packed));
+} __packed;
 
 struct cfs_header_s {
 	u8 version;
@@ -121,7 +121,7 @@ struct cfs_header_s {
 	u64 root_inode;
 
 	u64 unused3[2];
-} __attribute__((packed));
+} __packed;
 
 enum cfs_inode_flags {
 	CFS_INODE_FLAGS_NONE = 0,
@@ -159,14 +159,14 @@ struct cfs_inode_s {
 	/* Optional data: (selected by flags) */
 
 	/* This is the size of the type specific data that comes directly after
-	   the inode in the file. Of this type:
-	   *
-	   * directory: cfs_dir_s
-	   * regular file: the backing filename
-	   * symlink: the target link
-	   *
-	   * Canonically payload_length is 0 for empty dir/file/symlink.
-	   */
+	 * the inode in the file. Of this type:
+	 *
+	 * directory: cfs_dir_s
+	 * regular file: the backing filename
+	 * symlink: the target link
+	 *
+	 * Canonically payload_length is 0 for empty dir/file/symlink.
+	 */
 	u32 payload_length;
 
 	u32 st_mode; /* File type and mode.  */
@@ -208,18 +208,18 @@ struct cfs_dentry_s {
 	u8 d_type;
 	u8 name_len;
 	u16 name_offset;
-} __attribute__((packed));
+} __packed;
 
 struct cfs_dir_chunk_s {
 	u16 n_dentries;
 	u16 chunk_size;
 	u64 chunk_offset;
-} __attribute__((packed));
+} __packed;
 
 struct cfs_dir_s {
 	u32 n_chunks;
 	struct cfs_dir_chunk_s chunks[];
-} __attribute__((packed));
+} __packed;
 
 #define cfs_dir_size(_n_chunks)                                                \
 	(sizeof(struct cfs_dir_s) +                                            \
@@ -229,12 +229,12 @@ struct cfs_dir_s {
 struct cfs_xattr_element_s {
 	u16 key_length;
 	u16 value_length;
-} __attribute__((packed));
+} __packed;
 
 struct cfs_xattr_header_s {
 	u16 n_attr;
 	struct cfs_xattr_element_s attr[0];
-} __attribute__((packed));
+} __packed;
 
 #define cfs_xattr_header_size(_n_element)                                      \
 	(sizeof(struct cfs_xattr_header_s) +                                   \

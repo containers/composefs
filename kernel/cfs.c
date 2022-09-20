@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * composefs
  *
@@ -173,8 +174,7 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 fail:
 	if (inode)
 		iput(inode);
-	if (xattrs)
-		kfree(xattrs);
+	kfree(xattrs);
 	cfs_inode_data_put(&inode_data);
 	return ERR_PTR(ret);
 }
@@ -279,6 +279,7 @@ static void digest_to_string(const uint8_t *digest, char *buf)
 
 	for (i = 0, j = 0; i < SHA256_DIGEST_SIZE; i++, j += 2) {
 		uint8_t byte = digest[i];
+
 		buf[j] = hexchars[byte >> 4];
 		buf[j + 1] = hexchars[byte & 0xF];
 	}
@@ -329,11 +330,12 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 	struct cfs_info *fsi = root->d_sb->s_fs_info;
 
 	if (fsi->noverity)
-		seq_printf(m, ",noverity");
+		seq_puts(m, ",noverity");
 	if (fsi->base_path)
 		seq_printf(m, ",basedir=%s", fsi->base_path);
 	if (fsi->has_digest) {
 		char buf[SHA256_DIGEST_SIZE * 2 + 1];
+
 		digest_to_string(fsi->digest, buf);
 		seq_printf(m, ",digest=%s", buf);
 	}
@@ -388,8 +390,7 @@ static void cfs_put_super(struct super_block *sb)
 			fput(fsi->bases[i]);
 		kfree(fsi->bases);
 	}
-	if (fsi->base_path)
-		kfree(fsi->base_path);
+	kfree(fsi->base_path);
 
 	kfree(fsi);
 }
@@ -622,15 +623,15 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 		real_file = open_base_file(fsi, inode, file);
 	}
 
-	if (IS_ERR(real_file)) {
+	if (IS_ERR(real_file))
 		return PTR_ERR(real_file);
-	}
 
 	/* If metadata records a digest for the file, ensure it is there and correct before using the contents */
 	if (cino->inode_data.has_digest && !fsi->noverity) {
 		u8 verity_digest[FS_VERITY_MAX_DIGEST_SIZE];
 		enum hash_algo verity_algo;
 		int res;
+
 		res = fsverity_get_digest(d_inode(real_file->f_path.dentry),
 					  verity_digest, &verity_algo);
 		if (res < 0) {

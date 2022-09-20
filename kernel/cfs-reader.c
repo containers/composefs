@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * composefs
  *
@@ -283,21 +284,19 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 	if (inode_size > sizeof(buffer))
 		return ERR_PTR(-EFSCORRUPTED);
 
-	if (CFS_INODE_FLAG_CHECK(ino->flags, PAYLOAD)) {
+	if (CFS_INODE_FLAG_CHECK(ino->flags, PAYLOAD))
 		ino->payload_length = cfs_read_u32(&data);
-	} else {
+	else
 		ino->payload_length = 0;
-	}
 
-	if (CFS_INODE_FLAG_CHECK(ino->flags, MODE)) {
+	if (CFS_INODE_FLAG_CHECK(ino->flags, MODE))
 		ino->st_mode = cfs_read_u32(&data);
-	} else {
+	else
 		ino->st_mode = CFS_INODE_DEFAULT_MODE;
-	}
 
-	if (CFS_INODE_FLAG_CHECK(ino->flags, NLINK)) {
+	if (CFS_INODE_FLAG_CHECK(ino->flags, NLINK))
 		ino->st_nlink = cfs_read_u32(&data);
-	} else {
+	else {
 		if ((ino->st_mode & S_IFMT) == S_IFDIR)
 			ino->st_nlink = CFS_INODE_DEFAULT_NLINK_DIR;
 		else
@@ -312,11 +311,10 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 		ino->st_gid = CFS_INODE_DEFAULT_UIDGID;
 	}
 
-	if (CFS_INODE_FLAG_CHECK(ino->flags, RDEV)) {
+	if (CFS_INODE_FLAG_CHECK(ino->flags, RDEV))
 		ino->st_rdev = cfs_read_u32(&data);
-	} else {
+	else
 		ino->st_rdev = CFS_INODE_DEFAULT_RDEV;
-	}
 
 	if (CFS_INODE_FLAG_CHECK(ino->flags, TIMES)) {
 		ino->st_mtim.tv_sec = cfs_read_u64(&data);
@@ -334,15 +332,13 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 		ino->st_ctim.tv_nsec = 0;
 	}
 
-	if (CFS_INODE_FLAG_CHECK(ino->flags, LOW_SIZE)) {
+	if (CFS_INODE_FLAG_CHECK(ino->flags, LOW_SIZE))
 		ino->st_size = cfs_read_u32(&data);
-	} else {
+	else
 		ino->st_size = 0;
-	}
 
-	if (CFS_INODE_FLAG_CHECK(ino->flags, HIGH_SIZE)) {
+	if (CFS_INODE_FLAG_CHECK(ino->flags, HIGH_SIZE))
 		ino->st_size += (u64)cfs_read_u32(&data) << 32;
-	}
 
 	if (CFS_INODE_FLAG_CHECK(ino->flags, XATTRS)) {
 		ino->xattrs.off = cfs_read_u64(&data);
@@ -447,6 +443,7 @@ static struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 	/* Verify data (up to max_n_chunks) */
 	for (i = 0; i < max_n_chunks; i++) {
 		struct cfs_dir_chunk_s *chunk = &dir->chunks[i];
+
 		chunk->n_dentries = cfs_u16_from_file(chunk->n_dentries);
 		chunk->chunk_size = cfs_u16_from_file(chunk->chunk_size);
 		chunk->chunk_offset = cfs_u64_from_file(chunk->chunk_offset);
@@ -569,10 +566,8 @@ fail:
 void cfs_inode_data_put(struct cfs_inode_data_s *inode_data)
 {
 	inode_data->n_dir_chunks = 0;
-	if (inode_data->path_payload) {
-		kfree(inode_data->path_payload);
-		inode_data->path_payload = NULL;
-	}
+	kfree(inode_data->path_payload);
+	inode_data->path_payload = NULL;
 }
 
 ssize_t cfs_list_xattrs(struct cfs_context_s *ctx,
@@ -847,8 +842,7 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u64 index,
 
 	res = 0;
 exit:
-	if (chunks_buf)
-		kfree(chunks_buf);
+	kfree(chunks_buf);
 	cfs_buf_put(&vdata_buf);
 	return res;
 }
@@ -866,9 +860,8 @@ static int cfs_dir_lookup_in_chunk(const char *name, size_t name_len,
 
 	// This should not happen in a valid fs, and if it does we don't know if
 	// the name is before or after the chunk.
-	if (n_dentries == 0) {
+	if (n_dentries == 0)
 		return -EFSCORRUPTED;
-	}
 
 	start_dentry = 0;
 	end_dentry = n_dentries - 1;
@@ -890,11 +883,10 @@ static int cfs_dir_lookup_in_chunk(const char *name, size_t name_len,
 			return 0;
 		}
 
-		if (cmp > 0) {
+		if (cmp > 0)
 			start_dentry = mid_dentry + 1;
-		} else {
+		else
 			end_dentry = mid_dentry - 1;
-		}
 	}
 
 	return cmp > 0 ? AFTER_CHUNK : BEFORE_CHUNK;
@@ -917,9 +909,8 @@ int cfs_dir_lookup(struct cfs_context_s *ctx, u64 index,
 		return 0;
 
 	chunks = cfs_dir_get_chunk_info(ctx, index, inode_data, &chunks_buf);
-	if (IS_ERR(chunks)) {
+	if (IS_ERR(chunks))
 		return PTR_ERR(chunks);
-	}
 
 	start_chunk = 0;
 	end_chunk = n_chunks - 1;
@@ -964,8 +955,7 @@ int cfs_dir_lookup(struct cfs_context_s *ctx, u64 index,
 	res = 0;
 
 exit:
-	if (chunks_buf)
-		kfree(chunks_buf);
+	kfree(chunks_buf);
 	cfs_buf_put(&vdata_buf);
 	return res;
 }
