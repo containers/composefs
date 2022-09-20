@@ -495,7 +495,9 @@ int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 {
 	u8 buf[cfs_dir_size(CFS_N_PRELOAD_DIR_CHUNKS)];
 	struct cfs_dir_s *dir;
+	int ret = 0;
 	size_t i;
+	char *path_payload = NULL;
 
 	inode_data->payload_length = ino->payload_length;
 
@@ -516,7 +518,30 @@ int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 			inode_data->preloaded_dir_chunks[i] = dir->chunks[i];
 	}
 
+	if ((ino->st_mode & S_IFMT) == S_IFLNK ||
+	    ((ino->st_mode & S_IFMT) == S_IFREG && ino->payload_length >= 0)) {
+		path_payload = cfs_dup_payload_path(ctx, ino, index);
+		if (IS_ERR(path_payload)) {
+			ret = PTR_ERR(path_payload);
+			goto fail;
+		}
+	}
+	inode_data->path_payload = path_payload;
+
 	return 0;
+
+fail:
+	cfs_inode_data_put(inode_data);
+	return ret;
+}
+
+void cfs_inode_data_put(struct cfs_inode_data_s *inode_data)
+{
+	inode_data->n_dir_chunks = 0;
+	if (inode_data->path_payload) {
+		kfree(inode_data->path_payload);
+		inode_data->path_payload = NULL;
+	}
 }
 
 struct cfs_xattr_header_s *cfs_get_xattrs(struct cfs_context_s *ctx,

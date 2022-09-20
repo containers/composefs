@@ -53,7 +53,6 @@ struct cfs_inode {
 	/* must be first for clear in cfs_alloc_inode to work */
 	struct inode vfs_inode;
 
-	char *real_path;
 	struct cfs_xattr_header_s *xattrs;
 	struct cfs_inode_data_s inode_data;
 	bool has_digest;
@@ -111,14 +110,12 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 				    struct cfs_inode_s *ino,
 				    const struct inode *dir)
 {
-	char *target_link = NULL;
-	char *real_path = NULL;
 	struct cfs_xattr_header_s *xattrs = NULL;
 	struct cfs_inode *cino;
 	struct inode *inode = NULL;
 	u8 digest_buf[SHA256_DIGEST_SIZE];
 	const uint8_t *digest;
-	struct cfs_inode_data_s inode_data;
+	struct cfs_inode_data_s inode_data = { 0 };
 	int ret, res;
 
 	res = cfs_init_inode_data(ctx, ino, ino_num, &inode_data);
@@ -127,25 +124,7 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 		goto fail;
 	}
 
-	if ((ino->st_mode & S_IFMT) == S_IFLNK) {
-		target_link = cfs_dup_payload_path(ctx, ino, ino_num);
-		if (IS_ERR(target_link)) {
-			ret = PTR_ERR(target_link);
-			target_link = NULL;
-			goto fail;
-		}
-	}
-
-	if ((ino->st_mode & S_IFMT) == S_IFREG && ino->payload_length != 0) {
-		real_path = cfs_dup_payload_path(ctx, ino, ino_num);
-		if (IS_ERR(real_path)) {
-			ret = PTR_ERR(real_path);
-			real_path = NULL;
-			goto fail;
-		}
-	}
-
-	digest = cfs_get_digest(ctx, ino, real_path, digest_buf);
+	digest = cfs_get_digest(ctx, ino, inode_data.path_payload, digest_buf);
 
 	xattrs = cfs_get_xattrs(ctx, ino);
 	if (IS_ERR(xattrs)) {
@@ -183,10 +162,9 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 			inode->i_op = &cfs_file_inode_operations;
 			inode->i_fop = &cfs_file_operations;
 			inode->i_size = ino->st_size;
-			cino->real_path = real_path;
 			break;
 		case S_IFLNK:
-			inode->i_link = target_link;
+			inode->i_link = cino->inode_data.path_payload;
 			inode->i_op = &cfs_link_inode_operations;
 			inode->i_fop = &cfs_file_operations;
 			break;
@@ -213,12 +191,9 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 fail:
 	if (inode)
 		iput(inode);
-	if (real_path)
-		kfree(real_path);
 	if (xattrs)
 		kfree(xattrs);
-	if (target_link)
-		kfree(target_link);
+	cfs_inode_data_put(&inode_data);
 	return ERR_PTR(ret);
 }
 
@@ -408,11 +383,7 @@ static void cfs_destroy_inode(struct inode *inode)
 {
 	struct cfs_inode *cino = CFS_I(inode);
 
-	if (S_ISLNK(inode->i_mode) && inode->i_link)
-		kfree(inode->i_link);
-
-	if (cino->real_path)
-		kfree(cino->real_path);
+	cfs_inode_data_put(&cino->inode_data);
 	if (cino->xattrs)
 		kfree(cino->xattrs);
 }
@@ -635,7 +606,8 @@ static struct file *open_base_file(struct cfs_info *fsi, struct inode *inode,
 
 	for (i = 0; i < fsi->n_bases; i++) {
 		real_file = file_open_root(&(fsi->bases[i]->f_path),
-					   cino->real_path, file->f_flags, 0);
+					   cino->inode_data.path_payload,
+					   file->f_flags, 0);
 		if (!IS_ERR(real_file) || PTR_ERR(real_file) != -ENOENT)
 			return real_file;
 	}
@@ -648,6 +620,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	struct cfs_inode *cino = CFS_I(inode);
 	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 	struct file *real_file;
+	char *real_path = cino->inode_data.path_payload;
 
 	if (WARN_ON(file == NULL))
 		return -EIO;
@@ -655,15 +628,15 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	if (file->f_flags & (O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_TRUNC))
 		return -EROFS;
 
-	if (cino->real_path == NULL) {
+	if (real_path == NULL) {
 		file->private_data = &empty_file;
 		return 0;
 	}
 
 	/* FIXME: prevent loops opening files.  */
 
-	if (fsi->n_bases == 0 || cino->real_path[0] == '/') {
-		real_file = file_open_root_mnt(fsi->root_mnt, cino->real_path,
+	if (fsi->n_bases == 0 || real_path[0] == '/') {
+		real_file = file_open_root_mnt(fsi->root_mnt, real_path,
 					       file->f_flags, 0);
 	} else {
 		real_file = open_base_file(fsi, inode, file);

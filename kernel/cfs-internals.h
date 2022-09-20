@@ -20,6 +20,7 @@ struct cfs_buf {
 
 struct cfs_inode_data_s {
 	u32 payload_length;
+	char *path_payload; /* Real pathname for files, target for symlinks */
 	u32 n_dir_chunks;
 	struct cfs_dir_chunk_s preloaded_dir_chunks[CFS_N_PRELOAD_DIR_CHUNKS];
 };
@@ -37,6 +38,8 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 		 struct cfs_context_s *ctx);
 
 void cfs_destroy_ctx(struct cfs_context_s *ctx);
+
+void cfs_inode_data_put(struct cfs_inode_data_s *inode_data);
 
 struct cfs_inode_s *cfs_get_root_ino(struct cfs_context_s *ctx,
 				     struct cfs_inode_s *ino_buf, u64 *index);
