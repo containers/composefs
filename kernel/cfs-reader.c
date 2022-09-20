@@ -749,8 +749,8 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 	char *namedata, *namedata_end;
 	struct cfs_dir_chunk_s *chunks;
 	struct cfs_dentry_s *dentries;
+	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
 	void *chunks_buf;
-	u8 *buf;
 	loff_t pos;
 	int res;
 
@@ -762,13 +762,6 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 					&chunks_buf);
 	if (IS_ERR(chunks))
 		return PTR_ERR(chunks);
-
-	buf = kmalloc(CFS_MAX_DIR_CHUNK_SIZE, GFP_KERNEL);
-	if (!buf) {
-		if (chunks_buf)
-			kfree(chunks_buf);
-		return -ENOMEM;
-	}
 
 	pos = 0;
 	for (i = 0; i < n_chunks; i++) {
@@ -783,8 +776,9 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 			continue;
 		}
 
-		/* Read chunk dentries */
-		dentries = cfs_read_vdata(ctx, chunk_offset, chunk_size, buf);
+		/* Read chunk dentries from page cache */
+		dentries = cfs_get_vdata_buf(ctx, chunk_offset, chunk_size,
+					     &vdata_buf);
 		if (IS_ERR(dentries)) {
 			res = PTR_ERR(dentries);
 			goto exit;
@@ -829,7 +823,7 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 exit:
 	if (chunks_buf)
 		kfree(chunks_buf);
-	kfree(buf);
+	cfs_buf_put(&vdata_buf);
 	return res;
 }
 
@@ -842,7 +836,7 @@ int cfs_dir_lookup(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 	struct cfs_dir_chunk_s *chunks;
 	struct cfs_dentry_s *dentries;
 	void *chunks_buf;
-	u8 *buf;
+	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
 	int res;
 
 	n_chunks = dirdata->n_chunks;
@@ -855,21 +849,15 @@ int cfs_dir_lookup(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 		return PTR_ERR(chunks);
 	}
 
-	buf = kmalloc(CFS_MAX_DIR_CHUNK_SIZE, GFP_KERNEL);
-	if (!buf) {
-		if (chunks_buf)
-			kfree(chunks_buf);
-		return -ENOMEM;
-	}
-
 	for (i = 0; i < n_chunks; i++) {
 		/* Chunks info are verified/converted in cfs_dir_read_chunk_header */
 		u64 chunk_offset = chunks[i].chunk_offset;
 		size_t chunk_size = chunks[i].chunk_size;
 		size_t n_dentries = chunks[i].n_dentries;
 
-		/* Read chunk dentries */
-		dentries = cfs_read_vdata(ctx, chunk_offset, chunk_size, buf);
+		/* Read chunk dentries from page cache */
+		dentries = cfs_get_vdata_buf(ctx, chunk_offset, chunk_size,
+					     &vdata_buf);
 		if (IS_ERR(dentries)) {
 			res = PTR_ERR(dentries);
 			goto exit;
@@ -914,7 +902,7 @@ notfound:
 exit:
 	if (chunks_buf)
 		kfree(chunks_buf);
-	kfree(buf);
+	cfs_buf_put(&vdata_buf);
 	return res;
 }
 
