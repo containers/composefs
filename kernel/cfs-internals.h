@@ -71,7 +71,4 @@ int cfs_dir_lookup(struct cfs_context_s *ctx, u64 index,
 		   struct cfs_inode_data_s *inode_data, const char *name,
 		   size_t name_len, u64 *index_out);
 
-char *cfs_dup_payload_path(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
-			   u64 index);
-
 #endif

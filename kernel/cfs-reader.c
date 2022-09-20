@@ -20,6 +20,9 @@
 #include <linux/unaligned/packed_struct.h>
 #include <linux/sched/mm.h>
 
+static char *cfs_dup_payload_path(struct cfs_context_s *ctx,
+				  struct cfs_inode_s *ino, u64 index);
+
 static struct cfs_xattr_header_s *cfs_get_xattrs(struct cfs_context_s *ctx,
 						 struct cfs_inode_s *ino);
 
@@ -974,8 +977,8 @@ exit:
 	return res;
 }
 
-char *cfs_dup_payload_path(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
-			   u64 index)
+static char *cfs_dup_payload_path(struct cfs_context_s *ctx,
+				  struct cfs_inode_s *ino, u64 index)
 {
 	const char *v;
 	u8 *path;
