@@ -53,7 +53,6 @@ struct cfs_inode {
 	/* must be first for clear in cfs_alloc_inode to work */
 	struct inode vfs_inode;
 
-	struct cfs_xattr_header_s *xattrs;
 	struct cfs_inode_data_s inode_data;
 };
 
@@ -120,13 +119,6 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 		goto fail;
 	}
 
-	xattrs = cfs_get_xattrs(ctx, ino);
-	if (IS_ERR(xattrs)) {
-		ret = PTR_ERR(xattrs);
-		xattrs = NULL;
-		goto fail;
-	}
-
 	inode = new_inode(sb);
 	if (inode) {
 		inode_init_owner(&init_user_ns, inode, dir, ino->st_mode);
@@ -136,7 +128,6 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 
 		cino = CFS_I(inode);
 		cino->inode_data = inode_data;
-		cino->xattrs = xattrs;
 
 		inode->i_ino = ino_num;
 		set_nlink(inode, ino->st_nlink);
@@ -375,8 +366,6 @@ static void cfs_destroy_inode(struct inode *inode)
 	struct cfs_inode *cino = CFS_I(inode);
 
 	cfs_inode_data_put(&cino->inode_data);
-	if (cino->xattrs)
-		kfree(cino->xattrs);
 }
 
 static void cfs_free_inode(struct inode *inode)
@@ -836,7 +825,7 @@ static int cfs_getxattr(const struct xattr_handler *handler,
 {
 	struct cfs_inode *cino = CFS_I(inode);
 
-	return cfs_get_xattr(cino->xattrs, name, value, size);
+	return cfs_get_xattr(&cino->inode_data, name, value, size);
 }
 
 static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size)
@@ -844,7 +833,7 @@ static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size)
 	struct inode *inode = d_inode(dentry);
 	struct cfs_inode *cino = CFS_I(inode);
 
-	return cfs_list_xattrs(cino->xattrs, names, size);
+	return cfs_list_xattrs(&cino->inode_data, names, size);
 }
 
 static const struct file_operations cfs_file_operations = {

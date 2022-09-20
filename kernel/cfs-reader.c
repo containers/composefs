@@ -20,6 +20,9 @@
 #include <linux/unaligned/packed_struct.h>
 #include <linux/sched/mm.h>
 
+static struct cfs_xattr_header_s *cfs_get_xattrs(struct cfs_context_s *ctx,
+						 struct cfs_inode_s *ino);
+
 static void cfs_buf_put(struct cfs_buf *buf)
 {
 	if (buf->page) {
@@ -503,6 +506,7 @@ int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 	int ret = 0;
 	size_t i;
 	char *path_payload = NULL;
+	struct cfs_xattr_header_s *xattrs;
 
 	inode_data->payload_length = ino->payload_length;
 
@@ -539,6 +543,13 @@ int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 
 	inode_data->has_digest = ret != 0;
 
+	xattrs = cfs_get_xattrs(ctx, ino);
+	if (IS_ERR(xattrs)) {
+		ret = PTR_ERR(xattrs);
+		goto fail;
+	}
+	inode_data->xattrs = xattrs;
+
 	return 0;
 
 fail:
@@ -553,10 +564,14 @@ void cfs_inode_data_put(struct cfs_inode_data_s *inode_data)
 		kfree(inode_data->path_payload);
 		inode_data->path_payload = NULL;
 	}
+	if (inode_data->xattrs) {
+		kfree(inode_data->xattrs);
+		inode_data->xattrs = NULL;
+	}
 }
 
-struct cfs_xattr_header_s *cfs_get_xattrs(struct cfs_context_s *ctx,
-					  struct cfs_inode_s *ino)
+static struct cfs_xattr_header_s *cfs_get_xattrs(struct cfs_context_s *ctx,
+						 struct cfs_inode_s *ino)
 {
 	struct cfs_xattr_header_s *xattrs = NULL;
 	u8 *data, *data_end;
@@ -619,12 +634,13 @@ corrupted:
 	return ERR_PTR(-EFSCORRUPTED);
 }
 
-ssize_t cfs_list_xattrs(struct cfs_xattr_header_s *xattrs, char *names,
+ssize_t cfs_list_xattrs(struct cfs_inode_data_s *inode_data, char *names,
 			size_t size)
 {
 	u8 *data;
 	size_t n_xattrs = 0, i;
 	ssize_t copied = 0;
+	struct cfs_xattr_header_s *xattrs = inode_data->xattrs;
 
 	if (xattrs == NULL)
 		return 0;
@@ -652,11 +668,12 @@ ssize_t cfs_list_xattrs(struct cfs_xattr_header_s *xattrs, char *names,
 	return copied;
 }
 
-int cfs_get_xattr(struct cfs_xattr_header_s *xattrs, const char *name,
+int cfs_get_xattr(struct cfs_inode_data_s *inode_data, const char *name,
 		  void *value, size_t size)
 {
 	size_t name_len = strlen(name);
 	size_t n_xattrs = 0, i;
+	struct cfs_xattr_header_s *xattrs = inode_data->xattrs;
 	u8 *data;
 
 	if (xattrs == 0)
