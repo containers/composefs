@@ -186,14 +186,19 @@ static void *cfs_get_inode_payload(struct cfs_context_s *ctx,
 					   dest, 0, ino->payload_length);
 }
 
-static void *cfs_get_vdata(struct cfs_context_s *ctx,
-			   const struct cfs_vdata_s vdata, void *dest)
+static void *cfs_read_vdata(struct cfs_context_s *ctx, u64 offset, u32 len,
+			    void *dest)
 {
 	if (!dest)
 		return NULL;
 
-	return cfs_read_data(ctx, vdata.off + ctx->header.data_offset,
-			     vdata.len, dest);
+	return cfs_read_data(ctx, ctx->header.data_offset + offset, len, dest);
+}
+
+static void *cfs_get_vdata(struct cfs_context_s *ctx,
+			   const struct cfs_vdata_s vdata, void *dest)
+{
+	return cfs_read_vdata(ctx, vdata.off, vdata.len, dest);
 }
 
 static void *cfs_alloc_vdata(struct cfs_context_s *ctx,
@@ -316,7 +321,7 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 	}
 
 	if (CFS_INODE_FLAG_CHECK(ino->flags, XATTRS)) {
-		ino->xattrs.off = cfs_read_u32(&data);
+		ino->xattrs.off = cfs_read_u64(&data);
 		ino->xattrs.len = cfs_read_u32(&data);
 	} else {
 		ino->xattrs.off = 0;
@@ -382,48 +387,40 @@ struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 					    size_t max_n_chunks)
 {
 	size_t n_chunks, i;
-	off_t chunk_start;
 	struct cfs_dir_s *dir;
-	void *v;
 
 	/* Payload and buffer should be large enough to fit the n_chunks */
 	if (payload_length < sizeof(struct cfs_dir_s) ||
 	    chunk_buf_size < sizeof(struct cfs_dir_s))
 		return ERR_PTR(-EFSCORRUPTED);
 
+	/* Make sure we fit max_n_chunks in buffer before reading it */
+	if (chunk_buf_size < cfs_dir_size(max_n_chunks))
+		return ERR_PTR(-EINVAL);
+
 	dir = cfs_get_inode_payload_w_len(ctx, payload_length, index, chunk_buf,
-					  0, chunk_buf_size);
+					  0,
+					  MIN(chunk_buf_size, payload_length));
 	if (IS_ERR(dir))
 		return ERR_CAST(dir);
 
-	/* Read the dir header */
-	v = cfs_get_inode_payload_w_len(ctx, payload_length, index, chunk_buf,
-					0, chunk_buf_size);
-	if (IS_ERR(v))
-		return ERR_CAST(v);
-
 	n_chunks = dir->n_chunks = cfs_u32_from_file(dir->n_chunks);
-
-	/* Make sure we fit entire chunk header table in payload */
-	if (payload_length < cfs_dir_size(n_chunks))
-		return ERR_PTR(-EFSCORRUPTED);
 
 	/* Don't support n_chunks == 0, the canonical version of that is payload_length == 0 */
 	if (n_chunks == 0)
 		return ERR_PTR(-EFSCORRUPTED);
 
+	if (payload_length != cfs_dir_size(n_chunks))
+		return ERR_PTR(-EFSCORRUPTED);
+
 	max_n_chunks = MIN(n_chunks, max_n_chunks);
 
-	/* Make sure we fit max_n_chunks in buffer before reading it */
-	if (chunk_buf_size < cfs_dir_size(max_n_chunks))
-		return ERR_PTR(-EINVAL);
-
 	/* Verify data (up to max_n_chunks) */
-	chunk_start = cfs_dir_size(n_chunks);
 	for (i = 0; i < max_n_chunks; i++) {
 		struct cfs_dir_chunk_s *chunk = &dir->chunks[i];
 		chunk->n_dentries = cfs_u16_from_file(chunk->n_dentries);
 		chunk->chunk_size = cfs_u16_from_file(chunk->chunk_size);
+		chunk->chunk_offset = cfs_u64_from_file(chunk->chunk_offset);
 
 		if (chunk->chunk_size <
 		    sizeof(struct cfs_dentry_s) * chunk->n_dentries)
@@ -438,10 +435,9 @@ struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 		if (chunk->chunk_size == 0)
 			return ERR_PTR(-EFSCORRUPTED);
 
-		if (chunk_start + chunk->chunk_size > payload_length)
+		if (chunk->chunk_offset >
+		    ctx->descriptor_len - ctx->header.data_offset)
 			return ERR_PTR(-EFSCORRUPTED);
-
-		chunk_start += chunk->chunk_size;
 	}
 
 	return dir;
@@ -660,7 +656,7 @@ struct cfs_dir_chunk_s *cfs_dir_get_chunk_info(struct cfs_context_s *ctx,
 	return full_dir->chunks;
 }
 
-static inline int memcmp2(const void *a, const size_t a_size, void *b,
+static inline int memcmp2(const void *a, const size_t a_size, const void *b,
 			  size_t b_size)
 {
 	size_t common_size = MIN(a_size, b_size);
@@ -678,8 +674,7 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 		    cfs_dir_iter_cb cb, void *private)
 {
 	size_t i, j, n_chunks;
-	u64 chunk_start;
-	u8 *data, *data_end;
+	char *namedata, *namedata_end;
 	struct cfs_dir_chunk_s *chunks;
 	struct cfs_dentry_s *dentries;
 	void *chunks_buf;
@@ -704,9 +699,9 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 	}
 
 	pos = 0;
-	chunk_start = cfs_dir_size(n_chunks);
 	for (i = 0; i < n_chunks; i++) {
 		/* Chunks info are verified/converted in cfs_dir_read_chunk_header */
+		u64 chunk_offset = chunks[i].chunk_offset;
 		size_t chunk_size = chunks[i].chunk_size;
 		size_t n_dentries = chunks[i].n_dentries;
 
@@ -717,30 +712,28 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 		}
 
 		/* Read chunk dentries */
-		dentries = cfs_get_inode_payload_w_len(ctx, payload_length,
-						       index, buf, chunk_start,
-						       chunk_size);
+		dentries = cfs_read_vdata(ctx, chunk_offset, chunk_size, buf);
 		if (IS_ERR(dentries)) {
 			res = PTR_ERR(dentries);
 			goto exit;
 		}
-		chunk_start += chunk_size;
 
-		data = ((u8 *)dentries) +
-		       sizeof(struct cfs_dentry_s) * n_dentries;
-		data_end = ((u8 *)dentries) + chunk_size;
+		namedata = ((char *)dentries) +
+			   sizeof(struct cfs_dentry_s) * n_dentries;
+		namedata_end = ((char *)dentries) + chunk_size;
 
 		for (j = 0; j < n_dentries; j++) {
 			struct cfs_dentry_s *dentry = &dentries[j];
 			size_t dentry_name_len = dentry->name_len;
-			char *dentry_name = (char *)data;
+			char *dentry_name =
+				(char *)namedata + dentry->name_offset;
 
-			/* name needs to fit in data */
-			if (data_end - data < dentry_name_len) {
+			/* name needs to fit in namedata */
+			if (dentry_name >= namedata_end ||
+			    namedata_end - dentry_name < dentry_name_len) {
 				res = -EFSCORRUPTED;
 				goto exit;
 			}
-			data += dentry_name_len;
 
 			if (!cfs_validate_filename(dentry_name,
 						   dentry_name_len)) {
@@ -773,8 +766,7 @@ int cfs_dir_lookup(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 		   size_t name_len, u64 *index_out)
 {
 	size_t i, j, n_chunks;
-	u64 chunk_start;
-	u8 *data, *data_end;
+	char *namedata, *namedata_end;
 	struct cfs_dir_chunk_s *chunks;
 	struct cfs_dentry_s *dentries;
 	void *chunks_buf;
@@ -798,38 +790,36 @@ int cfs_dir_lookup(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 		return -ENOMEM;
 	}
 
-	chunk_start = cfs_dir_size(n_chunks);
 	for (i = 0; i < n_chunks; i++) {
 		/* Chunks info are verified/converted in cfs_dir_read_chunk_header */
+		u64 chunk_offset = chunks[i].chunk_offset;
 		size_t chunk_size = chunks[i].chunk_size;
 		size_t n_dentries = chunks[i].n_dentries;
 
 		/* Read chunk dentries */
-		dentries = cfs_get_inode_payload_w_len(ctx, payload_length,
-						       index, buf, chunk_start,
-						       chunk_size);
+		dentries = cfs_read_vdata(ctx, chunk_offset, chunk_size, buf);
 		if (IS_ERR(dentries)) {
 			res = PTR_ERR(dentries);
 			goto exit;
 		}
-		chunk_start += chunk_size;
 
-		data = ((u8 *)dentries) +
-		       sizeof(struct cfs_dentry_s) * n_dentries;
-		data_end = ((u8 *)dentries) + chunk_size;
+		namedata = ((u8 *)dentries) +
+			   sizeof(struct cfs_dentry_s) * n_dentries;
+		namedata_end = ((u8 *)dentries) + chunk_size;
 
 		for (j = 0; j < n_dentries; j++) {
 			struct cfs_dentry_s *dentry = &dentries[j];
 			size_t dentry_name_len = dentry->name_len;
-			char *dentry_name = (char *)data;
+			char *dentry_name =
+				(char *)namedata + dentry->name_offset;
 			int cmp;
 
-			/* name needs to fit in data */
-			if (data_end - data < dentry_name_len) {
+			/* name needs to fit in namedata */
+			if (dentry_name >= namedata_end ||
+			    namedata_end - dentry_name < dentry_name_len) {
 				res = -EFSCORRUPTED;
 				goto exit;
 			}
-			data += dentry_name_len;
 
 			cmp = memcmp2(name, name_len, dentry_name,
 				      dentry_name_len);

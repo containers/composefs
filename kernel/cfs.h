@@ -107,7 +107,7 @@ static inline int cfs_digest_from_payload(const char *payload,
 }
 
 struct cfs_vdata_s {
-	u32 off;
+	u64 off;
 	u32 len;
 } __attribute__((packed));
 
@@ -197,20 +197,23 @@ static inline u32 cfs_inode_encoded_size(u32 flags)
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, TIMES_NSEC, sizeof(u32) * 2) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS, sizeof(u32) * 2) +
+	       CFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS,
+					 sizeof(u64) + sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, SHA256_DIGEST_SIZE);
 }
 
 struct cfs_dentry_s {
 	/* Index of struct cfs_inode_s */
 	u64 inode_index;
-	u8 name_len;
 	u8 d_type;
+	u8 name_len;
+	u16 name_offset;
 } __attribute__((packed));
 
 struct cfs_dir_chunk_s {
 	u16 n_dentries;
 	u16 chunk_size;
+	u64 chunk_offset;
 } __attribute__((packed));
 
 struct cfs_dir_s {
