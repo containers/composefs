@@ -425,7 +425,7 @@ int main(int argc, char *argv[])
 		error(EXIT_FAILURE, errno, "read file size %s", argv[1]);
 
 	data = (uint8_t *)mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
-	if (data == NULL)
+	if (data == MAP_FAILED)
 		error(EXIT_FAILURE, errno, "fstat %s", argv[1]);
 
 	header = (struct lcfs_header_s *)data;
