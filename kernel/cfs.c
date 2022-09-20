@@ -53,11 +53,7 @@ struct cfs_inode {
 	/* must be first for clear in cfs_alloc_inode to work */
 	struct inode vfs_inode;
 
-	char *real_path;
-	struct cfs_xattr_header_s *xattrs;
 	struct cfs_inode_data_s inode_data;
-	bool has_digest;
-	uint8_t digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 };
 
 static inline struct cfs_inode *CFS_I(struct inode *inode)
@@ -111,46 +107,15 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 				    struct cfs_inode_s *ino,
 				    const struct inode *dir)
 {
-	char *target_link = NULL;
-	char *real_path = NULL;
 	struct cfs_xattr_header_s *xattrs = NULL;
 	struct cfs_inode *cino;
 	struct inode *inode = NULL;
-	u8 digest_buf[SHA256_DIGEST_SIZE];
-	const uint8_t *digest;
-	struct cfs_inode_data_s inode_data;
+	struct cfs_inode_data_s inode_data = { 0 };
 	int ret, res;
 
 	res = cfs_init_inode_data(ctx, ino, ino_num, &inode_data);
 	if (res < 0) {
 		ret = res;
-		goto fail;
-	}
-
-	if ((ino->st_mode & S_IFMT) == S_IFLNK) {
-		target_link = cfs_dup_payload_path(ctx, ino, ino_num);
-		if (IS_ERR(target_link)) {
-			ret = PTR_ERR(target_link);
-			target_link = NULL;
-			goto fail;
-		}
-	}
-
-	if ((ino->st_mode & S_IFMT) == S_IFREG && ino->payload_length != 0) {
-		real_path = cfs_dup_payload_path(ctx, ino, ino_num);
-		if (IS_ERR(real_path)) {
-			ret = PTR_ERR(real_path);
-			real_path = NULL;
-			goto fail;
-		}
-	}
-
-	digest = cfs_get_digest(ctx, ino, real_path, digest_buf);
-
-	xattrs = cfs_get_xattrs(ctx, ino);
-	if (IS_ERR(xattrs)) {
-		ret = PTR_ERR(xattrs);
-		xattrs = NULL;
 		goto fail;
 	}
 
@@ -163,10 +128,6 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 
 		cino = CFS_I(inode);
 		cino->inode_data = inode_data;
-		cino->xattrs = xattrs;
-		cino->has_digest = digest != NULL;
-		if (cino->has_digest)
-			memcpy(cino->digest, digest, SHA256_DIGEST_SIZE);
 
 		inode->i_ino = ino_num;
 		set_nlink(inode, ino->st_nlink);
@@ -183,10 +144,9 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 			inode->i_op = &cfs_file_inode_operations;
 			inode->i_fop = &cfs_file_operations;
 			inode->i_size = ino->st_size;
-			cino->real_path = real_path;
 			break;
 		case S_IFLNK:
-			inode->i_link = target_link;
+			inode->i_link = cino->inode_data.path_payload;
 			inode->i_op = &cfs_link_inode_operations;
 			inode->i_fop = &cfs_file_operations;
 			break;
@@ -213,12 +173,9 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 fail:
 	if (inode)
 		iput(inode);
-	if (real_path)
-		kfree(real_path);
 	if (xattrs)
 		kfree(xattrs);
-	if (target_link)
-		kfree(target_link);
+	cfs_inode_data_put(&inode_data);
 	return ERR_PTR(ret);
 }
 
@@ -263,8 +220,8 @@ static int cfs_iterate(struct file *file, struct dir_context *ctx)
 			       ctx->pos - 2, cfs_iterate_cb, ctx);
 }
 
-struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
-			  unsigned int flags)
+static struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
+				 unsigned int flags)
 {
 	struct cfs_info *fsi = dir->i_sb->s_fs_info;
 	struct cfs_inode *cino = CFS_I(dir);
@@ -408,13 +365,7 @@ static void cfs_destroy_inode(struct inode *inode)
 {
 	struct cfs_inode *cino = CFS_I(inode);
 
-	if (S_ISLNK(inode->i_mode) && inode->i_link)
-		kfree(inode->i_link);
-
-	if (cino->real_path)
-		kfree(cino->real_path);
-	if (cino->xattrs)
-		kfree(cino->xattrs);
+	cfs_inode_data_put(&cino->inode_data);
 }
 
 static void cfs_free_inode(struct inode *inode)
@@ -431,7 +382,7 @@ static void cfs_put_super(struct super_block *sb)
 
 	if (fsi->root_mnt)
 		kern_unmount(fsi->root_mnt);
-	cfs_destroy_ctx(&fsi->cfs_ctx);
+	cfs_ctx_put(&fsi->cfs_ctx);
 	if (fsi->bases) {
 		for (i = 0; i < fsi->n_bases; i++)
 			fput(fsi->bases[i]);
@@ -612,7 +563,7 @@ fail:
 	}
 	if (root_mnt)
 		kern_unmount(root_mnt);
-	cfs_destroy_ctx(&fsi->cfs_ctx);
+	cfs_ctx_put(&fsi->cfs_ctx);
 	return ret;
 }
 
@@ -635,7 +586,8 @@ static struct file *open_base_file(struct cfs_info *fsi, struct inode *inode,
 
 	for (i = 0; i < fsi->n_bases; i++) {
 		real_file = file_open_root(&(fsi->bases[i]->f_path),
-					   cino->real_path, file->f_flags, 0);
+					   cino->inode_data.path_payload,
+					   file->f_flags, 0);
 		if (!IS_ERR(real_file) || PTR_ERR(real_file) != -ENOENT)
 			return real_file;
 	}
@@ -648,6 +600,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	struct cfs_inode *cino = CFS_I(inode);
 	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 	struct file *real_file;
+	char *real_path = cino->inode_data.path_payload;
 
 	if (WARN_ON(file == NULL))
 		return -EIO;
@@ -655,15 +608,15 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	if (file->f_flags & (O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_TRUNC))
 		return -EROFS;
 
-	if (cino->real_path == NULL) {
+	if (real_path == NULL) {
 		file->private_data = &empty_file;
 		return 0;
 	}
 
 	/* FIXME: prevent loops opening files.  */
 
-	if (fsi->n_bases == 0 || cino->real_path[0] == '/') {
-		real_file = file_open_root_mnt(fsi->root_mnt, cino->real_path,
+	if (fsi->n_bases == 0 || real_path[0] == '/') {
+		real_file = file_open_root_mnt(fsi->root_mnt, real_path,
 					       file->f_flags, 0);
 	} else {
 		real_file = open_base_file(fsi, inode, file);
@@ -674,7 +627,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	}
 
 	/* If metadata records a digest for the file, ensure it is there and correct before using the contents */
-	if (cino->has_digest && !fsi->noverity) {
+	if (cino->inode_data.has_digest && !fsi->noverity) {
 		u8 verity_digest[FS_VERITY_MAX_DIGEST_SIZE];
 		enum hash_algo verity_algo;
 		int res;
@@ -687,8 +640,8 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 			return -EIO;
 		}
 		if (verity_algo != HASH_ALGO_SHA256 ||
-		    memcmp(cino->digest, verity_digest, SHA256_DIGEST_SIZE) !=
-			    0) {
+		    memcmp(cino->inode_data.digest, verity_digest,
+			   SHA256_DIGEST_SIZE) != 0) {
 			pr_warn("WARNING: composefs backing file '%pd' has the wrong fs-verity digest\n",
 				real_file->f_path.dentry);
 			fput(real_file);
@@ -870,17 +823,20 @@ static int cfs_getxattr(const struct xattr_handler *handler,
 			struct dentry *unused2, struct inode *inode,
 			const char *name, void *value, size_t size)
 {
+	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 	struct cfs_inode *cino = CFS_I(inode);
 
-	return cfs_get_xattr(cino->xattrs, name, value, size);
+	return cfs_get_xattr(&fsi->cfs_ctx, &cino->inode_data, name, value,
+			     size);
 }
 
 static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size)
 {
 	struct inode *inode = d_inode(dentry);
+	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 	struct cfs_inode *cino = CFS_I(inode);
 
-	return cfs_list_xattrs(cino->xattrs, names, size);
+	return cfs_list_xattrs(&fsi->cfs_ctx, &cino->inode_data, names, size);
 }
 
 static const struct file_operations cfs_file_operations = {
