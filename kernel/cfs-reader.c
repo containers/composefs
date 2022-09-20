@@ -409,11 +409,11 @@ static bool cfs_validate_filename(const char *name, size_t name_len)
 	return true;
 }
 
-struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
-					    u32 payload_length, u64 index,
-					    u8 *chunk_buf,
-					    size_t chunk_buf_size,
-					    size_t max_n_chunks)
+static struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
+						   u32 payload_length,
+						   u64 index, u8 *chunk_buf,
+						   size_t chunk_buf_size,
+						   size_t max_n_chunks)
 {
 	size_t n_chunks, i;
 	struct cfs_dir_s *dir;
