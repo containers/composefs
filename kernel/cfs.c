@@ -34,10 +34,8 @@
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 
-#define CFS_MAX_STACK 500
-
 struct cfs_info {
-	struct cfs_context_s *cfs_ctx;
+	struct cfs_context_s cfs_ctx;
 
 	struct vfsmount *root_mnt;
 
@@ -236,11 +234,11 @@ static struct inode *cfs_get_root_inode(struct super_block *sb)
 	struct cfs_inode_s *ino;
 	u64 index;
 
-	ino = cfs_get_root_ino(fsi->cfs_ctx, &ino_buf, &index);
+	ino = cfs_get_root_ino(&fsi->cfs_ctx, &ino_buf, &index);
 	if (IS_ERR(ino))
 		return ERR_CAST(ino);
 
-	return cfs_make_inode(fsi->cfs_ctx, sb, index, ino, NULL);
+	return cfs_make_inode(&fsi->cfs_ctx, sb, index, ino, NULL);
 }
 
 static bool cfs_iterate_cb(void *private, const char *name, int name_len,
@@ -266,9 +264,9 @@ static int cfs_iterate(struct file *file, struct dir_context *ctx)
 	if (!dir_emit_dots(file, ctx))
 		return 0;
 
-	return cfs_dir_iterate(fsi->cfs_ctx, cino->payload_length, inode->i_ino,
-			       &cino->dir_data, ctx->pos - 2, cfs_iterate_cb,
-			       ctx);
+	return cfs_dir_iterate(&fsi->cfs_ctx, cino->payload_length,
+			       inode->i_ino, &cino->dir_data, ctx->pos - 2,
+			       cfs_iterate_cb, ctx);
 }
 
 struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
@@ -285,7 +283,7 @@ struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 	if (dentry->d_name.len > NAME_MAX)
 		return ERR_PTR(-ENAMETOOLONG);
 
-	ret = cfs_dir_lookup(fsi->cfs_ctx, cino->payload_length, dir->i_ino,
+	ret = cfs_dir_lookup(&fsi->cfs_ctx, cino->payload_length, dir->i_ino,
 			     &cino->dir_data, dentry->d_name.name,
 			     dentry->d_name.len, &index);
 	if (ret < 0)
@@ -293,11 +291,11 @@ struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 	if (ret == 0)
 		goto return_negative;
 
-	ino_s = cfs_get_ino_index(fsi->cfs_ctx, index, &ino_buf);
+	ino_s = cfs_get_ino_index(&fsi->cfs_ctx, index, &ino_buf);
 	if (IS_ERR(ino_s))
 		return ERR_CAST(ino_s);
 
-	inode = cfs_make_inode(fsi->cfs_ctx, dir->i_sb, index, ino_s, dir);
+	inode = cfs_make_inode(&fsi->cfs_ctx, dir->i_sb, index, ino_s, dir);
 	if (IS_ERR(inode))
 		return ERR_CAST(inode);
 
@@ -440,8 +438,7 @@ static void cfs_put_super(struct super_block *sb)
 
 	if (fsi->root_mnt)
 		kern_unmount(fsi->root_mnt);
-	if (fsi->cfs_ctx)
-		cfs_destroy_ctx(fsi->cfs_ctx);
+	cfs_destroy_ctx(&fsi->cfs_ctx);
 	if (fsi->bases) {
 		for (i = 0; i < fsi->n_bases; i++)
 			fput(fsi->bases[i]);
@@ -517,7 +514,6 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	struct path rootpath = {};
 	size_t numlower = 0;
 	struct inode *inode;
-	void *ctx;
 	int ret;
 
 	if (sb->s_root)
@@ -584,13 +580,11 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 		kfree(splitlower);
 	}
 
-	ctx = cfs_create_ctx(fc->source, fsi->has_digest ? fsi->digest : NULL);
-	if (IS_ERR(ctx)) {
-		ret = PTR_ERR(ctx);
+	/* Must be inited before calling cfs_get_inode.  */
+	ret = cfs_init_ctx(fc->source, fsi->has_digest ? fsi->digest : NULL,
+			   &fsi->cfs_ctx);
+	if (ret < 0)
 		goto fail;
-	}
-	/* Must be set before calling cfs_get_inode.  */
-	fsi->cfs_ctx = ctx;
 
 	inode = cfs_get_root_inode(sb);
 	if (IS_ERR(inode)) {
@@ -625,10 +619,7 @@ fail:
 	}
 	if (root_mnt)
 		kern_unmount(root_mnt);
-	if (fsi->cfs_ctx) {
-		cfs_destroy_ctx(fsi->cfs_ctx);
-		fsi->cfs_ctx = NULL;
-	}
+	cfs_destroy_ctx(&fsi->cfs_ctx);
 	return ret;
 }
 
@@ -839,12 +830,12 @@ static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 		struct cfs_inode_s inode_buf;
 		struct cfs_inode_s *inode;
 
-		inode = cfs_get_ino_index(fsi->cfs_ctx, inode_index,
+		inode = cfs_get_ino_index(&fsi->cfs_ctx, inode_index,
 					  &inode_buf);
 		if (IS_ERR(inode))
 			return ERR_CAST(inode);
 
-		ino = cfs_make_inode(fsi->cfs_ctx, sb, inode_index, inode,
+		ino = cfs_make_inode(&fsi->cfs_ctx, sb, inode_index, inode,
 				     NULL);
 		if (IS_ERR(ino))
 			return ERR_CAST(ino);

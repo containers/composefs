@@ -20,25 +20,6 @@
 #include <linux/unaligned/packed_struct.h>
 #include <linux/sched/mm.h>
 
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-
-struct cfs_context_s {
-	struct cfs_header_s header;
-	struct file *descriptor;
-
-	u64 descriptor_len;
-};
-
-struct cfs_buf {
-	struct page *page;
-	void *base;
-};
-
-#define CFS_VDATA_BUF_INIT                                                     \
-	{                                                                      \
-		NULL, NULL                                                     \
-	}
-
 static void cfs_buf_put(struct cfs_buf *buf)
 {
 	if (buf->page) {
@@ -118,20 +99,20 @@ static void *cfs_read_data(struct cfs_context_s *ctx, u64 offset, u64 size,
 	return dest;
 }
 
-struct cfs_context_s *cfs_create_ctx(const char *descriptor_path,
-				     const u8 *required_digest)
+int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
+		 struct cfs_context_s *ctx_out)
 {
 	struct cfs_header_s *header;
-	struct cfs_context_s *ctx;
 	struct file *descriptor;
 	loff_t i_size;
 	u8 verity_digest[FS_VERITY_MAX_DIGEST_SIZE];
 	enum hash_algo verity_algo;
+	struct cfs_context_s ctx;
 	int res;
 
 	descriptor = filp_open(descriptor_path, O_RDONLY, 0);
 	if (IS_ERR(descriptor))
-		return ERR_CAST(descriptor);
+		return PTR_ERR(descriptor);
 
 	if (required_digest) {
 		res = fsverity_get_digest(d_inode(descriptor->f_path.dentry),
@@ -139,14 +120,14 @@ struct cfs_context_s *cfs_create_ctx(const char *descriptor_path,
 		if (res < 0) {
 			pr_err("ERROR: composefs descriptor has no fs-verity digest\n");
 			fput(descriptor);
-			return ERR_PTR(res);
+			return res;
 		}
 		if (verity_algo != HASH_ALGO_SHA256 ||
 		    memcmp(required_digest, verity_digest,
 			   SHA256_DIGEST_SIZE) != 0) {
 			pr_err("ERROR: composefs descriptor has wrong fs-verity digest\n");
 			fput(descriptor);
-			return ERR_PTR(-EINVAL);
+			return -EINVAL;
 		}
 	}
 
@@ -154,47 +135,41 @@ struct cfs_context_s *cfs_create_ctx(const char *descriptor_path,
 	if (i_size <=
 	    (sizeof(struct cfs_header_s) + sizeof(struct cfs_inode_s))) {
 		fput(descriptor);
-		return ERR_PTR(-EINVAL);
+		return -EINVAL;
 	}
 
-	ctx = kzalloc(sizeof(struct cfs_context_s), GFP_KERNEL);
-	if (ctx == NULL) {
-		fput(descriptor);
-		return ERR_PTR(-ENOMEM);
-	}
+	/* Need this temporary ctx for cfs_read_data() */
+	ctx.descriptor = descriptor;
+	ctx.descriptor_len = i_size;
 
-	ctx->descriptor = descriptor;
-	ctx->descriptor_len = i_size;
-
-	header = cfs_read_data(ctx, 0, sizeof(struct cfs_header_s),
-			       (u8 *)&ctx->header);
+	header = cfs_read_data(&ctx, 0, sizeof(struct cfs_header_s),
+			       (u8 *)&ctx.header);
 	if (IS_ERR(header)) {
 		fput(descriptor);
-		kfree(ctx);
-		return ERR_CAST(header);
+		return PTR_ERR(header);
 	}
 	header->magic = cfs_u32_from_file(header->magic);
 	header->data_offset = cfs_u64_from_file(header->data_offset);
 	header->root_inode = cfs_u64_from_file(header->root_inode);
 
 	if (header->magic != CFS_MAGIC ||
-	    header->data_offset > ctx->descriptor_len ||
+	    header->data_offset > ctx.descriptor_len ||
 	    sizeof(struct cfs_header_s) + header->root_inode >
-		    ctx->descriptor_len) {
+		    ctx.descriptor_len) {
 		fput(descriptor);
-		kfree(ctx);
-		return ERR_PTR(-EINVAL);
+		return -EINVAL;
 	}
 
-	return ctx;
+	*ctx_out = ctx;
+	return 0;
 }
 
 void cfs_destroy_ctx(struct cfs_context_s *ctx)
 {
-	if (!ctx)
-		return;
-	fput(ctx->descriptor);
-	kfree(ctx);
+	if (ctx->descriptor) {
+		fput(ctx->descriptor);
+		ctx->descriptor = NULL;
+	}
 }
 
 static void *cfs_get_inode_data(struct cfs_context_s *ctx, u64 offset, u64 size,

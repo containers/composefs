@@ -6,17 +6,34 @@
 
 #define EFSCORRUPTED EUCLEAN /* Filesystem is corrupted */
 
-struct cfs_context_s;
-
+#define CFS_MAX_STACK 500
 #define CFS_N_PRELOAD_DIR_CHUNKS 4
+
+struct cfs_buf {
+	struct page *page;
+	void *base;
+};
+#define CFS_VDATA_BUF_INIT                                                     \
+	{                                                                      \
+		NULL, NULL                                                     \
+	}
 
 struct cfs_dir_data_s {
 	u32 n_chunks;
 	struct cfs_dir_chunk_s preloaded_chunks[CFS_N_PRELOAD_DIR_CHUNKS];
 };
 
-struct cfs_context_s *cfs_create_ctx(const char *descriptor_path,
-				     const u8 *required_digest);
+struct cfs_context_s {
+	struct cfs_header_s header;
+	struct file *descriptor;
+
+	u64 descriptor_len;
+};
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
+int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
+		 struct cfs_context_s *ctx);
 
 void cfs_destroy_ctx(struct cfs_context_s *ctx);
 
