@@ -159,14 +159,14 @@ struct cfs_inode_s {
 	/* Optional data: (selected by flags) */
 
 	/* This is the size of the type specific data that comes directly after
-	   the inode in the file. Of this type:
-	   *
-	   * directory: cfs_dir_s
-	   * regular file: the backing filename
-	   * symlink: the target link
-	   *
-	   * Canonically payload_length is 0 for empty dir/file/symlink.
-	   */
+	 * the inode in the file. Of this type:
+	 *
+	 * directory: cfs_dir_s
+	 * regular file: the backing filename
+	 * symlink: the target link
+	 *
+	 * Canonically payload_length is 0 for empty dir/file/symlink.
+	 */
 	u32 payload_length;
 
 	u32 st_mode; /* File type and mode.  */
