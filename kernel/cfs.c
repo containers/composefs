@@ -174,8 +174,7 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 fail:
 	if (inode)
 		iput(inode);
-	if (xattrs)
-		kfree(xattrs);
+	kfree(xattrs);
 	cfs_inode_data_put(&inode_data);
 	return ERR_PTR(ret);
 }
@@ -391,8 +390,7 @@ static void cfs_put_super(struct super_block *sb)
 			fput(fsi->bases[i]);
 		kfree(fsi->bases);
 	}
-	if (fsi->base_path)
-		kfree(fsi->base_path);
+	kfree(fsi->base_path);
 
 	kfree(fsi);
 }

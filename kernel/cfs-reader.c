@@ -566,10 +566,8 @@ fail:
 void cfs_inode_data_put(struct cfs_inode_data_s *inode_data)
 {
 	inode_data->n_dir_chunks = 0;
-	if (inode_data->path_payload) {
-		kfree(inode_data->path_payload);
-		inode_data->path_payload = NULL;
-	}
+	kfree(inode_data->path_payload);
+	inode_data->path_payload = NULL;
 }
 
 ssize_t cfs_list_xattrs(struct cfs_context_s *ctx,
@@ -844,8 +842,7 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u64 index,
 
 	res = 0;
 exit:
-	if (chunks_buf)
-		kfree(chunks_buf);
+	kfree(chunks_buf);
 	cfs_buf_put(&vdata_buf);
 	return res;
 }
@@ -958,8 +955,7 @@ int cfs_dir_lookup(struct cfs_context_s *ctx, u64 index,
 	res = 0;
 
 exit:
-	if (chunks_buf)
-		kfree(chunks_buf);
+	kfree(chunks_buf);
 	cfs_buf_put(&vdata_buf);
 	return res;
 }
