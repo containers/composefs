@@ -7,8 +7,7 @@
  * This file is released under the GPL.
  */
 
-#include "cfs.h"
-#include "cfs-reader.h"
+#include "cfs-internals.h"
 
 #include <linux/string.h>
 #include <linux/kernel_read_file.h>
@@ -18,8 +17,6 @@
 #include <linux/overflow.h>
 #include <linux/overflow.h>
 #include <linux/unaligned/packed_struct.h>
-
-#include "cfs-verity.h"
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 

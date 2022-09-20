@@ -1,7 +1,8 @@
-#ifndef _CFS_READER_H
-#define _CFS_READER_H
+#ifndef _CFS_INTERNALS_H
+#define _CFS_INTERNALS_H
 
 #include "cfs.h"
+#include "cfs-verity.h"
 
 #define EFSCORRUPTED EUCLEAN /* Filesystem is corrupted */
 
