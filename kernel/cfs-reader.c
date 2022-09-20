@@ -490,27 +490,31 @@ struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 	return dir;
 }
 
-int cfs_get_dir_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
-		     u64 index, struct cfs_dir_data_s *dirdata)
+int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
+			u64 index, struct cfs_inode_data_s *inode_data)
 {
 	u8 buf[cfs_dir_size(CFS_N_PRELOAD_DIR_CHUNKS)];
 	struct cfs_dir_s *dir;
 	size_t i;
 
+	inode_data->payload_length = ino->payload_length;
+
 	if ((ino->st_mode & S_IFMT) != S_IFDIR || ino->payload_length == 0) {
-		dirdata->n_chunks = 0;
-		return 0;
+		inode_data->n_dir_chunks = 0;
+	} else {
+		dir = cfs_dir_read_chunk_header(ctx, ino->payload_length, index,
+						buf, sizeof(buf),
+						CFS_N_PRELOAD_DIR_CHUNKS);
+		if (IS_ERR(dir))
+			return PTR_ERR(dir);
+
+		inode_data->n_dir_chunks = dir->n_chunks;
+
+		for (i = 0; i < inode_data->n_dir_chunks &&
+			    i < CFS_N_PRELOAD_DIR_CHUNKS;
+		     i++)
+			inode_data->preloaded_dir_chunks[i] = dir->chunks[i];
 	}
-
-	dir = cfs_dir_read_chunk_header(ctx, ino->payload_length, index, buf,
-					sizeof(buf), CFS_N_PRELOAD_DIR_CHUNKS);
-	if (IS_ERR(dir))
-		return PTR_ERR(dir);
-
-	dirdata->n_chunks = dir->n_chunks;
-
-	for (i = 0; i < dirdata->n_chunks && i < CFS_N_PRELOAD_DIR_CHUNKS; i++)
-		dirdata->preloaded_chunks[i] = dir->chunks[i];
 
 	return 0;
 }
@@ -660,11 +664,11 @@ int cfs_get_xattr(struct cfs_xattr_header_s *xattrs, const char *name,
 	return -ENODATA;
 }
 
-struct cfs_dir_s *
-cfs_dir_read_chunk_header_alloc(struct cfs_context_s *ctx, u32 payload_length,
-				u64 index, struct cfs_dir_data_s *dirdata)
+static struct cfs_dir_s *
+cfs_dir_read_chunk_header_alloc(struct cfs_context_s *ctx, u64 index,
+				struct cfs_inode_data_s *inode_data)
 {
-	size_t chunk_buf_size = cfs_dir_size(dirdata->n_chunks);
+	size_t chunk_buf_size = cfs_dir_size(inode_data->n_dir_chunks);
 	u8 *chunk_buf;
 	struct cfs_dir_s *dir;
 
@@ -672,8 +676,9 @@ cfs_dir_read_chunk_header_alloc(struct cfs_context_s *ctx, u32 payload_length,
 	if (!chunk_buf)
 		return ERR_PTR(-ENOMEM);
 
-	dir = cfs_dir_read_chunk_header(ctx, payload_length, index, chunk_buf,
-					chunk_buf_size, dirdata->n_chunks);
+	dir = cfs_dir_read_chunk_header(ctx, inode_data->payload_length, index,
+					chunk_buf, chunk_buf_size,
+					inode_data->n_dir_chunks);
 	if (IS_ERR(dir)) {
 		kfree(chunk_buf);
 		return ERR_CAST(dir);
@@ -682,20 +687,18 @@ cfs_dir_read_chunk_header_alloc(struct cfs_context_s *ctx, u32 payload_length,
 	return dir;
 }
 
-struct cfs_dir_chunk_s *cfs_dir_get_chunk_info(struct cfs_context_s *ctx,
-					       u32 payload_length, u64 index,
-					       struct cfs_dir_data_s *dirdata,
-					       void **chunks_buf)
+static struct cfs_dir_chunk_s *
+cfs_dir_get_chunk_info(struct cfs_context_s *ctx, u64 index,
+		       struct cfs_inode_data_s *inode_data, void **chunks_buf)
 {
 	struct cfs_dir_s *full_dir;
 
-	if (dirdata->n_chunks <= CFS_N_PRELOAD_DIR_CHUNKS) {
+	if (inode_data->n_dir_chunks <= CFS_N_PRELOAD_DIR_CHUNKS) {
 		*chunks_buf = NULL;
-		return dirdata->preloaded_chunks;
+		return inode_data->preloaded_dir_chunks;
 	}
 
-	full_dir = cfs_dir_read_chunk_header_alloc(ctx, payload_length, index,
-						   dirdata);
+	full_dir = cfs_dir_read_chunk_header_alloc(ctx, index, inode_data);
 	if (IS_ERR(full_dir))
 		return ERR_CAST(full_dir);
 
@@ -716,8 +719,8 @@ static inline int memcmp2(const void *a, const size_t a_size, const void *b,
 	return a_size < b_size ? -1 : 1;
 }
 
-int cfs_dir_iterate(struct cfs_context_s *ctx, u32 payload_length, u64 index,
-		    struct cfs_dir_data_s *dirdata, loff_t first,
+int cfs_dir_iterate(struct cfs_context_s *ctx, u64 index,
+		    struct cfs_inode_data_s *inode_data, loff_t first,
 		    cfs_dir_iter_cb cb, void *private)
 {
 	size_t i, j, n_chunks;
@@ -729,12 +732,11 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 	loff_t pos;
 	int res;
 
-	n_chunks = dirdata->n_chunks;
+	n_chunks = inode_data->n_dir_chunks;
 	if (n_chunks == 0)
 		return 0;
 
-	chunks = cfs_dir_get_chunk_info(ctx, payload_length, index, dirdata,
-					&chunks_buf);
+	chunks = cfs_dir_get_chunk_info(ctx, index, inode_data, &chunks_buf);
 	if (IS_ERR(chunks))
 		return PTR_ERR(chunks);
 
@@ -849,8 +851,8 @@ static int cfs_dir_lookup_in_chunk(const char *name, size_t name_len,
 	return cmp > 0 ? AFTER_CHUNK : BEFORE_CHUNK;
 }
 
-int cfs_dir_lookup(struct cfs_context_s *ctx, u32 payload_length, u64 index,
-		   struct cfs_dir_data_s *dirdata, const char *name,
+int cfs_dir_lookup(struct cfs_context_s *ctx, u64 index,
+		   struct cfs_inode_data_s *inode_data, const char *name,
 		   size_t name_len, u64 *index_out)
 {
 	int n_chunks, start_chunk, end_chunk;
@@ -861,12 +863,11 @@ int cfs_dir_lookup(struct cfs_context_s *ctx, u32 payload_length, u64 index,
 	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
 	int res, r;
 
-	n_chunks = dirdata->n_chunks;
+	n_chunks = inode_data->n_dir_chunks;
 	if (n_chunks == 0)
 		return 0;
 
-	chunks = cfs_dir_get_chunk_info(ctx, payload_length, index, dirdata,
-					&chunks_buf);
+	chunks = cfs_dir_get_chunk_info(ctx, index, inode_data, &chunks_buf);
 	if (IS_ERR(chunks)) {
 		return PTR_ERR(chunks);
 	}

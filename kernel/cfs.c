@@ -53,10 +53,9 @@ struct cfs_inode {
 	/* must be first for clear in cfs_alloc_inode to work */
 	struct inode vfs_inode;
 
-	u32 payload_length;
 	char *real_path;
 	struct cfs_xattr_header_s *xattrs;
-	struct cfs_dir_data_s dir_data;
+	struct cfs_inode_data_s inode_data;
 	bool has_digest;
 	uint8_t digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 };
@@ -119,8 +118,14 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 	struct inode *inode = NULL;
 	u8 digest_buf[SHA256_DIGEST_SIZE];
 	const uint8_t *digest;
-	struct cfs_dir_data_s dir_data;
+	struct cfs_inode_data_s inode_data;
 	int ret, res;
+
+	res = cfs_init_inode_data(ctx, ino, ino_num, &inode_data);
+	if (res < 0) {
+		ret = res;
+		goto fail;
+	}
 
 	if ((ino->st_mode & S_IFMT) == S_IFLNK) {
 		target_link = cfs_dup_payload_path(ctx, ino, ino_num);
@@ -136,14 +141,6 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 		if (IS_ERR(real_path)) {
 			ret = PTR_ERR(real_path);
 			real_path = NULL;
-			goto fail;
-		}
-	}
-
-	if ((ino->st_mode & S_IFMT) == S_IFDIR) {
-		res = cfs_get_dir_data(ctx, ino, ino_num, &dir_data);
-		if (res < 0) {
-			ret = res;
 			goto fail;
 		}
 	}
@@ -165,10 +162,8 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 		mapping_set_unevictable(inode->i_mapping);
 
 		cino = CFS_I(inode);
-		cino->payload_length = ino->payload_length;
+		cino->inode_data = inode_data;
 		cino->xattrs = xattrs;
-		if ((ino->st_mode & S_IFMT) == S_IFDIR)
-			cino->dir_data = dir_data;
 		cino->has_digest = digest != NULL;
 		if (cino->has_digest)
 			memcpy(cino->digest, digest, SHA256_DIGEST_SIZE);
@@ -264,9 +259,8 @@ static int cfs_iterate(struct file *file, struct dir_context *ctx)
 	if (!dir_emit_dots(file, ctx))
 		return 0;
 
-	return cfs_dir_iterate(&fsi->cfs_ctx, cino->payload_length,
-			       inode->i_ino, &cino->dir_data, ctx->pos - 2,
-			       cfs_iterate_cb, ctx);
+	return cfs_dir_iterate(&fsi->cfs_ctx, inode->i_ino, &cino->inode_data,
+			       ctx->pos - 2, cfs_iterate_cb, ctx);
 }
 
 struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
@@ -283,9 +277,8 @@ struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 	if (dentry->d_name.len > NAME_MAX)
 		return ERR_PTR(-ENAMETOOLONG);
 
-	ret = cfs_dir_lookup(&fsi->cfs_ctx, cino->payload_length, dir->i_ino,
-			     &cino->dir_data, dentry->d_name.name,
-			     dentry->d_name.len, &index);
+	ret = cfs_dir_lookup(&fsi->cfs_ctx, dir->i_ino, &cino->inode_data,
+			     dentry->d_name.name, dentry->d_name.len, &index);
 	if (ret < 0)
 		return ERR_PTR(ret);
 	if (ret == 0)
