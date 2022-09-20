@@ -443,6 +443,7 @@ static struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 	/* Verify data (up to max_n_chunks) */
 	for (i = 0; i < max_n_chunks; i++) {
 		struct cfs_dir_chunk_s *chunk = &dir->chunks[i];
+
 		chunk->n_dentries = cfs_u16_from_file(chunk->n_dentries);
 		chunk->chunk_size = cfs_u16_from_file(chunk->chunk_size);
 		chunk->chunk_offset = cfs_u64_from_file(chunk->chunk_offset);
