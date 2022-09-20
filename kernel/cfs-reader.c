@@ -170,7 +170,7 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	return 0;
 }
 
-void cfs_destroy_ctx(struct cfs_context_s *ctx)
+void cfs_ctx_put(struct cfs_context_s *ctx)
 {
 	if (ctx->descriptor) {
 		fput(ctx->descriptor);

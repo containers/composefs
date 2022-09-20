@@ -382,7 +382,7 @@ static void cfs_put_super(struct super_block *sb)
 
 	if (fsi->root_mnt)
 		kern_unmount(fsi->root_mnt);
-	cfs_destroy_ctx(&fsi->cfs_ctx);
+	cfs_ctx_put(&fsi->cfs_ctx);
 	if (fsi->bases) {
 		for (i = 0; i < fsi->n_bases; i++)
 			fput(fsi->bases[i]);
@@ -563,7 +563,7 @@ fail:
 	}
 	if (root_mnt)
 		kern_unmount(root_mnt);
-	cfs_destroy_ctx(&fsi->cfs_ctx);
+	cfs_ctx_put(&fsi->cfs_ctx);
 	return ret;
 }
 

@@ -42,7 +42,7 @@ struct cfs_context_s {
 int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 		 struct cfs_context_s *ctx);
 
-void cfs_destroy_ctx(struct cfs_context_s *ctx);
+void cfs_ctx_put(struct cfs_context_s *ctx);
 
 void cfs_inode_data_put(struct cfs_inode_data_s *inode_data);
 
