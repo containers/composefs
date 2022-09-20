@@ -89,9 +89,8 @@ static inline int cfs_digest_from_payload(const char *payload,
 			return -1; /* Too long */
 
 		digit = cfs_xdigit_value(*p);
-		if (digit == -1) {
+		if (digit == -1)
 			return -1; /* Not hex digit */
-		}
 
 		n_nibbles++;
 		if ((n_nibbles % 2) == 0) {

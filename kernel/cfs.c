@@ -623,9 +623,8 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 		real_file = open_base_file(fsi, inode, file);
 	}
 
-	if (IS_ERR(real_file)) {
+	if (IS_ERR(real_file))
 		return PTR_ERR(real_file);
-	}
 
 	/* If metadata records a digest for the file, ensure it is there and correct before using the contents */
 	if (cino->inode_data.has_digest && !fsi->noverity) {
