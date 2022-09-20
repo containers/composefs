@@ -21,6 +21,7 @@
 
 #include "libcomposefs/lcfs.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -264,13 +265,11 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 
 	if (dirp && recurse && ino.payload_length != 0) {
 		const struct lcfs_dir_s *dir;
-		const uint8_t *chunkdata;
 		size_t n_chunks;
 		int j;
 
 		dir = (const struct lcfs_dir_s *)payload_data;
 		n_chunks = lcfs_u32_from_file(dir->n_chunks);
-		chunkdata = payload_data + lcfs_dir_size(n_chunks);
 
 		for (j = 0; j < n_chunks; j++) {
 			const struct lcfs_dir_chunk_s *chunk = &dir->chunks[j];
@@ -278,13 +277,20 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 				lcfs_u16_from_file(chunk->n_dentries);
 			size_t chunk_size =
 				lcfs_u16_from_file(chunk->chunk_size);
-			const struct lcfs_dentry_s *dentries;
+			size_t chunk_offset =
+				lcfs_u64_from_file(chunk->chunk_offset);
+			const struct lcfs_dentry_s *dentries =
+				(const struct lcfs_dentry_s *)(vdata +
+							       chunk_offset);
 			const char *namedata;
 
-			dentries = (const struct lcfs_dentry_s *)chunkdata;
-			namedata = (const char *)chunkdata +
+			assert(chunk_size <= LCFS_MAX_DIR_CHUNK_SIZE);
+			assert(chunk_offset / 4096 ==
+			       (chunk_offset + chunk_size - 1) /
+				       4096); /* same page */
+
+			namedata = (const char *)dentries +
 				   sizeof(struct lcfs_dentry_s) * n_dentries;
-			chunkdata += chunk_size;
 
 			for (i = 0; i < n_dentries; i++) {
 				size_t child_name_len = dentries[i].name_len;
@@ -396,6 +402,7 @@ int main(int argc, char *argv[])
 	uint8_t *vdata;
 	size_t root_index;
 	struct lcfs_header_s *header;
+	size_t data_offset;
 
 	if (argc < 3)
 		error(EXIT_FAILURE, errno, "argument not specified");
@@ -425,7 +432,7 @@ int main(int argc, char *argv[])
 		error(EXIT_FAILURE, errno, "read file size %s", argv[1]);
 
 	data = (uint8_t *)mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
-	if (data == NULL)
+	if (data == MAP_FAILED)
 		error(EXIT_FAILURE, errno, "fstat %s", argv[1]);
 
 	header = (struct lcfs_header_s *)data;
@@ -434,7 +441,9 @@ int main(int argc, char *argv[])
 		error(EXIT_FAILURE, EINVAL, "Invalid data offset");
 
 	inode_data = data + sizeof(struct lcfs_header_s);
-	vdata = data + lcfs_u64_from_file(header->data_offset);
+	data_offset = lcfs_u64_from_file(header->data_offset);
+	assert(data_offset % 4096 == 0);
+	vdata = data + data_offset;
 	root_index = lcfs_u64_from_file(header->root_inode);
 	if (mode == DUMP) {
 		dump_inode(inode_data, vdata, "", 0, root_index, 0, false,

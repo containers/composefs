@@ -141,15 +141,16 @@ payload length attribute gives the size of the variable chunk.
 
 The inode variable chunk contains different things depending on the
 file type.  For regular files it is the backing filename. For symlinks
-it is the symlink target. For directories it is a list of dentries,
-stored in chunks of maximum 4k.
+it is the symlink target. For directories it is a list of references to
+dentries, stored in chunks of maximum 4k. The dentry chunks themselves
+are stored in the variable data section.
 
 The variable data section is stored after the inode section, and you
-can find it from the offset in the header. It contains Xattrs data
-which is referred to by offset and size in the xattr attribute in the
-inode data. Each xattr data can be used by many inodes in the
-filesystem.
-
+can find it from the offset in the header. It contains dentries and
+Xattrs data. The xattrs are referred to by offset and size in the
+xattr attribute in the inode data. Each xattr data can be used by many
+inodes in the filesystem. The variable data chunks are all smaller than
+a page (4K) and are padded to not span pages.
 
 Tools
 =====

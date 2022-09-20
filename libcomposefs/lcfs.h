@@ -117,7 +117,7 @@ static inline int lcfs_digest_from_payload(const char *payload,
 }
 
 struct lcfs_vdata_s {
-	uint32_t off;
+	uint64_t off;
 	uint32_t len;
 } __attribute__((packed));
 
@@ -208,20 +208,23 @@ static inline uint32_t lcfs_inode_encoded_size(uint32_t flags)
 					  sizeof(uint32_t) * 2) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(uint32_t)) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(uint32_t)) +
-	       LCFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS, sizeof(uint32_t) * 2) +
+	       LCFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS,
+					  sizeof(uint64_t) + sizeof(uint32_t)) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, LCFS_DIGEST_SIZE);
 }
 
 struct lcfs_dentry_s {
 	/* Index of struct lcfs_inode_s */
 	uint64_t inode_index;
-	uint8_t name_len;
 	uint8_t d_type;
+	uint8_t name_len;
+	uint16_t name_offset;
 } __attribute__((packed));
 
 struct lcfs_dir_chunk_s {
 	uint16_t n_dentries;
-	uint16_t chunk_size;
+	uint16_t chunk_size; /* < 4k */
+	uint64_t chunk_offset; /* Offset in data */
 } __attribute__((packed));
 
 struct lcfs_dir_s {
