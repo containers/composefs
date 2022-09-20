@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _CFS_INTERNALS_H
 #define _CFS_INTERNALS_H
 
