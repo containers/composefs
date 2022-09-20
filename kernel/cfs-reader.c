@@ -16,7 +16,9 @@
 #include <linux/bsearch.h>
 #include <linux/overflow.h>
 #include <linux/overflow.h>
+#include <linux/pagemap.h>
 #include <linux/unaligned/packed_struct.h>
+#include <linux/sched/mm.h>
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
@@ -26,6 +28,64 @@ struct cfs_context_s {
 
 	u64 descriptor_len;
 };
+
+struct cfs_buf {
+	struct page *page;
+	void *base;
+};
+
+#define CFS_VDATA_BUF_INIT                                                     \
+	{                                                                      \
+		NULL, NULL                                                     \
+	}
+
+static void cfs_buf_put(struct cfs_buf *buf)
+{
+	if (buf->page) {
+		if (buf->base)
+			kunmap(buf->page);
+		put_page(buf->page);
+		buf->base = NULL;
+		buf->page = NULL;
+	}
+}
+
+static void *cfs_get_buf(struct cfs_context_s *ctx, u64 offset, u32 size,
+			 struct cfs_buf *buf)
+{
+	u64 index = offset >> PAGE_SHIFT;
+	u32 page_offset = offset & (PAGE_SIZE - 1);
+	struct page *page = buf->page;
+	struct folio *folio;
+	struct inode *inode = ctx->descriptor->f_inode;
+	struct address_space *const mapping = inode->i_mapping;
+
+	if (offset > ctx->descriptor_len)
+		return ERR_PTR(-EFSCORRUPTED);
+
+	if ((offset + size < offset) || (offset + size > ctx->descriptor_len))
+		return ERR_PTR(-EFSCORRUPTED);
+
+	if (size > PAGE_SIZE)
+		return ERR_PTR(-EINVAL);
+
+	if (PAGE_SIZE - page_offset < size)
+		return ERR_PTR(-EINVAL);
+
+	if (!page || page->index != index) {
+		cfs_buf_put(buf);
+
+		folio = read_cache_folio(mapping, index, NULL, NULL);
+		if (IS_ERR(folio))
+			return folio;
+
+		page = folio_file_page(folio, index);
+		buf->page = page;
+		buf->base = kmap(page);
+	}
+
+	return buf->base + page_offset;
+}
 
 static void *cfs_read_data(struct cfs_context_s *ctx, u64 offset, u64 size,
 			   u8 *dest)
@@ -184,6 +244,18 @@ static void *cfs_get_inode_payload(struct cfs_context_s *ctx,
 {
 	return cfs_get_inode_payload_w_len(ctx, ino->payload_length, index,
 					   dest, 0, ino->payload_length);
+}
+
+static void *cfs_get_vdata_buf(struct cfs_context_s *ctx, u64 offset, u32 len,
+			       struct cfs_buf *buf)
+{
+	if (offset > ctx->descriptor_len - ctx->header.data_offset)
+		return ERR_PTR(-EINVAL);
+
+	if (len > ctx->descriptor_len - ctx->header.data_offset - offset)
+		return ERR_PTR(-EINVAL);
+
+	return cfs_get_buf(ctx, ctx->header.data_offset + offset, len, buf);
 }
 
 static void *cfs_read_vdata(struct cfs_context_s *ctx, u64 offset, u32 len,
