@@ -44,33 +44,6 @@ jobs:
             ./configure CFLAGS='-Wall -Werror'
             make -j $(nproc)
 
-  fuzzer:
-    runs-on: ubuntu-22.04
-    strategy:
-      fail-fast: false
-    steps:
-    - name: checkout
-      uses: actions/checkout@v2
-
-    - name: install dependencies
-      run: |
-            sudo apt-get update -y
-            sudo apt-get install -y automake libtool autoconf autotools-dev git make gcc libyajl-dev binutils-dev libunwind-dev libssl-dev libfsverity-dev pkg-config
-            git clone --depth=1 https://github.com/google/honggfuzz
-            (cd honggfuzz; make -j $(nproc) && sudo make install)
-
-            find $(pwd) -name '.git' -exec bash -c 'git config --global --add safe.directory ${0%/.git}' {} \;
-
-    - name: build
-      run: |
-            ./autogen.sh
-            ./configure CFLAGS='-Wall -Werror'
-            make -j $(nproc)
-
-    - name: run fuzzer
-      run: |
-            make -C fuzzing run-ci
-
   clang-formatter:
     runs-on: ubuntu-latest
     strategy:

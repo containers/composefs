@@ -14,14 +14,8 @@
 #include <linux/fs.h>
 #include <linux/stat.h>
 
-#ifdef FUZZING
-#include "cfs-fuzzing.h"
-#else
-
 #include <linux/byteorder/generic.h>
 #include <crypto/sha2.h>
-
-#endif
 
 #define CFS_VERSION 1
 

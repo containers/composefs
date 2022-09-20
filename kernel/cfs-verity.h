@@ -8,17 +8,6 @@
  * This file is released under the GPL.
  */
 
-#ifdef FUZZING
-
-static inline int fsverity_get_digest(struct inode *inode,
-				      u8 digest[FS_VERITY_MAX_DIGEST_SIZE],
-				      enum hash_algo *alg)
-{
-	return -ENODATA; /* not a verity file */
-}
-
-#else
-
 #include <crypto/hash_info.h>
 #include <crypto/sha2.h>
 #include <linux/fsverity.h>
@@ -98,5 +87,3 @@ static inline int fsverity_get_digest(struct inode *inode,
 }
 
 #endif
-
-#endif /* !FUZZING */
