@@ -183,14 +183,12 @@ static bool cfs_iterate_cb(void *private, const char *name, int name_len,
 			   u64 ino, unsigned int dtype)
 {
 	struct dir_context *ctx = private;
-	bool ret;
 
-	ret = dir_emit(ctx, name, name_len, ino, dtype);
-	if (ret == false)
-		return ret;
+	if (!dir_emit(ctx, name, name_len, ino, dtype))
+		return 0;
 
 	ctx->pos++;
-	return ret;
+	return 1;
 }
 
 static int cfs_iterate(struct file *file, struct dir_context *ctx)
@@ -578,13 +576,13 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	struct file *real_file;
 	char *real_path = cino->inode_data.path_payload;
 
-	if (WARN_ON(file == NULL))
+	if (WARN_ON(!file))
 		return -EIO;
 
 	if (file->f_flags & (O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_TRUNC))
 		return -EROFS;
 
-	if (real_path == NULL) {
+	if (!real_path) {
 		file->private_data = &empty_file;
 		return 0;
 	}
@@ -647,7 +645,7 @@ static int cfs_release_file(struct inode *inode, struct file *file)
 {
 	struct file *realfile = file->private_data;
 
-	if (WARN_ON(realfile == NULL))
+	if (WARN_ON(!realfile))
 		return -EIO;
 
 	if (realfile == &empty_file)
@@ -878,7 +876,7 @@ static int __init init_cfs(void)
 		"cfs_inode", sizeof(struct cfs_inode), 0,
 		(SLAB_RECLAIM_ACCOUNT | SLAB_MEM_SPREAD | SLAB_ACCOUNT),
 		cfs_inode_init_once);
-	if (cfs_inode_cachep == NULL)
+	if (!cfs_inode_cachep)
 		return -ENOMEM;
 
 	return register_filesystem(&cfs_type);

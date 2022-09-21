@@ -370,8 +370,7 @@ static int cfs_get_digest(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 		return 1;
 	}
 
-	if (payload != NULL &&
-	    CFS_INODE_FLAG_CHECK(ino->flags, DIGEST_FROM_PAYLOAD)) {
+	if (payload && CFS_INODE_FLAG_CHECK(ino->flags, DIGEST_FROM_PAYLOAD)) {
 		r = cfs_digest_from_payload(payload, ino->payload_length,
 					    digest_out);
 		if (r < 0)
@@ -393,7 +392,7 @@ static bool cfs_validate_filename(const char *name, size_t name_len)
 	if (name_len == 2 && name[0] == '.' && name[1] == '.')
 		return false;
 
-	if (memchr(name, '/', name_len) != NULL)
+	if (memchr(name, '/', name_len))
 		return false;
 
 	return true;
