@@ -559,7 +559,7 @@ static struct file *open_base_file(struct cfs_info *fsi, struct inode *inode,
 	size_t i;
 
 	for (i = 0; i < fsi->n_bases; i++) {
-		real_file = file_open_root(&(fsi->bases[i]->f_path),
+		real_file = file_open_root(&fsi->bases[i]->f_path,
 					   cino->inode_data.path_payload,
 					   file->f_flags, 0);
 		if (!IS_ERR(real_file) || PTR_ERR(real_file) != -ENOENT)
@@ -738,7 +738,7 @@ static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 	u64 inode_index;
 	u32 generation;
 
-	if ((fh_type != 0x91) || fh_len < 3)
+	if (fh_type != 0x91 || fh_len < 3)
 		return NULL;
 
 	inode_index = (u64)(fid->raw[0]) << 32;
