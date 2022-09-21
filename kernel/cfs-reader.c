@@ -194,7 +194,7 @@ static void *cfs_get_inode_data_max(struct cfs_context_s *ctx, u64 offset,
 	remaining -= offset;
 
 	/* Read at most remaining bytes, and no more than max_size */
-	size = MIN(remaining, max_size);
+	size = min(remaining, max_size);
 	*read_size = size;
 
 	return cfs_get_inode_data(ctx, offset, size, dest);
@@ -400,7 +400,7 @@ static bool cfs_validate_filename(const char *name, size_t name_len)
 }
 
 static struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
-						   u32 payload_length,
+						   size_t payload_length,
 						   u64 index, u8 *chunk_buf,
 						   size_t chunk_buf_size,
 						   size_t max_n_chunks)
@@ -419,7 +419,7 @@ static struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 
 	dir = cfs_get_inode_payload_w_len(ctx, payload_length, index, chunk_buf,
 					  0,
-					  MIN(chunk_buf_size, payload_length));
+					  min(chunk_buf_size, payload_length));
 	if (IS_ERR(dir))
 		return ERR_CAST(dir);
 
@@ -432,7 +432,7 @@ static struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 	if (payload_length != cfs_dir_size(n_chunks))
 		return ERR_PTR(-EFSCORRUPTED);
 
-	max_n_chunks = MIN(n_chunks, max_n_chunks);
+	max_n_chunks = min(n_chunks, max_n_chunks);
 
 	/* Verify data (up to max_n_chunks) */
 	for (i = 0; i < max_n_chunks; i++) {
@@ -747,7 +747,7 @@ cfs_dir_get_chunk_info(struct cfs_context_s *ctx, u64 index,
 static inline int memcmp2(const void *a, const size_t a_size, const void *b,
 			  size_t b_size)
 {
-	size_t common_size = MIN(a_size, b_size);
+	size_t common_size = min(a_size, b_size);
 	int res;
 
 	res = memcmp(a, b, common_size);

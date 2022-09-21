@@ -30,8 +30,6 @@ struct cfs_context_s {
 	u64 descriptor_len;
 };
 
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-
 int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 		 struct cfs_context_s *ctx);
 
