@@ -14,7 +14,6 @@
 #include <linux/fs_parser.h>
 #include <linux/module.h>
 #include <linux/namei.h>
-#include <linux/pagemap.h>
 #include <linux/seq_file.h>
 #include <linux/version.h>
 #include <linux/xattr.h>
@@ -113,8 +112,6 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 	if (inode) {
 		inode_init_owner(&init_user_ns, inode, dir, ino->st_mode);
 		inode->i_mapping->a_ops = &cfs_aops;
-		mapping_set_gfp_mask(inode->i_mapping, GFP_HIGHUSER);
-		mapping_set_unevictable(inode->i_mapping);
 
 		cino = CFS_I(inode);
 		cino->inode_data = inode_data;
