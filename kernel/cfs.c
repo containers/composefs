@@ -14,7 +14,6 @@
 #include <linux/fs_parser.h>
 #include <linux/module.h>
 #include <linux/namei.h>
-#include <linux/pagemap.h>
 #include <linux/seq_file.h>
 #include <linux/version.h>
 #include <linux/xattr.h>
@@ -23,6 +22,8 @@
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
+
+#define CFS_MAX_STACK 500
 
 struct cfs_info {
 	struct cfs_context_s cfs_ctx;
@@ -36,7 +37,7 @@ struct cfs_info {
 
 	bool noverity;
 	bool has_digest;
-	uint8_t digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
+	u8 digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 };
 
 struct cfs_inode {
@@ -113,8 +114,6 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 	if (inode) {
 		inode_init_owner(&init_user_ns, inode, dir, ino->st_mode);
 		inode->i_mapping->a_ops = &cfs_aops;
-		mapping_set_gfp_mask(inode->i_mapping, GFP_HIGHUSER);
-		mapping_set_unevictable(inode->i_mapping);
 
 		cino = CFS_I(inode);
 		cino->inode_data = inode_data;
@@ -186,14 +185,12 @@ static bool cfs_iterate_cb(void *private, const char *name, int name_len,
 			   u64 ino, unsigned int dtype)
 {
 	struct dir_context *ctx = private;
-	bool ret;
 
-	ret = dir_emit(ctx, name, name_len, ino, dtype);
-	if (ret == false)
-		return ret;
+	if (!dir_emit(ctx, name, name_len, ino, dtype))
+		return 0;
 
 	ctx->pos++;
-	return ret;
+	return 1;
 }
 
 static int cfs_iterate(struct file *file, struct dir_context *ctx)
@@ -261,13 +258,13 @@ static const struct inode_operations cfs_link_inode_operations = {
 	.listxattr = cfs_listxattr,
 };
 
-static void digest_to_string(const uint8_t *digest, char *buf)
+static void digest_to_string(const u8 *digest, char *buf)
 {
 	static const char hexchars[] = "0123456789abcdef";
-	uint32_t i, j;
+	u32 i, j;
 
 	for (i = 0, j = 0; i < SHA256_DIGEST_SIZE; i++, j += 2) {
-		uint8_t byte = digest[i];
+		u8 byte = digest[i];
 
 		buf[j] = hexchars[byte >> 4];
 		buf[j + 1] = hexchars[byte & 0xF];
@@ -275,18 +272,7 @@ static void digest_to_string(const uint8_t *digest, char *buf)
 	buf[j] = '\0';
 }
 
-static int xdigit_value(char c)
-{
-	if (c >= '0' && c <= '9')
-		return c - '0';
-	if (c >= 'A' && c <= 'F')
-		return c - 'A' + 10;
-	if (c >= 'a' && c <= 'f')
-		return c - 'a' + 10;
-	return -1;
-}
-
-static int digest_from_string(const char *digest_str, uint8_t *digest)
+static int digest_from_string(const char *digest_str, u8 *digest)
 {
 	size_t i, j;
 
@@ -296,8 +282,8 @@ static int digest_from_string(const char *digest_str, uint8_t *digest)
 		if (digest_str[j] == 0 || digest_str[j + 1] == 0)
 			return -EINVAL; /* Too short string */
 
-		big = xdigit_value(digest_str[j]);
-		little = xdigit_value(digest_str[j + 1]);
+		big = cfs_xdigit_value(digest_str[j]);
+		little = cfs_xdigit_value(digest_str[j + 1]);
 
 		if (big == -1 || little == -1)
 			return -EINVAL; /* Not hex digit */
@@ -575,7 +561,7 @@ static struct file *open_base_file(struct cfs_info *fsi, struct inode *inode,
 	size_t i;
 
 	for (i = 0; i < fsi->n_bases; i++) {
-		real_file = file_open_root(&(fsi->bases[i]->f_path),
+		real_file = file_open_root(&fsi->bases[i]->f_path,
 					   cino->inode_data.path_payload,
 					   file->f_flags, 0);
 		if (!IS_ERR(real_file) || PTR_ERR(real_file) != -ENOENT)
@@ -592,13 +578,13 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	struct file *real_file;
 	char *real_path = cino->inode_data.path_payload;
 
-	if (WARN_ON(file == NULL))
+	if (WARN_ON(!file))
 		return -EIO;
 
 	if (file->f_flags & (O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_TRUNC))
 		return -EROFS;
 
-	if (real_path == NULL) {
+	if (!real_path) {
 		file->private_data = &empty_file;
 		return 0;
 	}
@@ -615,7 +601,9 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	if (IS_ERR(real_file))
 		return PTR_ERR(real_file);
 
-	/* If metadata records a digest for the file, ensure it is there and correct before using the contents */
+	/* If metadata records a digest for the file, ensure it is there
+	 * and correct before using the contents.
+	 */
 	if (cino->inode_data.has_digest && !fsi->noverity) {
 		u8 verity_digest[FS_VERITY_MAX_DIGEST_SIZE];
 		enum hash_algo verity_algo;
@@ -661,7 +649,7 @@ static int cfs_release_file(struct inode *inode, struct file *file)
 {
 	struct file *realfile = file->private_data;
 
-	if (WARN_ON(realfile == NULL))
+	if (WARN_ON(!realfile))
 		return -EIO;
 
 	if (realfile == &empty_file)
@@ -754,7 +742,7 @@ static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 	u64 inode_index;
 	u32 generation;
 
-	if ((fh_type != 0x91) || fh_len < 3)
+	if (fh_type != 0x91 || fh_len < 3)
 		return NULL;
 
 	inode_index = (u64)(fid->raw[0]) << 32;
@@ -892,7 +880,7 @@ static int __init init_cfs(void)
 		"cfs_inode", sizeof(struct cfs_inode), 0,
 		(SLAB_RECLAIM_ACCOUNT | SLAB_MEM_SPREAD | SLAB_ACCOUNT),
 		cfs_inode_init_once);
-	if (cfs_inode_cachep == NULL)
+	if (!cfs_inode_cachep)
 		return -ENOMEM;
 
 	return register_filesystem(&cfs_type);

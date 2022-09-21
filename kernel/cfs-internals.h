@@ -7,7 +7,6 @@
 
 #define EFSCORRUPTED EUCLEAN /* Filesystem is corrupted */
 
-#define CFS_MAX_STACK 500
 #define CFS_N_PRELOAD_DIR_CHUNKS 4
 
 struct cfs_inode_data_s {
@@ -20,7 +19,7 @@ struct cfs_inode_data_s {
 	u32 xattrs_len;
 
 	bool has_digest;
-	uint8_t digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
+	u8 digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 };
 
 struct cfs_context_s {
@@ -29,8 +28,6 @@ struct cfs_context_s {
 
 	u64 descriptor_len;
 };
-
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 		 struct cfs_context_s *ctx);

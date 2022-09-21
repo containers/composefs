@@ -18,6 +18,7 @@ struct cfs_buf {
 	struct page *page;
 	void *base;
 };
+
 #define CFS_VDATA_BUF_INIT                                                     \
 	{                                                                      \
 		NULL, NULL                                                     \
@@ -120,23 +121,22 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 					  verity_digest, &verity_algo);
 		if (res < 0) {
 			pr_err("ERROR: composefs descriptor has no fs-verity digest\n");
-			fput(descriptor);
-			return res;
+			goto fail;
 		}
 		if (verity_algo != HASH_ALGO_SHA256 ||
 		    memcmp(required_digest, verity_digest,
 			   SHA256_DIGEST_SIZE) != 0) {
 			pr_err("ERROR: composefs descriptor has wrong fs-verity digest\n");
-			fput(descriptor);
-			return -EINVAL;
+			res = -EINVAL;
+			goto fail;
 		}
 	}
 
 	i_size = i_size_read(file_inode(descriptor));
 	if (i_size <=
 	    (sizeof(struct cfs_header_s) + sizeof(struct cfs_inode_s))) {
-		fput(descriptor);
-		return -EINVAL;
+		res = -EINVAL;
+		goto fail;
 	}
 
 	/* Need this temporary ctx for cfs_read_data() */
@@ -146,8 +146,8 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	header = cfs_read_data(&ctx, 0, sizeof(struct cfs_header_s),
 			       (u8 *)&ctx.header);
 	if (IS_ERR(header)) {
-		fput(descriptor);
-		return PTR_ERR(header);
+		res = PTR_ERR(header);
+		goto fail;
 	}
 	header->magic = cfs_u32_from_file(header->magic);
 	header->data_offset = cfs_u64_from_file(header->data_offset);
@@ -157,12 +157,16 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	    header->data_offset > ctx.descriptor_len ||
 	    sizeof(struct cfs_header_s) + header->root_inode >
 		    ctx.descriptor_len) {
-		fput(descriptor);
-		return -EINVAL;
+		res = -EINVAL;
+		goto fail;
 	}
 
 	*ctx_out = ctx;
 	return 0;
+
+fail:
+	fput(descriptor);
+	return res;
 }
 
 void cfs_ctx_put(struct cfs_context_s *ctx)
@@ -191,7 +195,7 @@ static void *cfs_get_inode_data_max(struct cfs_context_s *ctx, u64 offset,
 	remaining -= offset;
 
 	/* Read at most remaining bytes, and no more than max_size */
-	size = MIN(remaining, max_size);
+	size = min(remaining, max_size);
 	*read_size = size;
 
 	return cfs_get_inode_data(ctx, offset, size, dest);
@@ -252,8 +256,8 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 				      struct cfs_inode_s *ino)
 {
 	u64 offset = index;
-	u8 buffer[sizeof(
-		struct cfs_inode_s)]; /* This will fix the maximal encoded size */
+	/* Buffer that fits the maximal encoded size: */
+	u8 buffer[sizeof(struct cfs_inode_s)];
 	u64 read_size;
 	u64 inode_size;
 	u8 *data;
@@ -285,9 +289,9 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 	else
 		ino->st_mode = CFS_INODE_DEFAULT_MODE;
 
-	if (CFS_INODE_FLAG_CHECK(ino->flags, NLINK))
+	if (CFS_INODE_FLAG_CHECK(ino->flags, NLINK)) {
 		ino->st_nlink = cfs_read_u32(&data);
-	else {
+	} else {
 		if ((ino->st_mode & S_IFMT) == S_IFDIR)
 			ino->st_nlink = CFS_INODE_DEFAULT_NLINK_DIR;
 		else
@@ -367,8 +371,7 @@ static int cfs_get_digest(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 		return 1;
 	}
 
-	if (payload != NULL &&
-	    CFS_INODE_FLAG_CHECK(ino->flags, DIGEST_FROM_PAYLOAD)) {
+	if (payload && CFS_INODE_FLAG_CHECK(ino->flags, DIGEST_FROM_PAYLOAD)) {
 		r = cfs_digest_from_payload(payload, ino->payload_length,
 					    digest_out);
 		if (r < 0)
@@ -390,14 +393,14 @@ static bool cfs_validate_filename(const char *name, size_t name_len)
 	if (name_len == 2 && name[0] == '.' && name[1] == '.')
 		return false;
 
-	if (memchr(name, '/', name_len) != NULL)
+	if (memchr(name, '/', name_len))
 		return false;
 
 	return true;
 }
 
 static struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
-						   u32 payload_length,
+						   size_t payload_length,
 						   u64 index, u8 *chunk_buf,
 						   size_t chunk_buf_size,
 						   size_t max_n_chunks)
@@ -416,11 +419,12 @@ static struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 
 	dir = cfs_get_inode_payload_w_len(ctx, payload_length, index, chunk_buf,
 					  0,
-					  MIN(chunk_buf_size, payload_length));
+					  min(chunk_buf_size, payload_length));
 	if (IS_ERR(dir))
 		return ERR_CAST(dir);
 
-	n_chunks = dir->n_chunks = cfs_u32_from_file(dir->n_chunks);
+	n_chunks = cfs_u32_from_file(dir->n_chunks);
+	dir->n_chunks = n_chunks;
 
 	/* Don't support n_chunks == 0, the canonical version of that is payload_length == 0 */
 	if (n_chunks == 0)
@@ -429,7 +433,7 @@ static struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 	if (payload_length != cfs_dir_size(n_chunks))
 		return ERR_PTR(-EFSCORRUPTED);
 
-	max_n_chunks = MIN(n_chunks, max_n_chunks);
+	max_n_chunks = min(n_chunks, max_n_chunks);
 
 	/* Verify data (up to max_n_chunks) */
 	for (i = 0; i < max_n_chunks; i++) {
@@ -504,17 +508,18 @@ int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 	if ((ino->st_mode & S_IFMT) != S_IFDIR || ino->payload_length == 0) {
 		inode_data->n_dir_chunks = 0;
 	} else {
+		u32 n_chunks;
+
 		dir = cfs_dir_read_chunk_header(ctx, ino->payload_length, index,
 						buf, sizeof(buf),
 						CFS_N_PRELOAD_DIR_CHUNKS);
 		if (IS_ERR(dir))
 			return PTR_ERR(dir);
 
-		inode_data->n_dir_chunks = dir->n_chunks;
+		n_chunks = dir->n_chunks;
+		inode_data->n_dir_chunks = n_chunks;
 
-		for (i = 0; i < inode_data->n_dir_chunks &&
-			    i < CFS_N_PRELOAD_DIR_CHUNKS;
-		     i++)
+		for (i = 0; i < n_chunks && i < CFS_N_PRELOAD_DIR_CHUNKS; i++)
 			inode_data->preloaded_dir_chunks[i] = dir->chunks[i];
 	}
 
@@ -594,8 +599,8 @@ ssize_t cfs_list_xattrs(struct cfs_context_s *ctx,
 
 	for (i = 0; i < n_xattrs; i++) {
 		const struct cfs_xattr_element_s *e = &xattrs->attr[i];
-		uint16_t this_key_len = cfs_u16_from_file(e->key_length);
-		uint16_t this_value_len = cfs_u16_from_file(e->value_length);
+		u16 this_key_len = cfs_u16_from_file(e->key_length);
+		u16 this_value_len = cfs_u16_from_file(e->value_length);
 		const char *this_key, *this_value;
 
 		if (this_key_len > XATTR_NAME_MAX ||
@@ -662,8 +667,8 @@ int cfs_get_xattr(struct cfs_context_s *ctx,
 
 	for (i = 0; i < n_xattrs; i++) {
 		const struct cfs_xattr_element_s *e = &xattrs->attr[i];
-		uint16_t this_key_len = cfs_u16_from_file(e->key_length);
-		uint16_t this_value_len = cfs_u16_from_file(e->value_length);
+		u16 this_key_len = cfs_u16_from_file(e->key_length);
+		u16 this_value_len = cfs_u16_from_file(e->value_length);
 		const char *this_key, *this_value;
 
 		if (this_key_len > XATTR_NAME_MAX ||
@@ -744,7 +749,7 @@ cfs_dir_get_chunk_info(struct cfs_context_s *ctx, u64 index,
 static inline int memcmp2(const void *a, const size_t a_size, const void *b,
 			  size_t b_size)
 {
-	size_t common_size = MIN(a_size, b_size);
+	size_t common_size = min(a_size, b_size);
 	int res;
 
 	res = memcmp(a, b, common_size);
@@ -937,7 +942,7 @@ int cfs_dir_lookup(struct cfs_context_s *ctx, u64 index,
 			goto exit;
 		} else if (r == AFTER_CHUNK) {
 			start_chunk = mid_chunk + 1;
-		} else /* before */ {
+		} else { /* before */
 			end_chunk = mid_chunk - 1;
 		}
 	}
