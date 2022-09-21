@@ -7,7 +7,6 @@
 
 #define EFSCORRUPTED EUCLEAN /* Filesystem is corrupted */
 
-#define CFS_MAX_STACK 500
 #define CFS_N_PRELOAD_DIR_CHUNKS 4
 
 struct cfs_inode_data_s {

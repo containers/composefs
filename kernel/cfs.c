@@ -23,6 +23,8 @@
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 
+#define CFS_MAX_STACK 500
+
 struct cfs_info {
 	struct cfs_context_s cfs_ctx;
 
