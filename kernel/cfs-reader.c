@@ -597,8 +597,8 @@ ssize_t cfs_list_xattrs(struct cfs_context_s *ctx,
 
 	for (i = 0; i < n_xattrs; i++) {
 		const struct cfs_xattr_element_s *e = &xattrs->attr[i];
-		uint16_t this_key_len = cfs_u16_from_file(e->key_length);
-		uint16_t this_value_len = cfs_u16_from_file(e->value_length);
+		u16 this_key_len = cfs_u16_from_file(e->key_length);
+		u16 this_value_len = cfs_u16_from_file(e->value_length);
 		const char *this_key, *this_value;
 
 		if (this_key_len > XATTR_NAME_MAX ||
@@ -665,8 +665,8 @@ int cfs_get_xattr(struct cfs_context_s *ctx,
 
 	for (i = 0; i < n_xattrs; i++) {
 		const struct cfs_xattr_element_s *e = &xattrs->attr[i];
-		uint16_t this_key_len = cfs_u16_from_file(e->key_length);
-		uint16_t this_value_len = cfs_u16_from_file(e->value_length);
+		u16 this_key_len = cfs_u16_from_file(e->key_length);
+		u16 this_value_len = cfs_u16_from_file(e->value_length);
 		const char *this_key, *this_value;
 
 		if (this_key_len > XATTR_NAME_MAX ||

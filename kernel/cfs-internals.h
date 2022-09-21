@@ -20,7 +20,7 @@ struct cfs_inode_data_s {
 	u32 xattrs_len;
 
 	bool has_digest;
-	uint8_t digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
+	u8 digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 };
 
 struct cfs_context_s {

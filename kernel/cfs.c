@@ -35,7 +35,7 @@ struct cfs_info {
 
 	bool noverity;
 	bool has_digest;
-	uint8_t digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
+	u8 digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 };
 
 struct cfs_inode {
@@ -258,13 +258,13 @@ static const struct inode_operations cfs_link_inode_operations = {
 	.listxattr = cfs_listxattr,
 };
 
-static void digest_to_string(const uint8_t *digest, char *buf)
+static void digest_to_string(const u8 *digest, char *buf)
 {
 	static const char hexchars[] = "0123456789abcdef";
-	uint32_t i, j;
+	u32 i, j;
 
 	for (i = 0, j = 0; i < SHA256_DIGEST_SIZE; i++, j += 2) {
-		uint8_t byte = digest[i];
+		u8 byte = digest[i];
 
 		buf[j] = hexchars[byte >> 4];
 		buf[j + 1] = hexchars[byte & 0xF];
@@ -272,7 +272,7 @@ static void digest_to_string(const uint8_t *digest, char *buf)
 	buf[j] = '\0';
 }
 
-static int digest_from_string(const char *digest_str, uint8_t *digest)
+static int digest_from_string(const char *digest_str, u8 *digest)
 {
 	size_t i, j;
 
