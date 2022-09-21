@@ -599,7 +599,9 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	if (IS_ERR(real_file))
 		return PTR_ERR(real_file);
 
-	/* If metadata records a digest for the file, ensure it is there and correct before using the contents */
+	/* If metadata records a digest for the file, ensure it is there
+	 * and correct before using the contents.
+	 */
 	if (cino->inode_data.has_digest && !fsi->noverity) {
 		u8 verity_digest[FS_VERITY_MAX_DIGEST_SIZE];
 		enum hash_algo verity_algo;

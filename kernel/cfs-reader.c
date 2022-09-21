@@ -18,6 +18,7 @@ struct cfs_buf {
 	struct page *page;
 	void *base;
 };
+
 #define CFS_VDATA_BUF_INIT                                                     \
 	{                                                                      \
 		NULL, NULL                                                     \
@@ -255,8 +256,8 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 				      struct cfs_inode_s *ino)
 {
 	u64 offset = index;
-	u8 buffer[sizeof(
-		struct cfs_inode_s)]; /* This will fix the maximal encoded size */
+	/* Buffer that fits the maximal encoded size: */
+	u8 buffer[sizeof(struct cfs_inode_s)];
 	u64 read_size;
 	u64 inode_size;
 	u8 *data;
@@ -288,9 +289,9 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 	else
 		ino->st_mode = CFS_INODE_DEFAULT_MODE;
 
-	if (CFS_INODE_FLAG_CHECK(ino->flags, NLINK))
+	if (CFS_INODE_FLAG_CHECK(ino->flags, NLINK)) {
 		ino->st_nlink = cfs_read_u32(&data);
-	else {
+	} else {
 		if ((ino->st_mode & S_IFMT) == S_IFDIR)
 			ino->st_nlink = CFS_INODE_DEFAULT_NLINK_DIR;
 		else
@@ -422,7 +423,8 @@ static struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 	if (IS_ERR(dir))
 		return ERR_CAST(dir);
 
-	n_chunks = dir->n_chunks = cfs_u32_from_file(dir->n_chunks);
+	n_chunks = cfs_u32_from_file(dir->n_chunks);
+	dir->n_chunks = n_chunks;
 
 	/* Don't support n_chunks == 0, the canonical version of that is payload_length == 0 */
 	if (n_chunks == 0)
@@ -506,17 +508,18 @@ int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 	if ((ino->st_mode & S_IFMT) != S_IFDIR || ino->payload_length == 0) {
 		inode_data->n_dir_chunks = 0;
 	} else {
+		u32 n_chunks;
+
 		dir = cfs_dir_read_chunk_header(ctx, ino->payload_length, index,
 						buf, sizeof(buf),
 						CFS_N_PRELOAD_DIR_CHUNKS);
 		if (IS_ERR(dir))
 			return PTR_ERR(dir);
 
-		inode_data->n_dir_chunks = dir->n_chunks;
+		n_chunks = dir->n_chunks;
+		inode_data->n_dir_chunks = n_chunks;
 
-		for (i = 0; i < inode_data->n_dir_chunks &&
-			    i < CFS_N_PRELOAD_DIR_CHUNKS;
-		     i++)
+		for (i = 0; i < n_chunks && i < CFS_N_PRELOAD_DIR_CHUNKS; i++)
 			inode_data->preloaded_dir_chunks[i] = dir->chunks[i];
 	}
 
@@ -939,7 +942,7 @@ int cfs_dir_lookup(struct cfs_context_s *ctx, u64 index,
 			goto exit;
 		} else if (r == AFTER_CHUNK) {
 			start_chunk = mid_chunk + 1;
-		} else /* before */ {
+		} else { /* before */
 			end_chunk = mid_chunk - 1;
 		}
 	}
