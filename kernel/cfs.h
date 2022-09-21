@@ -11,12 +11,11 @@
 #ifndef _CFS_H
 #define _CFS_H
 
-#include <linux/types.h>
+#include <asm/byteorder.h>
+#include <crypto/sha2.h>
 #include <linux/fs.h>
 #include <linux/stat.h>
-
-#include <linux/byteorder/generic.h>
-#include <crypto/sha2.h>
+#include <linux/types.h>
 
 #define CFS_VERSION 1
 

@@ -10,16 +10,9 @@
 
 #include "cfs-internals.h"
 
-#include <linux/string.h>
-#include <linux/kernel_read_file.h>
-#include <linux/vmalloc.h>
-#include <linux/slab.h>
-#include <linux/bsearch.h>
-#include <linux/overflow.h>
-#include <linux/overflow.h>
+#include <linux/file.h>
 #include <linux/pagemap.h>
 #include <linux/unaligned/packed_struct.h>
-#include <linux/sched/mm.h>
 
 struct cfs_buf {
 	struct page *page;

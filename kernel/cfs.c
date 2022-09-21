@@ -10,25 +10,14 @@
  * This file is released under the GPL.
  */
 
-#include <linux/fs.h>
-#include <linux/pagemap.h>
-#include <linux/highmem.h>
-#include <linux/time.h>
-#include <linux/init.h>
-#include <linux/string.h>
-#include <linux/backing-dev.h>
-#include <linux/sched.h>
-#include <linux/parser.h>
-#include <linux/xattr.h>
-#include <linux/magic.h>
-#include <linux/slab.h>
-#include <linux/uaccess.h>
-#include <linux/fs_context.h>
-#include <linux/fs_parser.h>
-#include <linux/namei.h>
-#include <linux/mount.h>
 #include <linux/exportfs.h>
+#include <linux/fs_parser.h>
+#include <linux/module.h>
+#include <linux/namei.h>
+#include <linux/pagemap.h>
+#include <linux/seq_file.h>
 #include <linux/version.h>
+#include <linux/xattr.h>
 
 #include "cfs-internals.h"
 
