@@ -120,23 +120,22 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 					  verity_digest, &verity_algo);
 		if (res < 0) {
 			pr_err("ERROR: composefs descriptor has no fs-verity digest\n");
-			fput(descriptor);
-			return res;
+			goto fail;
 		}
 		if (verity_algo != HASH_ALGO_SHA256 ||
 		    memcmp(required_digest, verity_digest,
 			   SHA256_DIGEST_SIZE) != 0) {
 			pr_err("ERROR: composefs descriptor has wrong fs-verity digest\n");
-			fput(descriptor);
-			return -EINVAL;
+			res = -EINVAL;
+			goto fail;
 		}
 	}
 
 	i_size = i_size_read(file_inode(descriptor));
 	if (i_size <=
 	    (sizeof(struct cfs_header_s) + sizeof(struct cfs_inode_s))) {
-		fput(descriptor);
-		return -EINVAL;
+		res = -EINVAL;
+		goto fail;
 	}
 
 	/* Need this temporary ctx for cfs_read_data() */
@@ -146,8 +145,8 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	header = cfs_read_data(&ctx, 0, sizeof(struct cfs_header_s),
 			       (u8 *)&ctx.header);
 	if (IS_ERR(header)) {
-		fput(descriptor);
-		return PTR_ERR(header);
+		res = PTR_ERR(header);
+		goto fail;
 	}
 	header->magic = cfs_u32_from_file(header->magic);
 	header->data_offset = cfs_u64_from_file(header->data_offset);
@@ -157,12 +156,16 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	    header->data_offset > ctx.descriptor_len ||
 	    sizeof(struct cfs_header_s) + header->root_inode >
 		    ctx.descriptor_len) {
-		fput(descriptor);
-		return -EINVAL;
+		res = -EINVAL;
+		goto fail;
 	}
 
 	*ctx_out = ctx;
 	return 0;
+
+fail:
+	fput(descriptor);
+	return res;
 }
 
 void cfs_ctx_put(struct cfs_context_s *ctx)
