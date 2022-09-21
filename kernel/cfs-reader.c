@@ -47,7 +47,6 @@ static void *cfs_get_buf(struct cfs_context_s *ctx, u64 offset, u32 size,
 	u64 index = offset >> PAGE_SHIFT;
 	u32 page_offset = offset & (PAGE_SIZE - 1);
 	struct page *page = buf->page;
-	struct folio *folio;
 	struct inode *inode = ctx->descriptor->f_inode;
 	struct address_space *const mapping = inode->i_mapping;
 
@@ -66,11 +65,10 @@ static void *cfs_get_buf(struct cfs_context_s *ctx, u64 offset, u32 size,
 	if (!page || page->index != index) {
 		cfs_buf_put(buf);
 
-		folio = read_cache_folio(mapping, index, NULL, NULL);
-		if (IS_ERR(folio))
-			return folio;
+		page = read_cache_page(mapping, index, NULL, NULL);
+		if (IS_ERR(page))
+			return page;
 
-		page = folio_file_page(folio, index);
 		buf->page = page;
 		buf->base = kmap(page);
 	}
