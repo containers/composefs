@@ -272,17 +272,6 @@ static void digest_to_string(const uint8_t *digest, char *buf)
 	buf[j] = '\0';
 }
 
-static int xdigit_value(char c)
-{
-	if (c >= '0' && c <= '9')
-		return c - '0';
-	if (c >= 'A' && c <= 'F')
-		return c - 'A' + 10;
-	if (c >= 'a' && c <= 'f')
-		return c - 'a' + 10;
-	return -1;
-}
-
 static int digest_from_string(const char *digest_str, uint8_t *digest)
 {
 	size_t i, j;
@@ -293,8 +282,8 @@ static int digest_from_string(const char *digest_str, uint8_t *digest)
 		if (digest_str[j] == 0 || digest_str[j + 1] == 0)
 			return -EINVAL; /* Too short string */
 
-		big = xdigit_value(digest_str[j]);
-		little = xdigit_value(digest_str[j + 1]);
+		big = cfs_xdigit_value(digest_str[j]);
+		little = cfs_xdigit_value(digest_str[j + 1]);
 
 		if (big == -1 || little == -1)
 			return -EINVAL; /* Not hex digit */
