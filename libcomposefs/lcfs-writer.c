@@ -1507,18 +1507,40 @@ bool lcfs_node_dirp(struct lcfs_node_s *node)
 	return (node->inode.st_mode & S_IFMT) == S_IFDIR;
 }
 
-struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
-			       const char *fname, const char *name,
-			       int buildflags)
+static char *maybe_join_path(const char *a, const char *b)
 {
-	struct lcfs_node_s *node;
+	size_t a_len = strlen(a);
+	size_t b_len = 0;
+
+	if (b != NULL)
+		b_len = 1 + strlen(b);
+
+	char *res = malloc(a_len + b_len + 1);
+	if (res) {
+		strcpy(res, a);
+		if (b != NULL) {
+			strcat(res, "/");
+			strcat(res, b);
+		}
+	}
+	return res;
+}
+
+struct lcfs_node_s *lcfs_build(int dirfd, const char *fname, const char *name,
+			       int buildflags, char **failed_path_out)
+{
+	struct lcfs_node_s *node = NULL;
 	struct dirent *de;
 	DIR *dir = NULL;
 	int dfd;
+	char *free_failed_subpath = NULL;
+	const char *failed_subpath = NULL;
+	int errsv;
 
 	node = lcfs_load_node_from_file(dirfd, fname, buildflags);
 	if (node == NULL) {
-		return NULL;
+		errsv = errno;
+		goto fail;
 	}
 
 	if (!lcfs_node_dirp(node)) {
@@ -1526,11 +1548,14 @@ struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
 	}
 
 	dfd = openat(dirfd, fname, O_RDONLY | O_NOFOLLOW | O_CLOEXEC, 0);
-	if (dfd < 0)
+	if (dfd < 0) {
+		errsv = errno;
 		goto fail;
+	}
 
 	dir = fdopendir(dfd);
 	if (dir == NULL) {
+		errsv = errno;
 		close(dfd);
 		goto fail;
 	}
@@ -1542,8 +1567,10 @@ struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
 		errno = 0;
 		de = readdir(dir);
 		if (de == NULL) {
-			if (errno)
+			if (errno) {
+				errsv = errno;
 				goto fail;
+			}
 
 			break;
 		}
@@ -1556,18 +1583,24 @@ struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
 			struct stat statbuf;
 
 			if (fstatat(dfd, de->d_name, &statbuf,
-				    AT_SYMLINK_NOFOLLOW) < 0)
+				    AT_SYMLINK_NOFOLLOW) < 0) {
+				errsv = errno;
+				failed_subpath = de->d_name;
 				goto fail;
+			}
 
 			if (S_ISDIR(statbuf.st_mode))
 				de->d_type = DT_DIR;
 		}
 
 		if (de->d_type == DT_DIR) {
-			n = lcfs_build(node, dfd, de->d_name, de->d_name,
-				       buildflags);
-			if (n == NULL)
+			n = lcfs_build(dfd, de->d_name, de->d_name, buildflags,
+				       &free_failed_subpath);
+			if (n == NULL) {
+				failed_subpath = free_failed_subpath;
+				errsv = errno;
 				goto fail;
+			}
 		} else {
 			if (buildflags & LCFS_BUILD_SKIP_DEVICES) {
 				if (de->d_type == DT_BLK ||
@@ -1577,22 +1610,33 @@ struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
 
 			n = lcfs_load_node_from_file(dfd, de->d_name,
 						     buildflags);
-			if (n == NULL)
+			if (n == NULL) {
+				errsv = errno;
+				failed_subpath = de->d_name;
 				goto fail;
+			}
 		}
 
 		r = lcfs_node_add_child(node, n, de->d_name);
-		if (r < 0)
+		if (r < 0) {
+			errsv = errno;
 			goto fail;
+		}
 	}
 
 	closedir(dir);
 	return node;
 
 fail:
-	lcfs_node_unref(node);
+	if (failed_path_out)
+		*failed_path_out = maybe_join_path(fname, failed_subpath);
+	if (free_failed_subpath)
+		free(free_failed_subpath);
+	if (node)
+		lcfs_node_unref(node);
 	if (dir)
 		closedir(dir);
+	errno = errsv;
 	return NULL;
 }
 
