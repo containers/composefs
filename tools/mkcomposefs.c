@@ -430,6 +430,7 @@ int main(int argc, char **argv)
 	uint8_t digest[LCFS_DIGEST_SIZE];
 	int opt;
 	FILE *out_file;
+	char *failed_path;
 
 	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
 		switch (opt) {
@@ -506,9 +507,9 @@ int main(int argc, char **argv)
 			      "Failed to open output file");
 	}
 
-	root = lcfs_build(NULL, AT_FDCWD, dir_path, "", buildflags);
+	root = lcfs_build(AT_FDCWD, dir_path, "", buildflags, &failed_path);
 	if (root == NULL)
-		error(EXIT_FAILURE, errno, "load current directory node");
+		error(EXIT_FAILURE, errno, "Error accessing %s", failed_path);
 
 	if (absolute_path) {
 		pathbuf[0] = '\0';

@@ -93,9 +93,8 @@ int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node, void *file,
 
 int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node, int fd);
 
-struct lcfs_node_s *lcfs_build(struct lcfs_node_s *parent, int dirfd,
-			       const char *fname, const char *name,
-			       int buildflags);
+struct lcfs_node_s *lcfs_build(int dirfd, const char *fname, const char *name,
+			       int buildflags, char **failed_path_out);
 
 int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 		  uint8_t *digest_out);
