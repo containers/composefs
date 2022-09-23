@@ -524,7 +524,7 @@ int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 	}
 
 	if ((ino->st_mode & S_IFMT) == S_IFLNK ||
-	    ((ino->st_mode & S_IFMT) == S_IFREG && ino->payload_length >= 0)) {
+	    ((ino->st_mode & S_IFMT) == S_IFREG && ino->payload_length > 0)) {
 		path_payload = cfs_dup_payload_path(ctx, ino, index);
 		if (IS_ERR(path_payload)) {
 			ret = PTR_ERR(path_payload);
