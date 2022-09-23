@@ -17,6 +17,7 @@
 #include <linux/seq_file.h>
 #include <linux/version.h>
 #include <linux/xattr.h>
+#include <linux/statfs.h>
 
 #include "cfs-internals.h"
 
@@ -370,8 +371,26 @@ static void cfs_put_super(struct super_block *sb)
 	kfree(fsi);
 }
 
+static int cfs_statfs(struct dentry *dentry, struct kstatfs *buf)
+{
+	struct cfs_info *fsi = dentry->d_sb->s_fs_info;
+	int err = 0;
+
+	/* We return the free space, etc from the first base dir. */
+	if (fsi->n_bases > 0) {
+		err = vfs_statfs(&fsi->bases[0]->f_path, buf);
+	}
+
+	if (!err) {
+		buf->f_namelen = NAME_MAX;
+		buf->f_type = dentry->d_sb->s_magic;
+	}
+
+	return err;
+}
+
 static const struct super_operations cfs_ops = {
-	.statfs = simple_statfs,
+	.statfs = cfs_statfs,
 	.drop_inode = generic_delete_inode,
 	.show_options = cfs_show_options,
 	.put_super = cfs_put_super,
