@@ -307,12 +307,12 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 	if (fsi->noverity)
 		seq_puts(m, ",noverity");
 	if (fsi->base_path)
-		seq_printf(m, ",basedir=%s", fsi->base_path);
+		seq_show_option(m, "basedir", fsi->base_path);
 	if (fsi->has_digest) {
 		char buf[SHA256_DIGEST_SIZE * 2 + 1];
 
 		digest_to_string(fsi->digest, buf);
-		seq_printf(m, ",digest=%s", buf);
+		seq_show_option(m, "digest", buf);
 	}
 
 	return 0;
