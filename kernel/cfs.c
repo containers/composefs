@@ -354,11 +354,13 @@ static void cfs_free_inode(struct inode *inode)
 
 static void cfs_put_super(struct super_block *sb)
 {
+	struct vfsmount *mnts[1];
 	struct cfs_info *fsi = sb->s_fs_info;
 	size_t i;
 
+	mnts[0] = fsi->root_mnt;
 	if (fsi->root_mnt)
-		kern_unmount(fsi->root_mnt);
+		kern_unmount_array(mnts, 1);
 	cfs_ctx_put(&fsi->cfs_ctx);
 	if (fsi->bases) {
 		for (i = 0; i < fsi->n_bases; i++)
