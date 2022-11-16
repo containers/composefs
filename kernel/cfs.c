@@ -597,6 +597,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	struct cfs_inode *cino = CFS_I(inode);
 	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 	struct file *real_file;
+	struct file *faked_file;
 	char *real_path = cino->inode_data.path_payload;
 
 	if (WARN_ON(!file))
@@ -648,7 +649,14 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 		}
 	}
 
-	file->private_data = real_file;
+	faked_file = open_with_fake_path(&file->f_path, file->f_flags,
+					 real_file->f_inode, current_cred());
+	fput(real_file);
+
+	if (IS_ERR(faked_file))
+		return PTR_ERR(faked_file);
+
+	file->private_data = faked_file;
 	return 0;
 }
 
