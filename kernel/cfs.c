@@ -629,8 +629,7 @@ static struct file *open_base_file(struct cfs_info *fsi, struct inode *inode,
 	}
 
 	for (i = 0; i < fsi->n_bases; i++) {
-		real_file = file_open_root_mnt(fsi->bases[0],
-					       cino->inode_data.path_payload,
+		real_file = file_open_root_mnt(fsi->bases[i], real_path,
 					       file->f_flags, 0);
 		if (!IS_ERR(real_file) || PTR_ERR(real_file) != -ENOENT)
 			return real_file;
