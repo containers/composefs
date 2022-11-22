@@ -34,7 +34,7 @@ struct cfs_info {
 	char *base_path;
 
 	size_t n_bases;
-	struct file **bases;
+	struct vfsmount **bases;
 
 	u32 verity_check; /* 0 == none, 1 == if specified in image, 2 == always and require in image */
 	bool has_digest;
@@ -74,7 +74,7 @@ static const struct address_space_operations cfs_aops = {
 static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size);
 
 /* copied from overlayfs.  */
-static unsigned int cfs_split_lowerdirs(char *str)
+static unsigned int cfs_split_basedirs(char *str)
 {
 	unsigned int ctr = 1;
 	char *s, *d;
@@ -357,15 +357,13 @@ static void cfs_put_super(struct super_block *sb)
 {
 	struct vfsmount *mnts[1];
 	struct cfs_info *fsi = sb->s_fs_info;
-	size_t i;
 
 	mnts[0] = fsi->root_mnt;
 	if (fsi->root_mnt)
 		kern_unmount_array(mnts, 1);
 	cfs_ctx_put(&fsi->cfs_ctx);
 	if (fsi->bases) {
-		for (i = 0; i < fsi->n_bases; i++)
-			fput(fsi->bases[i]);
+		kern_unmount_array(fsi->bases, fsi->n_bases);
 		kfree(fsi->bases);
 	}
 	kfree(fsi->base_path);
@@ -380,7 +378,11 @@ static int cfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 
 	/* We return the free space, etc from the first base dir. */
 	if (fsi->n_bases > 0) {
-		err = vfs_statfs(&fsi->bases[0]->f_path, buf);
+		struct path basedir_root = {
+			mnt: fsi->bases[0],
+			dentry: fsi->bases[0]->mnt_root
+		};
+		err = vfs_statfs(&basedir_root, buf);
 	}
 
 	if (!err) {
@@ -450,13 +452,49 @@ static int cfs_parse_param(struct fs_context *fc, struct fs_parameter *param)
 	return 0;
 }
 
+static struct vfsmount *resolve_basedir(const char *name)
+{
+	struct path path = {};
+	struct vfsmount *mnt;
+
+	int err = -EINVAL;
+	if (!*name) {
+		pr_err("empty basedir\n");
+		goto out;
+	}
+	err = kern_path(name, LOOKUP_FOLLOW, &path);
+	if (err) {
+		pr_err("failed to resolve '%s': %i\n", name, err);
+		goto out;
+	}
+
+	mnt = clone_private_mount(&path);
+	err = PTR_ERR(mnt);
+	if (IS_ERR(mnt)) {
+		pr_err("failed to clone basedir\n");
+		goto out_put;
+	}
+
+	path_put(&path);
+
+	/* Don't inherit atime flags */
+	mnt->mnt_flags &= ~(MNT_NOATIME | MNT_NODIRATIME | MNT_RELATIME);
+
+	return mnt;
+
+out_put:
+	path_put(&path);
+out:
+	return ERR_PTR(err);
+}
+
 static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 {
 	struct cfs_info *fsi = sb->s_fs_info;
 	struct vfsmount *root_mnt = NULL;
-	struct file **bases = NULL;
+	struct vfsmount **bases = NULL;
 	struct path rootpath = {};
-	size_t numlower = 0;
+	size_t numbasedirs = 0;
 	struct inode *inode;
 	int ret;
 
@@ -486,7 +524,6 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	if (fsi->base_path) {
 		char *lower, *splitlower = NULL;
 		size_t i;
-		struct file *f;
 
 		ret = -ENOMEM;
 		splitlower = kstrdup(fsi->base_path, GFP_KERNEL);
@@ -494,8 +531,8 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 			goto fail;
 
 		ret = -EINVAL;
-		numlower = cfs_split_lowerdirs(splitlower);
-		if (numlower > CFS_MAX_STACK) {
+		numbasedirs = cfs_split_basedirs(splitlower);
+		if (numbasedirs > CFS_MAX_STACK) {
 			pr_err("too many lower directories, limit is %d\n",
 			       CFS_MAX_STACK);
 			kfree(splitlower);
@@ -503,21 +540,22 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 		}
 
 		ret = -ENOMEM;
-		bases = kcalloc(numlower, sizeof(struct file *), GFP_KERNEL);
+		bases = kcalloc(numbasedirs, sizeof(struct vfsmount *),
+				GFP_KERNEL);
 		if (!bases) {
 			kfree(splitlower);
 			goto fail;
 		}
 
 		lower = splitlower;
-		for (i = 0; i < numlower; i++) {
-			f = filp_open(lower, O_PATH, 0);
-			if (IS_ERR(f)) {
-				ret = PTR_ERR(f);
+		for (i = 0; i < numbasedirs; i++) {
+			struct vfsmount *mnt = resolve_basedir(lower);
+			if (IS_ERR(mnt)) {
+				ret = PTR_ERR(mnt);
 				kfree(splitlower);
 				goto fail;
 			}
-			bases[i] = f;
+			bases[i] = mnt;
 
 			lower = strchr(lower, '\0') + 1;
 		}
@@ -549,15 +587,15 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 
 	fsi->root_mnt = root_mnt;
 	fsi->bases = bases;
-	fsi->n_bases = numlower;
+	fsi->n_bases = numbasedirs;
 	return 0;
 fail:
 	if (bases) {
 		size_t i;
 
-		for (i = 0; i < numlower; i++) {
+		for (i = 0; i < numbasedirs; i++) {
 			if (bases[i])
-				fput(bases[i]);
+				kern_unmount(bases[i]);
 		}
 		kfree(bases);
 	}
@@ -582,12 +620,18 @@ static struct file *open_base_file(struct cfs_info *fsi, struct inode *inode,
 {
 	struct cfs_inode *cino = CFS_I(inode);
 	struct file *real_file;
+	char *real_path = cino->inode_data.path_payload;
 	size_t i;
 
+	if (fsi->n_bases == 0 || real_path[0] == '/') {
+		return file_open_root_mnt(fsi->root_mnt, real_path,
+					  file->f_flags, 0);
+	}
+
 	for (i = 0; i < fsi->n_bases; i++) {
-		real_file = file_open_root(&fsi->bases[i]->f_path,
-					   cino->inode_data.path_payload,
-					   file->f_flags, 0);
+		real_file = file_open_root_mnt(fsi->bases[0],
+					       cino->inode_data.path_payload,
+					       file->f_flags, 0);
 		if (!IS_ERR(real_file) || PTR_ERR(real_file) != -ENOENT)
 			return real_file;
 	}
@@ -620,14 +664,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 		return -EIO;
 	}
 
-	/* FIXME: prevent loops opening files.  */
-
-	if (fsi->n_bases == 0 || real_path[0] == '/') {
-		real_file = file_open_root_mnt(fsi->root_mnt, real_path,
-					       file->f_flags, 0);
-	} else {
-		real_file = open_base_file(fsi, inode, file);
-	}
+	real_file = open_base_file(fsi, inode, file);
 
 	if (IS_ERR(real_file))
 		return PTR_ERR(real_file);
