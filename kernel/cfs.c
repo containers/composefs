@@ -36,7 +36,7 @@ struct cfs_info {
 	size_t n_bases;
 	struct file **bases;
 
-	bool noverity;
+	u32 verity_check; /* 0 == none, 1 == if specified in image, 2 == always and require in image */
 	bool has_digest;
 	u8 digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 };
@@ -305,8 +305,6 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 {
 	struct cfs_info *fsi = root->d_sb->s_fs_info;
 
-	if (fsi->noverity)
-		seq_puts(m, ",noverity");
 	if (fsi->base_path)
 		seq_show_option(m, "basedir", fsi->base_path);
 	if (fsi->has_digest) {
@@ -315,6 +313,8 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 		digest_to_string(fsi->digest, buf);
 		seq_show_option(m, "digest", buf);
 	}
+	if (fsi->verity_check != 0)
+		seq_printf(m, ",verity_check=%u", fsi->verity_check);
 
 	return 0;
 }
@@ -404,13 +404,13 @@ static const struct super_operations cfs_ops = {
 enum cfs_param {
 	Opt_base_path,
 	Opt_digest,
-	Opt_verity,
+	Opt_verity_check,
 };
 
 const struct fs_parameter_spec cfs_parameters[] = {
 	fsparam_string("basedir", Opt_base_path),
 	fsparam_string("digest", Opt_digest),
-	fsparam_flag_no("verity", Opt_verity),
+	fsparam_u32("verity_check", Opt_verity_check),
 	{}
 };
 
@@ -438,9 +438,12 @@ static int cfs_parse_param(struct fs_context *fc, struct fs_parameter *param)
 		if (r < 0)
 			return r;
 		fsi->has_digest = true;
+		fsi->verity_check = 2; /* Default to full verity check */
 		break;
-	case Opt_verity:
-		fsi->noverity = !result.boolean;
+	case Opt_verity_check:
+		if (result.uint_32 > 2)
+			return invalfc(fc, "Invalid verity_check mode");
+		fsi->verity_check = result.uint_32;
 		break;
 	}
 
@@ -611,6 +614,12 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 		return 0;
 	}
 
+	if (fsi->verity_check >= 2 && !cino->inode_data.has_digest) {
+		pr_warn("WARNING: composefs image file '%pd' specified no fs-verity digest\n",
+			file->f_path.dentry);
+		return -EIO;
+	}
+
 	/* FIXME: prevent loops opening files.  */
 
 	if (fsi->n_bases == 0 || real_path[0] == '/') {
@@ -626,7 +635,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	/* If metadata records a digest for the file, ensure it is there
 	 * and correct before using the contents.
 	 */
-	if (cino->inode_data.has_digest && !fsi->noverity) {
+	if (cino->inode_data.has_digest && fsi->verity_check >= 1) {
 		u8 verity_digest[FS_VERITY_MAX_DIGEST_SIZE];
 		enum hash_algo verity_algo;
 		int res;
@@ -634,7 +643,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 		res = fsverity_get_digest(d_inode(real_file->f_path.dentry),
 					  verity_digest, &verity_algo);
 		if (res < 0) {
-			pr_warn("WARNING: composefs backing file '%pd' unexpectedly had no fs-verity digest\n",
+			pr_warn("WARNING: composefs backing file '%pd' has no fs-verity digest\n",
 				real_file->f_path.dentry);
 			fput(real_file);
 			return -EIO;
