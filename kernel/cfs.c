@@ -34,7 +34,7 @@ struct cfs_info {
 	size_t n_bases;
 	struct vfsmount **bases;
 
-	u32 verity_check; /* 0 == none, 1 == if specified in image, 2 == always and require in image */
+	u32 verity_check; /* 0 == none, 1 == if specified in image, 2 == require in image */
 	bool has_digest;
 	u8 digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 };
@@ -372,11 +372,9 @@ static int cfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 
 	/* We return the free space, etc from the first base dir. */
 	if (fsi->n_bases > 0) {
-		struct path basedir_root = {
-			mnt: fsi->bases[0],
-			dentry: fsi->bases[0]->mnt_root
-		};
-		err = vfs_statfs(&basedir_root, buf);
+		struct path root = { .mnt = fsi->bases[0],
+				     .dentry = fsi->bases[0]->mnt_root };
+		err = vfs_statfs(&root, buf);
 	}
 
 	if (!err) {
@@ -450,8 +448,8 @@ static struct vfsmount *resolve_basedir(const char *name)
 {
 	struct path path = {};
 	struct vfsmount *mnt;
-
 	int err = -EINVAL;
+
 	if (!*name) {
 		pr_err("empty basedir\n");
 		goto out;
@@ -489,6 +487,7 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	struct path rootpath = {};
 	size_t numbasedirs = 0;
 	struct inode *inode;
+	struct vfsmount *mnt;
 	int ret;
 
 	if (sb->s_root)
@@ -535,7 +534,7 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 
 		lower = splitlower;
 		for (i = 0; i < numbasedirs; i++) {
-			struct vfsmount *mnt = resolve_basedir(lower);
+			mnt = resolve_basedir(lower);
 			if (IS_ERR(mnt)) {
 				ret = PTR_ERR(mnt);
 				kfree(splitlower);
