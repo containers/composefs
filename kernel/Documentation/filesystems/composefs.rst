@@ -114,8 +114,8 @@ Mount options
 =============
 
 `basedir`: A colon separated list of directories to use as a base when resolving relative content paths.
-`digest`: A fs-verity sha256 digest that the descriptor file must match.
-`noverity`: Don't verify that target files have the right fs-verity digest. Useful if the backing filesystem doesn't support fs-verity but the descriptor contains digests.
+`verity_check=[0,1,2]`: When to verify backing file fs-verity: 0 == never, 1 == if specified in image, 2 == always and require it in image.
+`digest`: A fs-verity sha256 digest that the descriptor file must match. If set, `verity_check` defaults to 2.
 
 
 Filesystem format
