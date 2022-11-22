@@ -29,8 +29,6 @@ MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 struct cfs_info {
 	struct cfs_context_s cfs_ctx;
 
-	struct vfsmount *root_mnt;
-
 	char *base_path;
 
 	size_t n_bases;
@@ -355,12 +353,8 @@ static void cfs_free_inode(struct inode *inode)
 
 static void cfs_put_super(struct super_block *sb)
 {
-	struct vfsmount *mnts[1];
 	struct cfs_info *fsi = sb->s_fs_info;
 
-	mnts[0] = fsi->root_mnt;
-	if (fsi->root_mnt)
-		kern_unmount_array(mnts, 1);
 	cfs_ctx_put(&fsi->cfs_ctx);
 	if (fsi->bases) {
 		kern_unmount_array(fsi->bases, fsi->n_bases);
@@ -491,7 +485,6 @@ out:
 static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 {
 	struct cfs_info *fsi = sb->s_fs_info;
-	struct vfsmount *root_mnt = NULL;
 	struct vfsmount **bases = NULL;
 	struct path rootpath = {};
 	size_t numbasedirs = 0;
@@ -511,13 +504,6 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	ret = kern_path("/", LOOKUP_DIRECTORY, &rootpath);
 	if (ret) {
 		pr_err("failed to resolve root path: %d\n", ret);
-		goto fail;
-	}
-
-	root_mnt = clone_private_mount(&rootpath);
-	path_put_init(&rootpath);
-	if (IS_ERR(root_mnt)) {
-		ret = PTR_ERR(root_mnt);
 		goto fail;
 	}
 
@@ -585,7 +571,6 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 
 	sb->s_time_gran = 1;
 
-	fsi->root_mnt = root_mnt;
 	fsi->bases = bases;
 	fsi->n_bases = numbasedirs;
 	return 0;
@@ -599,8 +584,6 @@ fail:
 		}
 		kfree(bases);
 	}
-	if (root_mnt)
-		kern_unmount(root_mnt);
 	cfs_ctx_put(&fsi->cfs_ctx);
 	return ret;
 }
@@ -623,14 +606,8 @@ static struct file *open_base_file(struct cfs_info *fsi, struct inode *inode,
 	char *real_path = cino->inode_data.path_payload;
 	size_t i;
 
-	if (fsi->n_bases == 0 || real_path[0] == '/') {
-		return file_open_root_mnt(fsi->root_mnt, real_path,
-					  file->f_flags, 0);
-	}
-
 	for (i = 0; i < fsi->n_bases; i++) {
-		real_file = file_open_root_mnt(fsi->bases[0],
-					       cino->inode_data.path_payload,
+		real_file = file_open_root_mnt(fsi->bases[i], real_path,
 					       file->f_flags, 0);
 		if (!IS_ERR(real_file) || PTR_ERR(real_file) != -ENOENT)
 			return real_file;
