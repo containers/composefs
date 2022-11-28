@@ -484,7 +484,6 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 {
 	struct cfs_info *fsi = sb->s_fs_info;
 	struct vfsmount **bases = NULL;
-	struct path rootpath = {};
 	size_t numbasedirs = 0;
 	struct inode *inode;
 	struct vfsmount *mnt;
@@ -499,12 +498,6 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	sb->s_magic = CFS_MAGIC;
 	sb->s_xattr = cfs_xattr_handlers;
 	sb->s_export_op = &cfs_export_operations;
-
-	ret = kern_path("/", LOOKUP_DIRECTORY, &rootpath);
-	if (ret) {
-		pr_err("failed to resolve root path: %d\n", ret);
-		goto fail;
-	}
 
 	if (fsi->base_path) {
 		char *lower, *splitlower = NULL;
