@@ -54,7 +54,6 @@ static inline struct cfs_inode *CFS_I(struct inode *inode)
 static struct file empty_file;
 
 static const struct file_operations cfs_file_operations;
-static const struct vm_operations_struct generic_file_vm_ops;
 
 static const struct super_operations cfs_ops;
 static const struct file_operations cfs_dir_operations;
@@ -675,6 +674,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	return 0;
 }
 
+#ifdef CONFIG_MMU
 static unsigned long cfs_mmu_get_unmapped_area(struct file *file,
 					       unsigned long addr,
 					       unsigned long len,
@@ -688,6 +688,7 @@ static unsigned long cfs_mmu_get_unmapped_area(struct file *file,
 
 	return current->mm->get_unmapped_area(file, addr, len, pgoff, flags);
 }
+#endif
 
 static int cfs_release_file(struct inode *inode, struct file *file)
 {
@@ -868,7 +869,9 @@ static const struct file_operations cfs_file_operations = {
 	.fsync = noop_fsync,
 	.splice_read = generic_file_splice_read,
 	.llseek = generic_file_llseek,
+#ifdef CONFIG_MMU
 	.get_unmapped_area = cfs_mmu_get_unmapped_area,
+#endif
 	.release = cfs_release_file,
 	.open = cfs_open_file,
 };
