@@ -54,7 +54,6 @@ static inline struct cfs_inode *CFS_I(struct inode *inode)
 static struct file empty_file;
 
 static const struct file_operations cfs_file_operations;
-static const struct vm_operations_struct generic_file_vm_ops;
 
 static const struct super_operations cfs_ops;
 static const struct file_operations cfs_dir_operations;
