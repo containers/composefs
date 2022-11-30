@@ -22,7 +22,7 @@ file content from the filesystem by looking up that filename in a set
 of base directories.
 
 Given such a descriptor called "image.cfs" and a directory with files
-called "/dir" you can mount it like:
+called "/dir" you can mount it like::
 
   mount -t composefs image.cfs -o basedir=/dir /mnt
 
@@ -51,11 +51,10 @@ all mounts.
 Integrity validation
 ====================
 
-Composefs uses `fs-verity
-<https://www.kernel.org/doc/Documentation/filesystems/fsverity.rst>`
-for integrity validation, and extends it by making the validation also
-apply to the directory metadata.  This happens on two levels,
-validation of the descriptor and validation of the backing files.
+Composefs uses :doc:`fs-verity <fsverity>` for integrity validation,
+and extends it by making the validation also apply to the directory
+metadata.  This happens on two levels, validation of the descriptor
+and validation of the backing files.
 
 For descriptor validation, the idea is that you enable fs-verity on
 the descriptor file which seals it from changes that would affect the
@@ -72,7 +71,7 @@ files. This means any (accidental or malicious) modification of the
 basedir will be detected at the time the file is used.
 
 Expected use-cases
-=================
+==================
 
 Container Image Storage
 ```````````````````````
@@ -113,9 +112,17 @@ all directory metadata and file content is validated lazily at use.
 Mount options
 =============
 
-`basedir`: A colon separated list of directories to use as a base when resolving relative content paths.
-`verity_check=[0,1,2]`: When to verify backing file fs-verity: 0 == never, 1 == if specified in image, 2 == always and require it in image.
-`digest`: A fs-verity sha256 digest that the descriptor file must match. If set, `verity_check` defaults to 2.
+basedir
+    A colon separated list of directories to use as a base when resolving
+    relative content paths.
+
+verity_check=[0,1,2]
+    When to verify backing file fs-verity: 0 == never, 1 == if specified in
+    image, 2 == always and require it in image.
+
+digest
+    A fs-verity sha256 digest that the descriptor file must match. If set,
+    `verity_check` defaults to 2.
 
 
 Filesystem format
