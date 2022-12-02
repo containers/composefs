@@ -166,20 +166,38 @@ static int copy_file_data(int sfd, int dfd)
 	return 0;
 }
 
+static inline void cleanup_freep(void *p)
+{
+	void **pp = (void **)p;
+	free(*pp);
+}
+#define cleanup_free __attribute__((cleanup(cleanup_freep)))
+
+static int join_paths(char **out, const char *path1, const char *path2)
+{
+	const char *sep = (path1[0] == '\0') ? "" : "/";
+	int len = strlen(path1);
+
+	while (len && path1[len - 1] == '/')
+		len--;
+
+	return asprintf(out, "%.*s%s%s", len, path1, sep, path2);
+}
+
 static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 					 const char *dst, mode_t mode,
 					 bool try_enable_fsverity)
 {
-	char pathbuf[PATH_MAX];
-	char tmppath[PATH_MAX];
+	cleanup_free char *pathbuf = NULL;
+	cleanup_free char *tmppath = NULL;
 	int ret, res;
 	int sfd, dfd;
 	int errsv;
 	struct stat statbuf;
 
-	strncpy(pathbuf, dst_base, sizeof(pathbuf) - 1);
-	strncat(pathbuf, "/", sizeof(pathbuf) - 1);
-	strncat(pathbuf, dst, sizeof(pathbuf) - 1);
+	ret = join_paths(&pathbuf, dst_base, dst);
+	if (ret < 0)
+		return ret;
 
 	ret = mkdir_parents(pathbuf, 0755);
 	if (ret < 0)
@@ -188,8 +206,9 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 	if (lstat(pathbuf, &statbuf) == 0)
 		return 0; /* Already exists, no need to copy */
 
-	strncpy(tmppath, dst_base, sizeof(tmppath) - 1);
-	strncat(tmppath, "/.tmpXXXXXX", sizeof(tmppath) - 1);
+	ret = join_paths(&tmppath, dst_base, ".tmpXXXXXX");
+	if (ret < 0)
+		return ret;
 
 	dfd = mkostemp(tmppath, O_CLOEXEC);
 	if (dfd == -1)
@@ -265,24 +284,22 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 	return 0;
 }
 
-static int fill_payload(struct lcfs_node_s *node, char *path, size_t len,
+static int fill_payload(struct lcfs_node_s *node, const char *path, size_t len,
 			size_t path_start_offset, bool by_digest,
 			const char *digest_store_path)
 {
-	size_t old_len = len;
+	cleanup_free char *tmp_path = NULL;
 	const char *fname;
 	int ret;
 
 	fname = lcfs_node_get_name(node);
 
 	if (fname) {
-		if (len == 0 || path[len - 1] == '/')
-			ret = sprintf(path + len, "%s", fname);
-		else
-			ret = sprintf(path + len, "/%s", fname);
+		ret = join_paths(&tmp_path, path, fname);
 		if (ret < 0)
 			return ret;
 		len += ret;
+		path = tmp_path;
 	}
 
 	if (lcfs_node_dirp(node)) {
@@ -296,7 +313,6 @@ static int fill_payload(struct lcfs_node_s *node, char *path, size_t len,
 					   by_digest, digest_store_path);
 			if (ret < 0)
 				return ret;
-			path[len] = '\0';
 		}
 	} else if ((lcfs_node_get_mode(node) & S_IFMT) == S_IFLNK) {
 		char target[PATH_MAX + 1];
@@ -334,7 +350,6 @@ static int fill_payload(struct lcfs_node_s *node, char *path, size_t len,
 		if (ret < 0)
 			return ret;
 	}
-	path[old_len] = '\0';
 
 	return 0;
 }
@@ -424,9 +439,8 @@ int main(int argc, char **argv)
 	const char *out = NULL;
 	const char *dir_path = NULL;
 	const char *digest_store_path = NULL;
-	char *absolute_prefix = NULL;
 	size_t path_start_offset;
-	char pathbuf[PATH_MAX];
+	cleanup_free char *pathbuf = NULL;
 	uint8_t digest[LCFS_DIGEST_SIZE];
 	int opt;
 	FILE *out_file;
@@ -504,35 +518,45 @@ int main(int argc, char **argv)
 		out_file = fopen(out, "w");
 		if (out_file == NULL)
 			error(EXIT_FAILURE, errno,
-			      "Failed to open output file");
+			      "failed to open output file");
 	}
 
 	root = lcfs_build(AT_FDCWD, dir_path, "", buildflags, &failed_path);
 	if (root == NULL)
-		error(EXIT_FAILURE, errno, "Error accessing %s", failed_path);
+		error(EXIT_FAILURE, errno, "error accessing %s", failed_path);
 
 	if (absolute_path) {
-		pathbuf[0] = '\0';
+		cleanup_free char *cwd_cleanup = NULL;
+		cleanup_free char *tmp_pathbuf = NULL;
+		cleanup_free char *absolute_prefix = NULL;
+		char *cwd = "";
+		int r;
+
 		if (dir_path[0] != '/') {
-			if (getcwd(pathbuf, sizeof(pathbuf)) == NULL)
+			cwd = cwd_cleanup = get_current_dir_name();
+			if (cwd == NULL)
 				error(EXIT_FAILURE, errno,
-				      "get current working directory");
-			strncat(pathbuf, "/", sizeof(pathbuf) - 1);
+				      "retrieve current working directory");
 		}
-		strncat(pathbuf, dir_path, sizeof(pathbuf) - 1);
-		absolute_prefix = canonicalize_file_name(pathbuf);
+		r = join_paths(&tmp_pathbuf, cwd, dir_path);
+		if (r < 0)
+			error(EXIT_FAILURE, errno, "compute directory path");
+
+		absolute_prefix = canonicalize_file_name(tmp_pathbuf);
 		if (absolute_prefix == NULL)
-			error(EXIT_FAILURE, errno, "Failed to canonicalize %s",
-			      pathbuf);
-		strncpy(pathbuf, absolute_prefix, sizeof(pathbuf) - 1);
-		free(absolute_prefix);
-		strncat(pathbuf, "/", sizeof(pathbuf) - 1);
+			error(EXIT_FAILURE, errno, "failed to canonicalize %s",
+			      tmp_pathbuf);
+
+		r = join_paths(&pathbuf, absolute_prefix, "");
+		if (r < 0)
+			error(EXIT_FAILURE, errno, "compute directory path");
 		path_start_offset = 0;
 	} else {
-		strncpy(pathbuf, dir_path, sizeof(pathbuf) - 1);
-		if (pathbuf[strlen(pathbuf)] != '/')
-			strncat(pathbuf, "/", sizeof(pathbuf) - 1);
-		path_start_offset = strlen(pathbuf);
+		if (dir_path[0] == '\0')
+			error(EXIT_FAILURE, 0, "invalid directory path");
+		path_start_offset = join_paths(&pathbuf, dir_path, "");
+		if (path_start_offset < 0)
+			error(EXIT_FAILURE, errno, "compute directory path");
 	}
 	fill_payload(root, pathbuf, strlen(pathbuf), path_start_offset,
 		     by_digest, digest_store_path);
