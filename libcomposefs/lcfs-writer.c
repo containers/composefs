@@ -1393,7 +1393,7 @@ int lcfs_node_remove_child(struct lcfs_node_s *parent, const char *name)
 				       (parent->children_size - (i + 1)));
 			parent->children_size -= 1;
 
-			/* Unlink correctly as it may live on outside the tree and be reinsterted */
+			/* Unlink correctly as it may live on outside the tree and be reinserted */
 			free(child->name);
 			child->name = NULL;
 			child->parent = NULL;

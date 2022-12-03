@@ -31,7 +31,7 @@ Content sharing
 
 Suppose you have a single basedir where the files are content
 addressed (i.e. named by content digest), and a set of composefs
-descriptors using this basedir. Any file that happen to be shared
+descriptors using this basedir. Any file that happens to be shared
 between two images (same content, so same digest) will now only be
 stored once on the disk.
 
@@ -102,7 +102,7 @@ store itself is validated when created, but once the hard-link
 directory is created, nothing validates the directory structure of
 that.
 
-Instead of a chroot we can we can use composefs. We create a composefs
+Instead of a chroot we can use composefs. We create a composefs
 image pointing into the object store, enable fs-verity for everything
 and encode the fs-verity digest of the descriptor in the
 kernel-command line. This will allow booting a trusted system where
@@ -128,7 +128,7 @@ digest
 Filesystem format
 =================
 
-The format of the descriptor is contains three sections: header,
+The format of the descriptor contains three sections: header,
 inodes and variable data. All data in the file is stored in
 little-endian form.
 

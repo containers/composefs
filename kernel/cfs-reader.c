@@ -275,7 +275,7 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 	ino->flags = cfs_read_u32(&data);
 
 	inode_size = cfs_inode_encoded_size(ino->flags);
-	/* Shouldn't happen, but lets check */
+	/* Shouldn't happen, but let's check */
 	if (inode_size > sizeof(buffer))
 		return ERR_PTR(-EFSCORRUPTED);
 
