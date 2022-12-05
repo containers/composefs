@@ -558,8 +558,9 @@ int main(int argc, char **argv)
 		if (path_start_offset < 0)
 			error(EXIT_FAILURE, errno, "compute directory path");
 	}
-	fill_payload(root, pathbuf, strlen(pathbuf), path_start_offset,
-		     by_digest, digest_store_path);
+	if (fill_payload(root, pathbuf, strlen(pathbuf), path_start_offset,
+			 by_digest, digest_store_path) < 0)
+		error(EXIT_FAILURE, errno, "cannot fill payload");
 
 	if (lcfs_write_to(root, out_file, write_cb,
 			  print_digest ? digest : NULL) < 0)
