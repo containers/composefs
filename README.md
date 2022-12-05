@@ -47,7 +47,7 @@ metadata.
 
 When pulling a container image to the local storage we normally just
 untar each layer by itself. Instead we can store the file content
-in an content-addressed fashion, and then generate a composefs file
+in a content-addressed fashion, and then generate a composefs file
 for the layer (or perhaps the combined layers).
 
 This allows sharing of content files between images, even if the
@@ -74,7 +74,7 @@ Instead of checking out to a directory we generate a composefs image
 pointing into the object store and mount that as the root fs. We can
 then enable fs-verity of the composefs image and embed the digest of
 that in the kernel commandline which specifies the rootfs. Since
-composefs generation is reproducable, we can even verify that the
+composefs generation is reproducible, we can even verify that the
 composefs image we generated is correct by comparing its digest to one
 in the ostree metadata that was generated when the ostree image was built.
 
