@@ -149,9 +149,9 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 		res = PTR_ERR(header);
 		goto fail;
 	}
-	header->magic = cfs_u32_from_file(header->magic);
-	header->data_offset = cfs_u64_from_file(header->data_offset);
-	header->root_inode = cfs_u64_from_file(header->root_inode);
+	header->magic = le32_to_cpu(header->magic);
+	header->data_offset = le64_to_cpu(header->data_offset);
+	header->root_inode = le64_to_cpu(header->root_inode);
 
 	if (header->magic != CFS_MAGIC ||
 	    header->data_offset > ctx.descriptor_len ||
@@ -240,14 +240,14 @@ static void *cfs_get_vdata_buf(struct cfs_context_s *ctx, u64 offset, u32 len,
 
 static u32 cfs_read_u32(u8 **data)
 {
-	u32 v = cfs_u32_from_file(__get_unaligned_cpu32(*data));
+	u32 v = le32_to_cpu(__get_unaligned_cpu32(*data));
 	*data += sizeof(u32);
 	return v;
 }
 
 static u64 cfs_read_u64(u8 **data)
 {
-	u64 v = cfs_u64_from_file(__get_unaligned_cpu64(*data));
+	u64 v = le64_to_cpu(__get_unaligned_cpu64(*data));
 	*data += sizeof(u64);
 	return v;
 }
@@ -423,7 +423,7 @@ static struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 	if (IS_ERR(dir))
 		return ERR_CAST(dir);
 
-	n_chunks = cfs_u32_from_file(dir->n_chunks);
+	n_chunks = le32_to_cpu(dir->n_chunks);
 	dir->n_chunks = n_chunks;
 
 	/* Don't support n_chunks == 0, the canonical version of that is payload_length == 0 */
@@ -439,9 +439,9 @@ static struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 	for (i = 0; i < max_n_chunks; i++) {
 		struct cfs_dir_chunk_s *chunk = &dir->chunks[i];
 
-		chunk->n_dentries = cfs_u16_from_file(chunk->n_dentries);
-		chunk->chunk_size = cfs_u16_from_file(chunk->chunk_size);
-		chunk->chunk_offset = cfs_u64_from_file(chunk->chunk_offset);
+		chunk->n_dentries = le16_to_cpu(chunk->n_dentries);
+		chunk->chunk_size = le16_to_cpu(chunk->chunk_size);
+		chunk->chunk_offset = le64_to_cpu(chunk->chunk_offset);
 
 		if (chunk->chunk_size <
 		    sizeof(struct cfs_dentry_s) * chunk->n_dentries)
@@ -586,7 +586,7 @@ ssize_t cfs_list_xattrs(struct cfs_context_s *ctx,
 	if (IS_ERR(xattrs))
 		return PTR_ERR(xattrs);
 
-	n_xattrs = cfs_u16_from_file(xattrs->n_attr);
+	n_xattrs = le16_to_cpu(xattrs->n_attr);
 
 	/* Verify that array fits */
 	if (inode_data->xattrs_len < cfs_xattr_header_size(n_xattrs)) {
@@ -599,8 +599,8 @@ ssize_t cfs_list_xattrs(struct cfs_context_s *ctx,
 
 	for (i = 0; i < n_xattrs; i++) {
 		const struct cfs_xattr_element_s *e = &xattrs->attr[i];
-		u16 this_key_len = cfs_u16_from_file(e->key_length);
-		u16 this_value_len = cfs_u16_from_file(e->value_length);
+		u16 this_key_len = le16_to_cpu(e->key_length);
+		u16 this_value_len = le16_to_cpu(e->value_length);
 		const char *this_key;
 
 		if (this_key_len > XATTR_NAME_MAX ||
@@ -653,7 +653,7 @@ int cfs_get_xattr(struct cfs_context_s *ctx,
 	if (IS_ERR(xattrs))
 		return PTR_ERR(xattrs);
 
-	n_xattrs = cfs_u16_from_file(xattrs->n_attr);
+	n_xattrs = le16_to_cpu(xattrs->n_attr);
 
 	/* Verify that array fits */
 	if (inode_data->xattrs_len < cfs_xattr_header_size(n_xattrs)) {
@@ -666,8 +666,8 @@ int cfs_get_xattr(struct cfs_context_s *ctx,
 
 	for (i = 0; i < n_xattrs; i++) {
 		const struct cfs_xattr_element_s *e = &xattrs->attr[i];
-		u16 this_key_len = cfs_u16_from_file(e->key_length);
-		u16 this_value_len = cfs_u16_from_file(e->value_length);
+		u16 this_key_len = le16_to_cpu(e->key_length);
+		u16 this_value_len = le16_to_cpu(e->value_length);
 		const char *this_key, *this_value;
 
 		if (this_key_len > XATTR_NAME_MAX ||
@@ -827,7 +827,7 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u64 index,
 				continue;
 
 			if (!cb(private, dentry_name, dentry_name_len,
-				cfs_u64_from_file(dentry->inode_index),
+				le64_to_cpu(dentry->inode_index),
 				dentry->d_type)) {
 				res = 0;
 				goto exit;
@@ -874,7 +874,7 @@ static int cfs_dir_lookup_in_chunk(const char *name, size_t name_len,
 
 		cmp = memcmp2(name, name_len, dentry_name, dentry_name_len);
 		if (cmp == 0) {
-			*index_out = cfs_u64_from_file(dentry->inode_index);
+			*index_out = le64_to_cpu(dentry->inode_index);
 			return 0;
 		}
 

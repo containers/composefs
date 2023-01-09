@@ -24,36 +24,6 @@
 #define CFS_MAX_DIR_CHUNK_SIZE 4096
 #define CFS_MAX_XATTRS_SIZE 4096
 
-static inline u16 cfs_u16_to_file(u16 val)
-{
-	return cpu_to_le16(val);
-}
-
-static inline u32 cfs_u32_to_file(u32 val)
-{
-	return cpu_to_le32(val);
-}
-
-static inline u64 cfs_u64_to_file(u64 val)
-{
-	return cpu_to_le64(val);
-}
-
-static inline u16 cfs_u16_from_file(u16 val)
-{
-	return le16_to_cpu(val);
-}
-
-static inline u32 cfs_u32_from_file(u32 val)
-{
-	return le32_to_cpu(val);
-}
-
-static inline u64 cfs_u64_from_file(u64 val)
-{
-	return le64_to_cpu(val);
-}
-
 static inline int cfs_xdigit_value(char c)
 {
 	if (c >= '0' && c <= '9')
