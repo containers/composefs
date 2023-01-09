@@ -38,11 +38,11 @@ static void cfs_buf_put(struct cfs_buf *buf)
 static void *cfs_get_buf(struct cfs_context_s *ctx, u64 offset, u32 size,
 			 struct cfs_buf *buf)
 {
-	u64 index = offset >> PAGE_SHIFT;
-	u32 page_offset = offset & (PAGE_SIZE - 1);
-	struct page *page = buf->page;
 	struct inode *inode = ctx->descriptor->f_inode;
 	struct address_space *const mapping = inode->i_mapping;
+	u32 page_offset = offset & (PAGE_SIZE - 1);
+	u64 index = offset >> PAGE_SHIFT;
+	struct page *page = buf->page;
 
 	if (offset > ctx->descriptor_len)
 		return ERR_PTR(-EFSCORRUPTED);
@@ -73,8 +73,8 @@ static void *cfs_get_buf(struct cfs_context_s *ctx, u64 offset, u32 size,
 static void *cfs_read_data(struct cfs_context_s *ctx, u64 offset, u64 size,
 			   u8 *dest)
 {
-	size_t copied;
 	loff_t pos = offset;
+	size_t copied;
 
 	if (offset > ctx->descriptor_len)
 		return ERR_PTR(-EFSCORRUPTED);
@@ -104,12 +104,12 @@ static void *cfs_read_data(struct cfs_context_s *ctx, u64 offset, u64 size,
 int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 		 struct cfs_context_s *ctx_out)
 {
-	struct cfs_header_s *header;
-	struct file *descriptor;
-	loff_t i_size;
 	u8 verity_digest[FS_VERITY_MAX_DIGEST_SIZE];
+	struct cfs_header_s *header;
 	enum hash_algo verity_algo;
 	struct cfs_context_s ctx;
+	struct file *descriptor;
+	loff_t i_size;
 	int res;
 
 	descriptor = filp_open(descriptor_path, O_RDONLY, 0);
@@ -255,11 +255,11 @@ static u64 cfs_read_u64(u8 **data)
 struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 				      struct cfs_inode_s *ino)
 {
-	u64 offset = index;
 	/* Buffer that fits the maximal encoded size: */
 	u8 buffer[sizeof(struct cfs_inode_s)];
-	u64 read_size;
+	u64 offset = index;
 	u64 inode_size;
+	u64 read_size;
 	u8 *data;
 
 	data = cfs_get_inode_data_max(ctx, offset, sizeof(buffer), &read_size,
@@ -405,8 +405,8 @@ static struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 						   size_t chunk_buf_size,
 						   size_t max_n_chunks)
 {
-	size_t n_chunks, i;
 	struct cfs_dir_s *dir;
+	size_t n_chunks, i;
 
 	/* Payload and buffer should be large enough to fit the n_chunks */
 	if (payload_length < sizeof(struct cfs_dir_s) ||
@@ -498,10 +498,10 @@ int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 			u64 index, struct cfs_inode_data_s *inode_data)
 {
 	u8 buf[cfs_dir_size(CFS_N_PRELOAD_DIR_CHUNKS)];
+	char *path_payload = NULL;
 	struct cfs_dir_s *dir;
 	int ret = 0;
 	size_t i;
-	char *path_payload = NULL;
 
 	inode_data->payload_length = ino->payload_length;
 
@@ -570,11 +570,11 @@ ssize_t cfs_list_xattrs(struct cfs_context_s *ctx,
 			struct cfs_inode_data_s *inode_data, char *names,
 			size_t size)
 {
-	u8 *data, *data_end;
-	size_t n_xattrs = 0, i;
-	ssize_t copied = 0;
-	const struct cfs_xattr_header_s *xattrs;
 	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
+	const struct cfs_xattr_header_s *xattrs;
+	size_t n_xattrs = 0, i;
+	u8 *data, *data_end;
+	ssize_t copied = 0;
 
 	if (inode_data->xattrs_len == 0)
 		return 0;
@@ -599,8 +599,8 @@ ssize_t cfs_list_xattrs(struct cfs_context_s *ctx,
 
 	for (i = 0; i < n_xattrs; i++) {
 		const struct cfs_xattr_element_s *e = &xattrs->attr[i];
-		u16 this_key_len = le16_to_cpu(e->key_length);
 		u16 this_value_len = le16_to_cpu(e->value_length);
+		u16 this_key_len = le16_to_cpu(e->key_length);
 		const char *this_key;
 
 		if (this_key_len > XATTR_NAME_MAX ||
@@ -636,11 +636,11 @@ int cfs_get_xattr(struct cfs_context_s *ctx,
 		  struct cfs_inode_data_s *inode_data, const char *name,
 		  void *value, size_t size)
 {
+	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
+	struct cfs_xattr_header_s *xattrs;
 	size_t name_len = strlen(name);
 	size_t n_xattrs = 0, i;
-	struct cfs_xattr_header_s *xattrs;
 	u8 *data, *data_end;
-	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
 	int res;
 
 	if (inode_data->xattrs_len == 0)
@@ -666,8 +666,8 @@ int cfs_get_xattr(struct cfs_context_s *ctx,
 
 	for (i = 0; i < n_xattrs; i++) {
 		const struct cfs_xattr_element_s *e = &xattrs->attr[i];
-		u16 this_key_len = le16_to_cpu(e->key_length);
 		u16 this_value_len = le16_to_cpu(e->value_length);
+		u16 this_key_len = le16_to_cpu(e->key_length);
 		const char *this_key, *this_value;
 
 		if (this_key_len > XATTR_NAME_MAX ||
@@ -708,8 +708,8 @@ cfs_dir_read_chunk_header_alloc(struct cfs_context_s *ctx, u64 index,
 				struct cfs_inode_data_s *inode_data)
 {
 	size_t chunk_buf_size = cfs_dir_size(inode_data->n_dir_chunks);
-	u8 *chunk_buf;
 	struct cfs_dir_s *dir;
+	u8 *chunk_buf;
 
 	chunk_buf = kmalloc(chunk_buf_size, GFP_KERNEL);
 	if (!chunk_buf)
@@ -762,11 +762,11 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u64 index,
 		    struct cfs_inode_data_s *inode_data, loff_t first,
 		    cfs_dir_iter_cb cb, void *private)
 {
-	size_t i, j, n_chunks;
-	char *namedata, *namedata_end;
+	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
 	struct cfs_dir_chunk_s *chunks;
 	struct cfs_dentry_s *dentries;
-	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
+	char *namedata, *namedata_end;
+	size_t i, j, n_chunks;
 	void *chunks_buf;
 	loff_t pos;
 	int res;
@@ -863,8 +863,8 @@ static int cfs_dir_lookup_in_chunk(const char *name, size_t name_len,
 	while (start_dentry <= end_dentry) {
 		int mid_dentry = start_dentry + (end_dentry - start_dentry) / 2;
 		struct cfs_dentry_s *dentry = &dentries[mid_dentry];
-		size_t dentry_name_len = dentry->name_len;
 		char *dentry_name = (char *)namedata + dentry->name_offset;
+		size_t dentry_name_len = dentry->name_len;
 
 		/* name needs to fit in namedata */
 		if (dentry_name >= namedata_end ||
@@ -891,12 +891,12 @@ int cfs_dir_lookup(struct cfs_context_s *ctx, u64 index,
 		   struct cfs_inode_data_s *inode_data, const char *name,
 		   size_t name_len, u64 *index_out)
 {
+	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
 	int n_chunks, start_chunk, end_chunk;
 	char *namedata, *namedata_end;
 	struct cfs_dir_chunk_s *chunks;
 	struct cfs_dentry_s *dentries;
 	void *chunks_buf;
-	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
 	int res, r;
 
 	n_chunks = inode_data->n_dir_chunks;

@@ -96,10 +96,10 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 				    struct cfs_inode_s *ino,
 				    const struct inode *dir)
 {
-	struct cfs_xattr_header_s *xattrs = NULL;
-	struct cfs_inode *cino;
-	struct inode *inode = NULL;
 	struct cfs_inode_data_s inode_data = { 0 };
+	struct cfs_xattr_header_s *xattrs = NULL;
+	struct inode *inode = NULL;
+	struct cfs_inode *cino;
 	int ret, res;
 
 	res = cfs_init_inode_data(ctx, ino, ino_num, &inode_data);
@@ -210,8 +210,8 @@ static struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 	struct cfs_info *fsi = dir->i_sb->s_fs_info;
 	struct cfs_inode *cino = CFS_I(dir);
 	struct cfs_inode_s ino_buf;
-	struct inode *inode;
 	struct cfs_inode_s *ino_s;
+	struct inode *inode;
 	u64 index;
 	int ret;
 
@@ -259,6 +259,7 @@ static const struct inode_operations cfs_link_inode_operations = {
 static void digest_to_string(const u8 *digest, char *buf)
 {
 	char *end;
+
 	end = bin2hex(buf, digest, SHA256_DIGEST_SIZE);
 	*end = '\0';
 }
@@ -391,8 +392,8 @@ const struct fs_parameter_spec cfs_parameters[] = {
 
 static int cfs_parse_param(struct fs_context *fc, struct fs_parameter *param)
 {
-	struct fs_parse_result result;
 	struct cfs_info *fsi = fc->s_fs_info;
+	struct fs_parse_result result;
 	int opt, r;
 
 	opt = fs_parse(fc, cfs_parameters, param, &result);
@@ -591,11 +592,11 @@ static struct file *open_base_file(struct cfs_info *fsi, struct inode *inode,
 
 static int cfs_open_file(struct inode *inode, struct file *file)
 {
-	struct cfs_inode *cino = CFS_I(inode);
 	struct cfs_info *fsi = inode->i_sb->s_fs_info;
-	struct file *real_file;
-	struct file *faked_file;
+	struct cfs_inode *cino = CFS_I(inode);
 	char *real_path = cino->inode_data.path_payload;
+	struct file *faked_file;
+	struct file *real_file;
 
 	if (WARN_ON(!file))
 		return -EIO;
@@ -740,9 +741,9 @@ static int cfs_fadvise(struct file *file, loff_t offset, loff_t len, int advice)
 static int cfs_encode_fh(struct inode *inode, u32 *fh, int *max_len,
 			 struct inode *parent)
 {
+	u32 generation;
 	int len = 3;
 	u64 nodeid;
-	u32 generation;
 
 	if (*max_len < len) {
 		*max_len = len;
