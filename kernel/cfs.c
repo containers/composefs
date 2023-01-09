@@ -258,38 +258,20 @@ static const struct inode_operations cfs_link_inode_operations = {
 
 static void digest_to_string(const u8 *digest, char *buf)
 {
-	static const char hexchars[] = "0123456789abcdef";
-	u32 i, j;
-
-	for (i = 0, j = 0; i < SHA256_DIGEST_SIZE; i++, j += 2) {
-		u8 byte = digest[i];
-
-		buf[j] = hexchars[byte >> 4];
-		buf[j + 1] = hexchars[byte & 0xF];
-	}
-	buf[j] = '\0';
+	char *end;
+	end = bin2hex(buf, digest, SHA256_DIGEST_SIZE);
+	*end = '\0';
 }
 
 static int digest_from_string(const char *digest_str, u8 *digest)
 {
-	size_t i, j;
+	int res;
 
-	for (i = 0, j = 0; i < SHA256_DIGEST_SIZE; i += 1, j += 2) {
-		int big, little;
+	res = hex2bin(digest, digest_str, SHA256_DIGEST_SIZE);
+	if (res < 0)
+		return res;
 
-		if (digest_str[j] == 0 || digest_str[j + 1] == 0)
-			return -EINVAL; /* Too short string */
-
-		big = cfs_xdigit_value(digest_str[j]);
-		little = cfs_xdigit_value(digest_str[j + 1]);
-
-		if (big == -1 || little == -1)
-			return -EINVAL; /* Not hex digit */
-
-		digest[i] = (big << 4) | little;
-	}
-
-	if (digest_str[j] != 0)
+	if (digest_str[2 * SHA256_DIGEST_SIZE] != 0)
 		return -EINVAL; /* Too long string */
 
 	return 0;

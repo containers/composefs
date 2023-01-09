@@ -24,17 +24,6 @@
 #define CFS_MAX_DIR_CHUNK_SIZE 4096
 #define CFS_MAX_XATTRS_SIZE 4096
 
-static inline int cfs_xdigit_value(char c)
-{
-	if (c >= '0' && c <= '9')
-		return c - '0';
-	if (c >= 'A' && c <= 'F')
-		return c - 'A' + 10;
-	if (c >= 'a' && c <= 'f')
-		return c - 'a' + 10;
-	return -1;
-}
-
 static inline int cfs_digest_from_payload(const char *payload,
 					  size_t payload_len,
 					  u8 digest_out[SHA256_DIGEST_SIZE])
@@ -57,7 +46,7 @@ static inline int cfs_digest_from_payload(const char *payload,
 		if (n_nibbles == SHA256_DIGEST_SIZE * 2)
 			return -1; /* Too long */
 
-		digit = cfs_xdigit_value(*p);
+		digit = hex_to_bin(*p);
 		if (digit == -1)
 			return -1; /* Not hex digit */
 
