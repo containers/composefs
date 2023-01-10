@@ -156,8 +156,7 @@ enum lcfs_inode_flags {
 	LCFS_INODE_FLAGS_LOW_SIZE = 1 << 7, /* Low 32bit of st_size */
 	LCFS_INODE_FLAGS_HIGH_SIZE = 1 << 8, /* High 32bit of st_size */
 	LCFS_INODE_FLAGS_XATTRS = 1 << 9,
-	LCFS_INODE_FLAGS_DIGEST =
-		1 << 10, /* fs-verity sha256 digest of content */
+	LCFS_INODE_FLAGS_DIGEST = 1 << 10, /* fs-verity sha256 digest */
 	LCFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD =
 		1 << 11, /* Compute digest from payload */
 };
