@@ -253,14 +253,6 @@ static const struct inode_operations cfs_link_inode_operations = {
 	.listxattr = cfs_listxattr,
 };
 
-static void digest_to_string(const u8 *digest, char *buf)
-{
-	char *end;
-
-	end = bin2hex(buf, digest, SHA256_DIGEST_SIZE);
-	*end = '\0';
-}
-
 static int digest_from_string(const char *digest_str, u8 *digest)
 {
 	int res;
@@ -284,12 +276,8 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 
 	if (fsi->base_path)
 		seq_show_option(m, "basedir", fsi->base_path);
-	if (fsi->has_digest) {
-		char buf[SHA256_DIGEST_SIZE * 2 + 1];
-
-		digest_to_string(fsi->digest, buf);
-		seq_show_option(m, "digest", buf);
-	}
+	if (fsi->has_digest)
+		seq_printf(m, ",digest=%*phN", SHA256_DIGEST_SIZE, fsi->digest);
 	if (fsi->verity_check != 0)
 		seq_printf(m, ",verity_check=%u", fsi->verity_check);
 
