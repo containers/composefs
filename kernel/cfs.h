@@ -60,9 +60,8 @@ static inline int cfs_digest_from_payload(const char *payload, size_t payload_le
 			return -EINVAL; /* Not hex digit */
 
 		n_nibbles++;
-		if ((n_nibbles % 2) == 0) {
+		if ((n_nibbles % 2) == 0)
 			digest_out[n_nibbles / 2 - 1] = (last_digit << 4) | digit;
-		}
 		last_digit = digit;
 	}
 

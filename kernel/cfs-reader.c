@@ -452,9 +452,8 @@ static char *cfs_dup_payload_path(struct cfs_context_s *ctx,
 	const char *v;
 	u8 *path;
 
-	if ((ino->st_mode & S_IFMT) != S_IFREG && (ino->st_mode & S_IFMT) != S_IFLNK) {
+	if ((ino->st_mode & S_IFMT) != S_IFREG && (ino->st_mode & S_IFMT) != S_IFLNK)
 		return ERR_PTR(-EINVAL);
-	}
 
 	if (ino->payload_length == 0 || ino->payload_length > PATH_MAX)
 		return ERR_PTR(-EFSCORRUPTED);
