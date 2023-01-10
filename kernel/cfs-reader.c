@@ -258,7 +258,7 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 	if (read_size < sizeof(u32))
 		return ERR_PTR(-EFSCORRUPTED);
 
-	memset(ino, 0, sizeof(struct cfs_inode_s));
+	memset(ino, 0, sizeof(*ino));
 	ino->flags = cfs_read_u32(&data);
 
 	inode_size = cfs_inode_encoded_size(ino->flags);
