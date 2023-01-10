@@ -26,6 +26,8 @@ MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 
 #define CFS_MAX_STACK 500
 
+#define FILEID_CFS 0x91
+
 struct cfs_info {
 	struct cfs_context_s cfs_ctx;
 
@@ -736,7 +738,7 @@ static int cfs_encode_fh(struct inode *inode, u32 *fh, int *max_len,
 
 	*max_len = len;
 
-	return 0x91;
+	return FILEID_CFS;
 }
 
 static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
@@ -747,7 +749,7 @@ static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 	u64 inode_index;
 	u32 generation;
 
-	if (fh_type != 0x91 || fh_len < 3)
+	if (fh_type != FILEID_CFS || fh_len < 3)
 		return NULL;
 
 	inode_index = (u64)(fid->raw[0]) << 32;
