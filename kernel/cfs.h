@@ -33,6 +33,16 @@ static inline int cfs_digest_from_payload(const char *payload,
 	int digit = 0;
 	size_t n_nibbles = 0;
 
+	/* This handles payloads (i.e. path names) that are "essentially" a
+	 * digest as the digest (if the DIGEST_FROM_PAYLOAD flag is set). The
+	 * "essential" part means that we ignore hierarchical structure as well
+	 * as any extension. So, for example "ef/deadbeef.file" would match the
+	 * (too short) digest "efdeadbeef".
+	 *
+	 * This allows images to avoid storing both the digest and the pathname,
+	 * yet work with pre-existing object store formats of various kinds.
+	 */
+
 	end = payload + payload_len;
 	for (p = payload; p != end; p++) {
 		/* Skip subdir structure */
