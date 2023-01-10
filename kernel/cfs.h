@@ -24,8 +24,7 @@
 #define CFS_MAX_DIR_CHUNK_SIZE 4096
 #define CFS_MAX_XATTRS_SIZE 4096
 
-static inline int cfs_digest_from_payload(const char *payload,
-					  size_t payload_len,
+static inline int cfs_digest_from_payload(const char *payload, size_t payload_len,
 					  u8 digest_out[SHA256_DIGEST_SIZE])
 {
 	const char *p, *end;
@@ -62,8 +61,7 @@ static inline int cfs_digest_from_payload(const char *payload,
 
 		n_nibbles++;
 		if ((n_nibbles % 2) == 0) {
-			digest_out[n_nibbles / 2 - 1] =
-				(last_digit << 4) | digit;
+			digest_out[n_nibbles / 2 - 1] = (last_digit << 4) | digit;
 		}
 		last_digit = digit;
 	}
@@ -104,8 +102,7 @@ enum cfs_inode_flags {
 	CFS_INODE_FLAGS_HIGH_SIZE = 1 << 8, /* High 32bit of st_size */
 	CFS_INODE_FLAGS_XATTRS = 1 << 9,
 	CFS_INODE_FLAGS_DIGEST = 1 << 10, /* fs-verity sha256 digest */
-	CFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD =
-		1 << 11, /* Compute digest from payload */
+	CFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD = 1 << 11, /* Compute digest from payload */
 };
 
 #define CFS_INODE_FLAG_CHECK(_flag, _name)                                     \
@@ -157,15 +154,13 @@ static inline u32 cfs_inode_encoded_size(u32 flags)
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, PAYLOAD, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, MODE, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, NLINK, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, UIDGID,
-					 sizeof(u32) + sizeof(u32)) +
+	       CFS_INODE_FLAG_CHECK_SIZE(flags, UIDGID, sizeof(u32) + sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, RDEV, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, TIMES, sizeof(u64) * 2) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, TIMES_NSEC, sizeof(u32) * 2) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS,
-					 sizeof(u64) + sizeof(u32)) +
+	       CFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS, sizeof(u64) + sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, SHA256_DIGEST_SIZE);
 }
 
@@ -189,8 +184,7 @@ struct cfs_dir_s {
 } __packed;
 
 #define cfs_dir_size(_n_chunks)                                                \
-	(sizeof(struct cfs_dir_s) +                                            \
-	 (_n_chunks) * sizeof(struct cfs_dir_chunk_s))
+	(sizeof(struct cfs_dir_s) + (_n_chunks) * sizeof(struct cfs_dir_chunk_s))
 
 /* xattr representation.  */
 struct cfs_xattr_element_s {

@@ -64,8 +64,7 @@ char *fread_file(FILE *stream, size_t *length)
 					break;
 
 				if (size < alloc - 1) {
-					char *reduce_buf =
-						realloc(buf, size + 1);
+					char *reduce_buf = realloc(buf, size + 1);
 					if (reduce_buf != NULL)
 						buf = reduce_buf;
 				}

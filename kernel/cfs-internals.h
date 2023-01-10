@@ -45,12 +45,10 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 			u64 index, struct cfs_inode_data_s *data);
 
-ssize_t cfs_list_xattrs(struct cfs_context_s *ctx,
-			struct cfs_inode_data_s *inode_data, char *names,
-			size_t size);
-int cfs_get_xattr(struct cfs_context_s *ctx,
-		  struct cfs_inode_data_s *inode_data, const char *name,
-		  void *value, size_t size);
+ssize_t cfs_list_xattrs(struct cfs_context_s *ctx, struct cfs_inode_data_s *inode_data,
+			char *names, size_t size);
+int cfs_get_xattr(struct cfs_context_s *ctx, struct cfs_inode_data_s *inode_data,
+		  const char *name, void *value, size_t size);
 
 typedef bool (*cfs_dir_iter_cb)(void *private, const char *name, int namelen,
 				u64 ino, unsigned int dtype);

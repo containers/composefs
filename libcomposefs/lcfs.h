@@ -76,8 +76,7 @@ static inline int lcfs_xdigit_value(char c)
 	return -1;
 }
 
-static inline int lcfs_digest_from_payload(const char *payload,
-					   size_t payload_len,
+static inline int lcfs_digest_from_payload(const char *payload, size_t payload_len,
 					   uint8_t digest_out[LCFS_DIGEST_SIZE])
 {
 	const char *p, *end;
@@ -115,8 +114,7 @@ static inline int lcfs_digest_from_payload(const char *payload,
 
 		n_nibbles++;
 		if ((n_nibbles % 2) == 0) {
-			digest_out[n_nibbles / 2 - 1] =
-				(last_digit << 4) | digit;
+			digest_out[n_nibbles / 2 - 1] = (last_digit << 4) | digit;
 		}
 		last_digit = digit;
 	}
@@ -157,8 +155,7 @@ enum lcfs_inode_flags {
 	LCFS_INODE_FLAGS_HIGH_SIZE = 1 << 8, /* High 32bit of st_size */
 	LCFS_INODE_FLAGS_XATTRS = 1 << 9,
 	LCFS_INODE_FLAGS_DIGEST = 1 << 10, /* fs-verity sha256 digest */
-	LCFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD =
-		1 << 11, /* Compute digest from payload */
+	LCFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD = 1 << 11, /* Compute digest from payload */
 };
 
 #define LCFS_INODE_FLAG_CHECK(_flag, _name)                                    \
@@ -214,8 +211,7 @@ static inline uint32_t lcfs_inode_encoded_size(uint32_t flags)
 					  sizeof(uint32_t) + sizeof(uint32_t)) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, RDEV, sizeof(uint32_t)) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, TIMES, sizeof(uint64_t) * 2) +
-	       LCFS_INODE_FLAG_CHECK_SIZE(flags, TIMES_NSEC,
-					  sizeof(uint32_t) * 2) +
+	       LCFS_INODE_FLAG_CHECK_SIZE(flags, TIMES_NSEC, sizeof(uint32_t) * 2) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(uint32_t)) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(uint32_t)) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS,
@@ -243,8 +239,7 @@ struct lcfs_dir_s {
 } __attribute__((packed));
 
 #define lcfs_dir_size(_n_chunks)                                               \
-	(sizeof(struct lcfs_dir_s) +                                           \
-	 (_n_chunks) * sizeof(struct lcfs_dir_chunk_s))
+	(sizeof(struct lcfs_dir_s) + (_n_chunks) * sizeof(struct lcfs_dir_chunk_s))
 
 /* xattr representation.  */
 struct lcfs_xattr_element_s {

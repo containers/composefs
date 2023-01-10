@@ -93,8 +93,7 @@ static unsigned int cfs_split_basedirs(char *str)
 
 static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 				    struct super_block *sb, ino_t ino_num,
-				    struct cfs_inode_s *ino,
-				    const struct inode *dir)
+				    struct cfs_inode_s *ino, const struct inode *dir)
 {
 	struct cfs_inode_data_s inode_data = { 0 };
 	struct cfs_xattr_header_s *xattrs = NULL;
@@ -306,8 +305,7 @@ static struct inode *cfs_alloc_inode(struct super_block *sb)
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0))
 	struct cfs_inode *cino = kmem_cache_alloc(cfs_inode_cachep, GFP_KERNEL);
 #else
-	struct cfs_inode *cino =
-		alloc_inode_sb(sb, cfs_inode_cachep, GFP_KERNEL);
+	struct cfs_inode *cino = alloc_inode_sb(sb, cfs_inode_cachep, GFP_KERNEL);
 #endif
 
 	if (!cino)
@@ -500,8 +498,7 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 		}
 
 		ret = -ENOMEM;
-		bases = kcalloc(numbasedirs, sizeof(struct vfsmount *),
-				GFP_KERNEL);
+		bases = kcalloc(numbasedirs, sizeof(struct vfsmount *), GFP_KERNEL);
 		if (!bases) {
 			kfree(splitlower);
 			goto fail;
@@ -658,10 +655,8 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 }
 
 #ifdef CONFIG_MMU
-static unsigned long cfs_mmu_get_unmapped_area(struct file *file,
-					       unsigned long addr,
-					       unsigned long len,
-					       unsigned long pgoff,
+static unsigned long cfs_mmu_get_unmapped_area(struct file *file, unsigned long addr,
+					       unsigned long len, unsigned long pgoff,
 					       unsigned long flags)
 {
 	struct file *realfile = file->private_data;
@@ -782,13 +777,11 @@ static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 		struct cfs_inode_s inode_buf;
 		struct cfs_inode_s *inode;
 
-		inode = cfs_get_ino_index(&fsi->cfs_ctx, inode_index,
-					  &inode_buf);
+		inode = cfs_get_ino_index(&fsi->cfs_ctx, inode_index, &inode_buf);
 		if (IS_ERR(inode))
 			return ERR_CAST(inode);
 
-		ino = cfs_make_inode(&fsi->cfs_ctx, sb, inode_index, inode,
-				     NULL);
+		ino = cfs_make_inode(&fsi->cfs_ctx, sb, inode_index, inode, NULL);
 		if (IS_ERR(ino))
 			return ERR_CAST(ino);
 	}
@@ -832,8 +825,7 @@ static int cfs_getxattr(const struct xattr_handler *handler,
 	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 	struct cfs_inode *cino = CFS_I(inode);
 
-	return cfs_get_xattr(&fsi->cfs_ctx, &cino->inode_data, name, value,
-			     size);
+	return cfs_get_xattr(&fsi->cfs_ctx, &cino->inode_data, name, value, size);
 }
 
 static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size)
