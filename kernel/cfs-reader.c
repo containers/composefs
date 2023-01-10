@@ -23,7 +23,7 @@ static void cfs_buf_put(struct cfs_buf *buf)
 {
 	if (buf->page) {
 		if (buf->base)
-			kunmap(buf->page);
+			kunmap_local(buf->base);
 		put_page(buf->page);
 		buf->base = NULL;
 		buf->page = NULL;
@@ -59,7 +59,7 @@ static void *cfs_get_buf(struct cfs_context_s *ctx, u64 offset, u32 size,
 			return page;
 
 		buf->page = page;
-		buf->base = kmap(page);
+		buf->base = kmap_local_page(page);
 	}
 
 	return buf->base + page_offset;
