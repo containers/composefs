@@ -19,11 +19,6 @@ struct cfs_buf {
 	void *base;
 };
 
-#define CFS_VDATA_BUF_INIT                                                     \
-	{                                                                      \
-		NULL, NULL                                                     \
-	}
-
 static void cfs_buf_put(struct cfs_buf *buf)
 {
 	if (buf->page) {
@@ -554,8 +549,8 @@ void cfs_inode_data_put(struct cfs_inode_data_s *inode_data)
 ssize_t cfs_list_xattrs(struct cfs_context_s *ctx,
 			struct cfs_inode_data_s *inode_data, char *names, size_t size)
 {
-	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
 	const struct cfs_xattr_header_s *xattrs;
+	struct cfs_buf vdata_buf = { NULL };
 	size_t n_xattrs = 0, i;
 	u8 *data, *data_end;
 	ssize_t copied = 0;
@@ -619,8 +614,8 @@ exit:
 int cfs_get_xattr(struct cfs_context_s *ctx, struct cfs_inode_data_s *inode_data,
 		  const char *name, void *value, size_t size)
 {
-	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
 	struct cfs_xattr_header_s *xattrs;
+	struct cfs_buf vdata_buf = { NULL };
 	size_t name_len = strlen(name);
 	size_t n_xattrs = 0, i;
 	u8 *data, *data_end;
@@ -744,7 +739,7 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u64 index,
 		    struct cfs_inode_data_s *inode_data, loff_t first,
 		    cfs_dir_iter_cb cb, void *private)
 {
-	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
+	struct cfs_buf vdata_buf = { NULL };
 	struct cfs_dir_chunk_s *chunks;
 	struct cfs_dentry_s *dentries;
 	char *namedata, *namedata_end;
@@ -870,8 +865,8 @@ int cfs_dir_lookup(struct cfs_context_s *ctx, u64 index,
 		   struct cfs_inode_data_s *inode_data, const char *name,
 		   size_t name_len, u64 *index_out)
 {
-	struct cfs_buf vdata_buf = CFS_VDATA_BUF_INIT;
 	int n_chunks, start_chunk, end_chunk;
+	struct cfs_buf vdata_buf = { NULL };
 	char *namedata, *namedata_end;
 	struct cfs_dir_chunk_s *chunks;
 	struct cfs_dentry_s *dentries;
