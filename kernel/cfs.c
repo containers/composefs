@@ -102,10 +102,8 @@ static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 	int ret, res;
 
 	res = cfs_init_inode_data(ctx, ino, ino_num, &inode_data);
-	if (res < 0) {
-		ret = res;
-		goto fail;
-	}
+	if (res < 0)
+		return ERR_PTR(res);
 
 	inode = new_inode(sb);
 	if (inode) {
