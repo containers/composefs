@@ -54,11 +54,11 @@ static inline int cfs_digest_from_payload(const char *payload,
 			break;
 
 		if (n_nibbles == SHA256_DIGEST_SIZE * 2)
-			return -1; /* Too long */
+			return -EINVAL; /* Too long */
 
 		digit = hex_to_bin(*p);
 		if (digit == -1)
-			return -1; /* Not hex digit */
+			return -EINVAL; /* Not hex digit */
 
 		n_nibbles++;
 		if ((n_nibbles % 2) == 0) {
@@ -69,7 +69,7 @@ static inline int cfs_digest_from_payload(const char *payload,
 	}
 
 	if (n_nibbles != SHA256_DIGEST_SIZE * 2)
-		return -1; /* Too short */
+		return -EINVAL; /* Too short */
 
 	return 0;
 }

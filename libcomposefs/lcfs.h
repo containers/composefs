@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <endian.h>
+#include <errno.h>
 
 #define LCFS_VERSION 1
 
@@ -105,11 +106,11 @@ static inline int lcfs_digest_from_payload(const char *payload,
 			break;
 
 		if (n_nibbles == LCFS_DIGEST_SIZE * 2)
-			return -1; /* Too long */
+			return -EINVAL; /* Too long */
 
 		digit = lcfs_xdigit_value(*p);
 		if (digit == -1) {
-			return -1; /* Not hex digit */
+			return -EINVAL; /* Not hex digit */
 		}
 
 		n_nibbles++;
@@ -121,7 +122,7 @@ static inline int lcfs_digest_from_payload(const char *payload,
 	}
 
 	if (n_nibbles != LCFS_DIGEST_SIZE * 2)
-		return -1; /* Too short */
+		return -EINVAL; /* Too short */
 
 	return 0;
 }
