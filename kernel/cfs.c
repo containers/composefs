@@ -290,11 +290,7 @@ static struct kmem_cache *cfs_inode_cachep;
 
 static struct inode *cfs_alloc_inode(struct super_block *sb)
 {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0))
-	struct cfs_inode *cino = kmem_cache_alloc(cfs_inode_cachep, GFP_KERNEL);
-#else
 	struct cfs_inode *cino = alloc_inode_sb(sb, cfs_inode_cachep, GFP_KERNEL);
-#endif
 
 	if (!cino)
 		return NULL;
