@@ -391,7 +391,7 @@ static struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 						   size_t max_n_chunks)
 {
 	struct cfs_dir_s *dir;
-	size_t n_chunks, i;
+	size_t n_chunks;
 
 	/* Payload and buffer should be large enough to fit the n_chunks */
 	if (payload_length < sizeof(struct cfs_dir_s) ||
@@ -420,7 +420,7 @@ static struct cfs_dir_s *cfs_dir_read_chunk_header(struct cfs_context_s *ctx,
 	max_n_chunks = min(n_chunks, max_n_chunks);
 
 	/* Verify data (up to max_n_chunks) */
-	for (i = 0; i < max_n_chunks; i++) {
+	for (size_t i = 0; i < max_n_chunks; i++) {
 		struct cfs_dir_chunk_s *chunk = &dir->chunks[i];
 
 		chunk->n_dentries = le16_to_cpu(chunk->n_dentries);
@@ -482,7 +482,6 @@ int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 	char *path_payload = NULL;
 	struct cfs_dir_s *dir;
 	int ret = 0;
-	size_t i;
 
 	inode_data->payload_length = ino->payload_length;
 
@@ -500,7 +499,7 @@ int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 		n_chunks = dir->n_chunks;
 		inode_data->n_dir_chunks = n_chunks;
 
-		for (i = 0; i < n_chunks && i < CFS_N_PRELOAD_DIR_CHUNKS; i++)
+		for (size_t i = 0; i < n_chunks && i < CFS_N_PRELOAD_DIR_CHUNKS; i++)
 			inode_data->preloaded_dir_chunks[i] = dir->chunks[i];
 	}
 
@@ -551,7 +550,7 @@ ssize_t cfs_list_xattrs(struct cfs_context_s *ctx,
 {
 	const struct cfs_xattr_header_s *xattrs;
 	struct cfs_buf vdata_buf = { NULL };
-	size_t n_xattrs = 0, i;
+	size_t n_xattrs = 0;
 	u8 *data, *data_end;
 	ssize_t copied = 0;
 
@@ -576,7 +575,7 @@ ssize_t cfs_list_xattrs(struct cfs_context_s *ctx,
 	data = ((u8 *)xattrs) + cfs_xattr_header_size(n_xattrs);
 	data_end = ((u8 *)xattrs) + inode_data->xattrs_len;
 
-	for (i = 0; i < n_xattrs; i++) {
+	for (size_t i = 0; i < n_xattrs; i++) {
 		const struct cfs_xattr_element_s *e = &xattrs->attr[i];
 		u16 this_value_len = le16_to_cpu(e->value_length);
 		u16 this_key_len = le16_to_cpu(e->key_length);
@@ -617,7 +616,7 @@ int cfs_get_xattr(struct cfs_context_s *ctx, struct cfs_inode_data_s *inode_data
 	struct cfs_xattr_header_s *xattrs;
 	struct cfs_buf vdata_buf = { NULL };
 	size_t name_len = strlen(name);
-	size_t n_xattrs = 0, i;
+	size_t n_xattrs = 0;
 	u8 *data, *data_end;
 	int res;
 
@@ -642,7 +641,7 @@ int cfs_get_xattr(struct cfs_context_s *ctx, struct cfs_inode_data_s *inode_data
 	data = ((u8 *)xattrs) + cfs_xattr_header_size(n_xattrs);
 	data_end = ((u8 *)xattrs) + inode_data->xattrs_len;
 
-	for (i = 0; i < n_xattrs; i++) {
+	for (size_t i = 0; i < n_xattrs; i++) {
 		const struct cfs_xattr_element_s *e = &xattrs->attr[i];
 		u16 this_value_len = le16_to_cpu(e->value_length);
 		u16 this_key_len = le16_to_cpu(e->key_length);
@@ -743,8 +742,8 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u64 index,
 	struct cfs_dir_chunk_s *chunks;
 	struct cfs_dentry_s *dentries;
 	char *namedata, *namedata_end;
-	size_t i, j, n_chunks;
 	void *chunks_buf;
+	size_t n_chunks;
 	loff_t pos;
 	int res;
 
@@ -757,7 +756,7 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u64 index,
 		return PTR_ERR(chunks);
 
 	pos = 0;
-	for (i = 0; i < n_chunks; i++) {
+	for (size_t i = 0; i < n_chunks; i++) {
 		/* Chunks info are verified/converted in cfs_dir_read_chunk_header */
 		u64 chunk_offset = chunks[i].chunk_offset;
 		size_t chunk_size = chunks[i].chunk_size;
@@ -781,7 +780,7 @@ int cfs_dir_iterate(struct cfs_context_s *ctx, u64 index,
 			   sizeof(struct cfs_dentry_s) * n_dentries;
 		namedata_end = ((char *)dentries) + chunk_size;
 
-		for (j = 0; j < n_dentries; j++) {
+		for (size_t j = 0; j < n_dentries; j++) {
 			struct cfs_dentry_s *dentry = &dentries[j];
 			size_t dentry_name_len = dentry->name_len;
 			char *dentry_name = (char *)namedata + dentry->name_offset;

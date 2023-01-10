@@ -467,7 +467,6 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 
 	if (fsi->base_path) {
 		char *lower, *splitlower = NULL;
-		size_t i;
 
 		ret = -ENOMEM;
 		splitlower = kstrdup(fsi->base_path, GFP_KERNEL);
@@ -491,7 +490,7 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 		}
 
 		lower = splitlower;
-		for (i = 0; i < numbasedirs; i++) {
+		for (size_t i = 0; i < numbasedirs; i++) {
 			mnt = resolve_basedir(lower);
 			if (IS_ERR(mnt)) {
 				ret = PTR_ERR(mnt);
@@ -533,9 +532,7 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	return 0;
 fail:
 	if (bases) {
-		size_t i;
-
-		for (i = 0; i < numbasedirs; i++) {
+		for (size_t i = 0; i < numbasedirs; i++) {
 			if (bases[i])
 				kern_unmount(bases[i]);
 		}
@@ -561,9 +558,8 @@ static struct file *open_base_file(struct cfs_info *fsi, struct inode *inode,
 	struct cfs_inode *cino = CFS_I(inode);
 	struct file *real_file;
 	char *real_path = cino->inode_data.path_payload;
-	size_t i;
 
-	for (i = 0; i < fsi->n_bases; i++) {
+	for (size_t i = 0; i < fsi->n_bases; i++) {
 		real_file = file_open_root_mnt(fsi->bases[i], real_path,
 					       file->f_flags, 0);
 		if (!IS_ERR(real_file) || PTR_ERR(real_file) != -ENOENT)
