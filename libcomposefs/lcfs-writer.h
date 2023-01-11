@@ -55,16 +55,14 @@ int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload);
 struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node,
 					   const char *name);
 struct lcfs_node_s *lcfs_node_get_parent(struct lcfs_node_s *node);
-int lcfs_node_add_child(
-	struct lcfs_node_s *parent,
-	struct lcfs_node_s *child, /* Takes ownership on success */
-	const char *name);
+int lcfs_node_add_child(struct lcfs_node_s *parent,
+			struct lcfs_node_s *child, /* Takes ownership on success */
+			const char *name);
 int lcfs_node_remove_child(struct lcfs_node_s *parent, const char *name);
 const char *lcfs_node_get_name(struct lcfs_node_s *node);
 size_t lcfs_node_get_n_children(struct lcfs_node_s *node);
 struct lcfs_node_s *lcfs_node_get_child(struct lcfs_node_s *node, size_t i);
-void lcfs_node_make_hardlink(struct lcfs_node_s *node,
-			     struct lcfs_node_s *target);
+void lcfs_node_make_hardlink(struct lcfs_node_s *node, struct lcfs_node_s *target);
 
 bool lcfs_node_dirp(struct lcfs_node_s *node);
 uint32_t lcfs_node_get_mode(struct lcfs_node_s *node);
@@ -85,8 +83,7 @@ void lcfs_node_set_ctime(struct lcfs_node_s *node, struct timespec *time);
 void lcfs_node_get_ctime(struct lcfs_node_s *node, struct timespec *time);
 
 const uint8_t *lcfs_node_get_fsverity_digest(struct lcfs_node_s *node);
-void lcfs_node_set_fsverity_digest(struct lcfs_node_s *node,
-				   uint8_t digest[32]);
+void lcfs_node_set_fsverity_digest(struct lcfs_node_s *node, uint8_t digest[32]);
 
 int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node, void *file,
 					lcfs_read_cb read_cb);

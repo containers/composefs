@@ -130,8 +130,7 @@ static int write_to_fd(int fd, const char *content, ssize_t len)
 		if (res < 0 && errno == EINTR)
 			continue;
 		if (res <= 0) {
-			if (res ==
-			    0) /* Unexpected short write, should not happen when writing to a file */
+			if (res == 0) /* Unexpected short write, should not happen when writing to a file */
 				errno = ENOSPC;
 			return -1;
 		}
@@ -307,8 +306,7 @@ static int fill_payload(struct lcfs_node_s *node, const char *path, size_t len,
 
 		n_children = lcfs_node_get_n_children(node);
 		for (i = 0; i < n_children; i++) {
-			struct lcfs_node_s *child =
-				lcfs_node_get_child(node, i);
+			struct lcfs_node_s *child = lcfs_node_get_child(node, i);
 			ret = fill_payload(child, path, len, path_start_offset,
 					   by_digest, digest_store_path);
 			if (ret < 0)
@@ -344,8 +342,7 @@ static int fill_payload(struct lcfs_node_s *node, const char *path, size_t len,
 
 			ret = lcfs_node_set_payload(node, digest_path);
 		} else {
-			ret = lcfs_node_set_payload(node,
-						    path + path_start_offset);
+			ret = lcfs_node_set_payload(node, path + path_start_offset);
 		}
 		if (ret < 0)
 			return ret;
@@ -511,14 +508,12 @@ int main(int argc, char **argv)
 
 	if (strcmp(out, "-") == 0) {
 		if (isatty(1))
-			error(EXIT_FAILURE, 0,
-			      "stdout is a tty.  Refusing to use it");
+			error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
 		out_file = stdout;
 	} else {
 		out_file = fopen(out, "w");
 		if (out_file == NULL)
-			error(EXIT_FAILURE, errno,
-			      "failed to open output file");
+			error(EXIT_FAILURE, errno, "failed to open output file");
 	}
 
 	root = lcfs_build(AT_FDCWD, dir_path, "", buildflags, &failed_path);
@@ -562,8 +557,7 @@ int main(int argc, char **argv)
 			 by_digest, digest_store_path) < 0)
 		error(EXIT_FAILURE, errno, "cannot fill payload");
 
-	if (lcfs_write_to(root, out_file, write_cb,
-			  print_digest ? digest : NULL) < 0)
+	if (lcfs_write_to(root, out_file, write_cb, print_digest ? digest : NULL) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
 
 	if (print_digest) {

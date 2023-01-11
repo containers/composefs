@@ -71,8 +71,7 @@ static int base64_decode(const char *iptr, size_t isize, char *optr,
 		/* I have a entire block of data 32 bits get the output data.  */
 		if (i == 4) {
 			*optr++ = (data[0] << 2) | ((data[1] & 0x30) >> 4);
-			*optr++ = ((data[1] & 0xf) << 4) |
-				  ((data[2] & 0x3c) >> 2);
+			*optr++ = ((data[1] & 0xf) << 4) | ((data[2] & 0x3c) >> 2);
 			*optr++ = ((data[2] & 0x3) << 6) | data[3];
 			(*nbytes) += 3 - pad;
 		} else {
@@ -115,14 +114,12 @@ static yajl_val get_child(yajl_val node, const char *name, int type)
 	return yajl_tree_get(node, path, type);
 }
 
-static struct lcfs_node_s *append_child(struct lcfs_node_s *dir,
-					const char *name)
+static struct lcfs_node_s *append_child(struct lcfs_node_s *dir, const char *name)
 {
 	struct lcfs_node_s *child;
 	struct lcfs_node_s *parent;
 
-	for (parent = dir; parent != NULL;
-	     parent = lcfs_node_get_parent(parent)) {
+	for (parent = dir; parent != NULL; parent = lcfs_node_get_parent(parent)) {
 		if (lcfs_node_get_mode(parent) == 0) {
 			lcfs_node_set_mode(parent, 0755 | S_IFDIR);
 		}
@@ -160,8 +157,7 @@ static int fill_xattrs(struct lcfs_node_s *node, yajl_val xattrs)
 
 		v = YAJL_GET_STRING(YAJL_GET_OBJECT(xattrs)->values[i]);
 
-		r = base64_decode(v, strlen(v), v_buffer, sizeof(v_buffer),
-				  &written);
+		r = base64_decode(v, strlen(v), v_buffer, sizeof(v_buffer), &written);
 		if (r < 0) {
 			error(0, 0, "xattr value is not valid b64");
 			return -1;
@@ -249,8 +245,7 @@ static int fill_file(const char *typ, struct lcfs_node_s *root,
 
 		target = get_node(root, YAJL_GET_STRING(v));
 		if (!target) {
-			error(0, 0, "could not find target %s",
-			      YAJL_GET_STRING(v));
+			error(0, 0, "could not find target %s", YAJL_GET_STRING(v));
 			return -1;
 		}
 
@@ -326,8 +321,8 @@ static int fill_file(const char *typ, struct lcfs_node_s *root,
 	return 0;
 }
 
-static struct lcfs_node_s *
-get_or_add_node(const char *typ, struct lcfs_node_s *root, yajl_val entry)
+static struct lcfs_node_s *get_or_add_node(const char *typ,
+					   struct lcfs_node_s *root, yajl_val entry)
 {
 	yajl_val tmp;
 	char *path, *dpath, *it;
@@ -467,12 +462,10 @@ int main(int argc, char **argv)
 	if (out != NULL) {
 		out_file = fopen(out, "w");
 		if (out_file == NULL)
-			error(EXIT_FAILURE, errno,
-			      "Failed to open output file");
+			error(EXIT_FAILURE, errno, "Failed to open output file");
 	} else {
 		if (isatty(1))
-			error(EXIT_FAILURE, 0,
-			      "stdout is a tty.  Refusing to use it");
+			error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
 		out_file = stdout;
 	}
 
@@ -489,8 +482,7 @@ int main(int argc, char **argv)
 		} else {
 			f = fopen(argv[i], "r");
 			if (f == NULL)
-				error(EXIT_FAILURE, errno, "open `%s`",
-				      argv[i]);
+				error(EXIT_FAILURE, errno, "open `%s`", argv[i]);
 			to_close = f;
 		}
 		do_file(root, f);

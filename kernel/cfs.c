@@ -26,6 +26,8 @@ MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 
 #define CFS_MAX_STACK 500
 
+#define FILEID_CFS 0x91
+
 struct cfs_info {
 	struct cfs_context_s cfs_ctx;
 
@@ -93,20 +95,17 @@ static unsigned int cfs_split_basedirs(char *str)
 
 static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
 				    struct super_block *sb, ino_t ino_num,
-				    struct cfs_inode_s *ino,
-				    const struct inode *dir)
+				    struct cfs_inode_s *ino, const struct inode *dir)
 {
-	struct cfs_xattr_header_s *xattrs = NULL;
-	struct cfs_inode *cino;
-	struct inode *inode = NULL;
 	struct cfs_inode_data_s inode_data = { 0 };
+	struct cfs_xattr_header_s *xattrs = NULL;
+	struct inode *inode = NULL;
+	struct cfs_inode *cino;
 	int ret, res;
 
 	res = cfs_init_inode_data(ctx, ino, ino_num, &inode_data);
-	if (res < 0) {
-		ret = res;
-		goto fail;
-	}
+	if (res < 0)
+		return ERR_PTR(res);
 
 	inode = new_inode(sb);
 	if (inode) {
@@ -210,8 +209,8 @@ static struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 	struct cfs_info *fsi = dir->i_sb->s_fs_info;
 	struct cfs_inode *cino = CFS_I(dir);
 	struct cfs_inode_s ino_buf;
-	struct inode *inode;
 	struct cfs_inode_s *ino_s;
+	struct inode *inode;
 	u64 index;
 	int ret;
 
@@ -256,40 +255,15 @@ static const struct inode_operations cfs_link_inode_operations = {
 	.listxattr = cfs_listxattr,
 };
 
-static void digest_to_string(const u8 *digest, char *buf)
-{
-	static const char hexchars[] = "0123456789abcdef";
-	u32 i, j;
-
-	for (i = 0, j = 0; i < SHA256_DIGEST_SIZE; i++, j += 2) {
-		u8 byte = digest[i];
-
-		buf[j] = hexchars[byte >> 4];
-		buf[j + 1] = hexchars[byte & 0xF];
-	}
-	buf[j] = '\0';
-}
-
 static int digest_from_string(const char *digest_str, u8 *digest)
 {
-	size_t i, j;
+	int res;
 
-	for (i = 0, j = 0; i < SHA256_DIGEST_SIZE; i += 1, j += 2) {
-		int big, little;
+	res = hex2bin(digest, digest_str, SHA256_DIGEST_SIZE);
+	if (res < 0)
+		return res;
 
-		if (digest_str[j] == 0 || digest_str[j + 1] == 0)
-			return -EINVAL; /* Too short string */
-
-		big = cfs_xdigit_value(digest_str[j]);
-		little = cfs_xdigit_value(digest_str[j + 1]);
-
-		if (big == -1 || little == -1)
-			return -EINVAL; /* Not hex digit */
-
-		digest[i] = (big << 4) | little;
-	}
-
-	if (digest_str[j] != 0)
+	if (digest_str[2 * SHA256_DIGEST_SIZE] != 0)
 		return -EINVAL; /* Too long string */
 
 	return 0;
@@ -304,12 +278,8 @@ static int cfs_show_options(struct seq_file *m, struct dentry *root)
 
 	if (fsi->base_path)
 		seq_show_option(m, "basedir", fsi->base_path);
-	if (fsi->has_digest) {
-		char buf[SHA256_DIGEST_SIZE * 2 + 1];
-
-		digest_to_string(fsi->digest, buf);
-		seq_show_option(m, "digest", buf);
-	}
+	if (fsi->has_digest)
+		seq_printf(m, ",digest=%*phN", SHA256_DIGEST_SIZE, fsi->digest);
 	if (fsi->verity_check != 0)
 		seq_printf(m, ",verity_check=%u", fsi->verity_check);
 
@@ -320,12 +290,7 @@ static struct kmem_cache *cfs_inode_cachep;
 
 static struct inode *cfs_alloc_inode(struct super_block *sb)
 {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0))
-	struct cfs_inode *cino = kmem_cache_alloc(cfs_inode_cachep, GFP_KERNEL);
-#else
-	struct cfs_inode *cino =
-		alloc_inode_sb(sb, cfs_inode_cachep, GFP_KERNEL);
-#endif
+	struct cfs_inode *cino = alloc_inode_sb(sb, cfs_inode_cachep, GFP_KERNEL);
 
 	if (!cino)
 		return NULL;
@@ -409,8 +374,8 @@ const struct fs_parameter_spec cfs_parameters[] = {
 
 static int cfs_parse_param(struct fs_context *fc, struct fs_parameter *param)
 {
-	struct fs_parse_result result;
 	struct cfs_info *fsi = fc->s_fs_info;
+	struct fs_parse_result result;
 	int opt, r;
 
 	opt = fs_parse(fc, cfs_parameters, param, &result);
@@ -500,7 +465,6 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 
 	if (fsi->base_path) {
 		char *lower, *splitlower = NULL;
-		size_t i;
 
 		ret = -ENOMEM;
 		splitlower = kstrdup(fsi->base_path, GFP_KERNEL);
@@ -517,15 +481,14 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 		}
 
 		ret = -ENOMEM;
-		bases = kcalloc(numbasedirs, sizeof(struct vfsmount *),
-				GFP_KERNEL);
+		bases = kcalloc(numbasedirs, sizeof(struct vfsmount *), GFP_KERNEL);
 		if (!bases) {
 			kfree(splitlower);
 			goto fail;
 		}
 
 		lower = splitlower;
-		for (i = 0; i < numbasedirs; i++) {
+		for (size_t i = 0; i < numbasedirs; i++) {
 			mnt = resolve_basedir(lower);
 			if (IS_ERR(mnt)) {
 				ret = PTR_ERR(mnt);
@@ -567,9 +530,7 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	return 0;
 fail:
 	if (bases) {
-		size_t i;
-
-		for (i = 0; i < numbasedirs; i++) {
+		for (size_t i = 0; i < numbasedirs; i++) {
 			if (bases[i])
 				kern_unmount(bases[i]);
 		}
@@ -595,9 +556,8 @@ static struct file *open_base_file(struct cfs_info *fsi, struct inode *inode,
 	struct cfs_inode *cino = CFS_I(inode);
 	struct file *real_file;
 	char *real_path = cino->inode_data.path_payload;
-	size_t i;
 
-	for (i = 0; i < fsi->n_bases; i++) {
+	for (size_t i = 0; i < fsi->n_bases; i++) {
 		real_file = file_open_root_mnt(fsi->bases[i], real_path,
 					       file->f_flags, 0);
 		if (!IS_ERR(real_file) || PTR_ERR(real_file) != -ENOENT)
@@ -609,11 +569,11 @@ static struct file *open_base_file(struct cfs_info *fsi, struct inode *inode,
 
 static int cfs_open_file(struct inode *inode, struct file *file)
 {
-	struct cfs_inode *cino = CFS_I(inode);
 	struct cfs_info *fsi = inode->i_sb->s_fs_info;
-	struct file *real_file;
-	struct file *faked_file;
+	struct cfs_inode *cino = CFS_I(inode);
 	char *real_path = cino->inode_data.path_payload;
+	struct file *faked_file;
+	struct file *real_file;
 
 	if (WARN_ON(!file))
 		return -EIO;
@@ -675,10 +635,8 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 }
 
 #ifdef CONFIG_MMU
-static unsigned long cfs_mmu_get_unmapped_area(struct file *file,
-					       unsigned long addr,
-					       unsigned long len,
-					       unsigned long pgoff,
+static unsigned long cfs_mmu_get_unmapped_area(struct file *file, unsigned long addr,
+					       unsigned long len, unsigned long pgoff,
 					       unsigned long flags)
 {
 	struct file *realfile = file->private_data;
@@ -758,9 +716,9 @@ static int cfs_fadvise(struct file *file, loff_t offset, loff_t len, int advice)
 static int cfs_encode_fh(struct inode *inode, u32 *fh, int *max_len,
 			 struct inode *parent)
 {
+	u32 generation;
 	int len = 3;
 	u64 nodeid;
-	u32 generation;
 
 	if (*max_len < len) {
 		*max_len = len;
@@ -776,7 +734,7 @@ static int cfs_encode_fh(struct inode *inode, u32 *fh, int *max_len,
 
 	*max_len = len;
 
-	return 0x91;
+	return FILEID_CFS;
 }
 
 static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
@@ -787,7 +745,7 @@ static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 	u64 inode_index;
 	u32 generation;
 
-	if (fh_type != 0x91 || fh_len < 3)
+	if (fh_type != FILEID_CFS || fh_len < 3)
 		return NULL;
 
 	inode_index = (u64)(fid->raw[0]) << 32;
@@ -799,13 +757,11 @@ static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 		struct cfs_inode_s inode_buf;
 		struct cfs_inode_s *inode;
 
-		inode = cfs_get_ino_index(&fsi->cfs_ctx, inode_index,
-					  &inode_buf);
+		inode = cfs_get_ino_index(&fsi->cfs_ctx, inode_index, &inode_buf);
 		if (IS_ERR(inode))
 			return ERR_CAST(inode);
 
-		ino = cfs_make_inode(&fsi->cfs_ctx, sb, inode_index, inode,
-				     NULL);
+		ino = cfs_make_inode(&fsi->cfs_ctx, sb, inode_index, inode, NULL);
 		if (IS_ERR(ino))
 			return ERR_CAST(ino);
 	}
@@ -849,8 +805,7 @@ static int cfs_getxattr(const struct xattr_handler *handler,
 	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 	struct cfs_inode *cino = CFS_I(inode);
 
-	return cfs_get_xattr(&fsi->cfs_ctx, &cino->inode_data, name, value,
-			     size);
+	return cfs_get_xattr(&fsi->cfs_ctx, &cino->inode_data, name, value, size);
 }
 
 static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size)

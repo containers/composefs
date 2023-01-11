@@ -24,55 +24,23 @@
 #define CFS_MAX_DIR_CHUNK_SIZE 4096
 #define CFS_MAX_XATTRS_SIZE 4096
 
-static inline u16 cfs_u16_to_file(u16 val)
-{
-	return cpu_to_le16(val);
-}
-
-static inline u32 cfs_u32_to_file(u32 val)
-{
-	return cpu_to_le32(val);
-}
-
-static inline u64 cfs_u64_to_file(u64 val)
-{
-	return cpu_to_le64(val);
-}
-
-static inline u16 cfs_u16_from_file(u16 val)
-{
-	return le16_to_cpu(val);
-}
-
-static inline u32 cfs_u32_from_file(u32 val)
-{
-	return le32_to_cpu(val);
-}
-
-static inline u64 cfs_u64_from_file(u64 val)
-{
-	return le64_to_cpu(val);
-}
-
-static inline int cfs_xdigit_value(char c)
-{
-	if (c >= '0' && c <= '9')
-		return c - '0';
-	if (c >= 'A' && c <= 'F')
-		return c - 'A' + 10;
-	if (c >= 'a' && c <= 'f')
-		return c - 'a' + 10;
-	return -1;
-}
-
-static inline int cfs_digest_from_payload(const char *payload,
-					  size_t payload_len,
+static inline int cfs_digest_from_payload(const char *payload, size_t payload_len,
 					  u8 digest_out[SHA256_DIGEST_SIZE])
 {
 	const char *p, *end;
 	u8 last_digit = 0;
 	int digit = 0;
 	size_t n_nibbles = 0;
+
+	/* This handles payloads (i.e. path names) that are "essentially" a
+	 * digest as the digest (if the DIGEST_FROM_PAYLOAD flag is set). The
+	 * "essential" part means that we ignore hierarchical structure as well
+	 * as any extension. So, for example "ef/deadbeef.file" would match the
+	 * (too short) digest "efdeadbeef".
+	 *
+	 * This allows images to avoid storing both the digest and the pathname,
+	 * yet work with pre-existing object store formats of various kinds.
+	 */
 
 	end = payload + payload_len;
 	for (p = payload; p != end; p++) {
@@ -85,22 +53,20 @@ static inline int cfs_digest_from_payload(const char *payload,
 			break;
 
 		if (n_nibbles == SHA256_DIGEST_SIZE * 2)
-			return -1; /* Too long */
+			return -EINVAL; /* Too long */
 
-		digit = cfs_xdigit_value(*p);
+		digit = hex_to_bin(*p);
 		if (digit == -1)
-			return -1; /* Not hex digit */
+			return -EINVAL; /* Not hex digit */
 
 		n_nibbles++;
-		if ((n_nibbles % 2) == 0) {
-			digest_out[n_nibbles / 2 - 1] =
-				(last_digit << 4) | digit;
-		}
+		if ((n_nibbles % 2) == 0)
+			digest_out[n_nibbles / 2 - 1] = (last_digit << 4) | digit;
 		last_digit = digit;
 	}
 
 	if (n_nibbles != SHA256_DIGEST_SIZE * 2)
-		return -1; /* Too short */
+		return -EINVAL; /* Too short */
 
 	return 0;
 }
@@ -134,10 +100,8 @@ enum cfs_inode_flags {
 	CFS_INODE_FLAGS_LOW_SIZE = 1 << 7, /* Low 32bit of st_size */
 	CFS_INODE_FLAGS_HIGH_SIZE = 1 << 8, /* High 32bit of st_size */
 	CFS_INODE_FLAGS_XATTRS = 1 << 9,
-	CFS_INODE_FLAGS_DIGEST = 1
-				 << 10, /* fs-verity sha256 digest of content */
-	CFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD =
-		1 << 11, /* Compute digest from payload */
+	CFS_INODE_FLAGS_DIGEST = 1 << 10, /* fs-verity sha256 digest */
+	CFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD = 1 << 11, /* Compute digest from payload */
 };
 
 #define CFS_INODE_FLAG_CHECK(_flag, _name)                                     \
@@ -189,15 +153,13 @@ static inline u32 cfs_inode_encoded_size(u32 flags)
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, PAYLOAD, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, MODE, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, NLINK, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, UIDGID,
-					 sizeof(u32) + sizeof(u32)) +
+	       CFS_INODE_FLAG_CHECK_SIZE(flags, UIDGID, sizeof(u32) + sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, RDEV, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, TIMES, sizeof(u64) * 2) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, TIMES_NSEC, sizeof(u32) * 2) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS,
-					 sizeof(u64) + sizeof(u32)) +
+	       CFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS, sizeof(u64) + sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, SHA256_DIGEST_SIZE);
 }
 
@@ -221,8 +183,7 @@ struct cfs_dir_s {
 } __packed;
 
 #define cfs_dir_size(_n_chunks)                                                \
-	(sizeof(struct cfs_dir_s) +                                            \
-	 (_n_chunks) * sizeof(struct cfs_dir_chunk_s))
+	(sizeof(struct cfs_dir_s) + (_n_chunks) * sizeof(struct cfs_dir_chunk_s))
 
 /* xattr representation.  */
 struct cfs_xattr_element_s {

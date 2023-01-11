@@ -51,8 +51,7 @@ static int get_file_size(int fd, off_t *out)
 	return 0;
 }
 
-static char *get_v_payload(struct lcfs_inode_s *ino,
-			   const uint8_t *payload_data)
+static char *get_v_payload(struct lcfs_inode_s *ino, const uint8_t *payload_data)
 {
 	size_t payload_len = ino->payload_length;
 
@@ -77,8 +76,7 @@ static uint64_t decode_uint64(const uint8_t **data)
 }
 
 static void decode_inode(const uint8_t *inode_data, uint64_t inod_num,
-			 struct lcfs_inode_s *ino,
-			 const uint8_t **payload_data_out)
+			 struct lcfs_inode_s *ino, const uint8_t **payload_data_out)
 {
 	const uint8_t *data = inode_data + inod_num;
 	const uint8_t *payload_data;
@@ -206,11 +204,9 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 			uint16_t n_attr = lcfs_u16_from_file(header->n_attr);
 			uint8_t *data;
 
-			data = ((uint8_t *)header) +
-			       lcfs_xattr_header_size(n_attr);
+			data = ((uint8_t *)header) + lcfs_xattr_header_size(n_attr);
 			for (i = 0; i < n_attr; i++) {
-				struct lcfs_xattr_element_s *e =
-					&header->attr[i];
+				struct lcfs_xattr_element_s *e = &header->attr[i];
 				uint16_t key_length =
 					lcfs_u16_from_file(e->key_length);
 				uint16_t value_length =
@@ -227,11 +223,9 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 		else {
 			char *payload = get_v_payload(&ino, payload_data);
 			if ((ino.st_mode & S_IFMT) == S_IFLNK) {
-				printf("%.*s -> %s\n", (int)name_len, name,
-				       payload);
+				printf("%.*s -> %s\n", (int)name_len, name, payload);
 			} else {
-				printf("%.*s [%s]\n", (int)name_len, name,
-				       payload);
+				printf("%.*s [%s]\n", (int)name_len, name, payload);
 			}
 			free(payload);
 		}
@@ -257,9 +251,8 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 		       "|mtim:%ld.%ld|ctim:%ld.%ld|nxargs:%d|digest:%s|payload:%s\n",
 		       (int)name_len, name, index, ino.st_mode, ino.st_nlink,
 		       ino.st_uid, ino.st_gid, ino.st_rdev, ino.st_size,
-		       ino.st_mtim.tv_sec, ino.st_mtim.tv_nsec,
-		       ino.st_ctim.tv_sec, ino.st_ctim.tv_nsec, n_xattrs,
-		       digest_str, payload);
+		       ino.st_mtim.tv_sec, ino.st_mtim.tv_nsec, ino.st_ctim.tv_sec,
+		       ino.st_ctim.tv_nsec, n_xattrs, digest_str, payload);
 		free(payload);
 	}
 
@@ -273,31 +266,25 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 
 		for (j = 0; j < n_chunks; j++) {
 			const struct lcfs_dir_chunk_s *chunk = &dir->chunks[j];
-			size_t n_dentries =
-				lcfs_u16_from_file(chunk->n_dentries);
-			size_t chunk_size =
-				lcfs_u16_from_file(chunk->chunk_size);
+			size_t n_dentries = lcfs_u16_from_file(chunk->n_dentries);
+			size_t chunk_size = lcfs_u16_from_file(chunk->chunk_size);
 			size_t chunk_offset =
 				lcfs_u64_from_file(chunk->chunk_offset);
 			const struct lcfs_dentry_s *dentries =
-				(const struct lcfs_dentry_s *)(vdata +
-							       chunk_offset);
+				(const struct lcfs_dentry_s *)(vdata + chunk_offset);
 			const char *namedata;
 
 			assert(chunk_size <= LCFS_MAX_DIR_CHUNK_SIZE);
 			assert(chunk_offset / 4096 ==
-			       (chunk_offset + chunk_size - 1) /
-				       4096); /* same page */
+			       (chunk_offset + chunk_size - 1) / 4096); /* same page */
 
 			namedata = (const char *)dentries +
 				   sizeof(struct lcfs_dentry_s) * n_dentries;
 
 			for (i = 0; i < n_dentries; i++) {
 				size_t child_name_len = dentries[i].name_len;
-				dump_inode(inode_data, vdata, namedata,
-					   child_name_len,
-					   lcfs_u64_from_file(
-						   dentries[i].inode_index),
+				dump_inode(inode_data, vdata, namedata, child_name_len,
+					   lcfs_u64_from_file(dentries[i].inode_index),
 					   rec + 1, extended, xattrs, recurse);
 				namedata += child_name_len;
 			}
@@ -345,8 +332,7 @@ static uint64_t find_child(const uint8_t *inode_data, uint64_t current,
 			size_t child_name_len = dentries[i].name_len;
 			if (name_len == child_name_len &&
 			    memcmp(name, namedata, name_len) == 0) {
-				return lcfs_u64_from_file(
-					dentries[i].inode_index);
+				return lcfs_u64_from_file(dentries[i].inode_index);
 			}
 			namedata += child_name_len;
 		}
@@ -355,8 +341,7 @@ static uint64_t find_child(const uint8_t *inode_data, uint64_t current,
 	return UINT64_MAX;
 }
 
-static uint64_t lookup(const uint8_t *inode_data, uint64_t parent,
-		       const void *what)
+static uint64_t lookup(const uint8_t *inode_data, uint64_t parent, const void *what)
 {
 	char *it;
 	char *dpath, *path;
@@ -449,8 +434,7 @@ int main(int argc, char *argv[])
 		dump_inode(inode_data, vdata, "", 0, root_index, 0, false,
 			   false, true);
 	} else if (mode == DUMP_EXTENDED) {
-		dump_inode(inode_data, vdata, "", 0, root_index, 0, true, false,
-			   true);
+		dump_inode(inode_data, vdata, "", 0, root_index, 0, true, false, true);
 	} else if (mode == LOOKUP) {
 		uint64_t index;
 
@@ -458,8 +442,7 @@ int main(int argc, char *argv[])
 		if (index == UINT64_MAX)
 			error(EXIT_FAILURE, 0, "file %s not found", argv[3]);
 
-		dump_inode(inode_data, vdata, "", 0, index, 0, true, false,
-			   false);
+		dump_inode(inode_data, vdata, "", 0, index, 0, true, false, false);
 	} else if (mode == XATTRS) {
 		uint64_t index;
 
@@ -467,8 +450,7 @@ int main(int argc, char *argv[])
 		if (index == UINT64_MAX)
 			error(EXIT_FAILURE, 0, "file %s not found", argv[3]);
 
-		dump_inode(inode_data, vdata, "", 0, index, 0, true, true,
-			   false);
+		dump_inode(inode_data, vdata, "", 0, index, 0, true, true, false);
 	}
 
 	munmap(data, size);

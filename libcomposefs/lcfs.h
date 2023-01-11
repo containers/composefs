@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <endian.h>
+#include <errno.h>
 
 #define LCFS_VERSION 1
 
@@ -75,14 +76,23 @@ static inline int lcfs_xdigit_value(char c)
 	return -1;
 }
 
-static inline int lcfs_digest_from_payload(const char *payload,
-					   size_t payload_len,
+static inline int lcfs_digest_from_payload(const char *payload, size_t payload_len,
 					   uint8_t digest_out[LCFS_DIGEST_SIZE])
 {
 	const char *p, *end;
 	uint8_t last_digit = 0;
 	int digit = 0;
 	size_t n_nibbles = 0;
+
+	/* This handles payloads (i.e. path names) that are "essentially" a
+	 * digest as the digest (if the DIGEST_FROM_PAYLOAD flag is set). The
+	 * "essential" part means that we ignore hierarchical structure as well
+	 * as any extension. So, for example "ef/deadbeef.file" would match the
+	 * (too short) digest "efdeadbeef".
+	 *
+	 * This allows images to avoid storing both the digest and the pathname,
+	 * yet work with pre-existing object store formats of various kinds.
+	 */
 
 	end = payload + payload_len;
 	for (p = payload; p != end; p++) {
@@ -95,23 +105,22 @@ static inline int lcfs_digest_from_payload(const char *payload,
 			break;
 
 		if (n_nibbles == LCFS_DIGEST_SIZE * 2)
-			return -1; /* Too long */
+			return -EINVAL; /* Too long */
 
 		digit = lcfs_xdigit_value(*p);
 		if (digit == -1) {
-			return -1; /* Not hex digit */
+			return -EINVAL; /* Not hex digit */
 		}
 
 		n_nibbles++;
 		if ((n_nibbles % 2) == 0) {
-			digest_out[n_nibbles / 2 - 1] =
-				(last_digit << 4) | digit;
+			digest_out[n_nibbles / 2 - 1] = (last_digit << 4) | digit;
 		}
 		last_digit = digit;
 	}
 
 	if (n_nibbles != LCFS_DIGEST_SIZE * 2)
-		return -1; /* Too short */
+		return -EINVAL; /* Too short */
 
 	return 0;
 }
@@ -145,10 +154,8 @@ enum lcfs_inode_flags {
 	LCFS_INODE_FLAGS_LOW_SIZE = 1 << 7, /* Low 32bit of st_size */
 	LCFS_INODE_FLAGS_HIGH_SIZE = 1 << 8, /* High 32bit of st_size */
 	LCFS_INODE_FLAGS_XATTRS = 1 << 9,
-	LCFS_INODE_FLAGS_DIGEST =
-		1 << 10, /* fs-verity sha256 digest of content */
-	LCFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD =
-		1 << 11, /* Compute digest from payload */
+	LCFS_INODE_FLAGS_DIGEST = 1 << 10, /* fs-verity sha256 digest */
+	LCFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD = 1 << 11, /* Compute digest from payload */
 };
 
 #define LCFS_INODE_FLAG_CHECK(_flag, _name)                                    \
@@ -204,8 +211,7 @@ static inline uint32_t lcfs_inode_encoded_size(uint32_t flags)
 					  sizeof(uint32_t) + sizeof(uint32_t)) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, RDEV, sizeof(uint32_t)) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, TIMES, sizeof(uint64_t) * 2) +
-	       LCFS_INODE_FLAG_CHECK_SIZE(flags, TIMES_NSEC,
-					  sizeof(uint32_t) * 2) +
+	       LCFS_INODE_FLAG_CHECK_SIZE(flags, TIMES_NSEC, sizeof(uint32_t) * 2) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(uint32_t)) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(uint32_t)) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS,
@@ -233,8 +239,7 @@ struct lcfs_dir_s {
 } __attribute__((packed));
 
 #define lcfs_dir_size(_n_chunks)                                               \
-	(sizeof(struct lcfs_dir_s) +                                           \
-	 (_n_chunks) * sizeof(struct lcfs_dir_chunk_s))
+	(sizeof(struct lcfs_dir_s) + (_n_chunks) * sizeof(struct lcfs_dir_chunk_s))
 
 /* xattr representation.  */
 struct lcfs_xattr_element_s {

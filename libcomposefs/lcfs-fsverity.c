@@ -53,12 +53,11 @@ static void sha256_sum_init(Sha256sum *sha256)
 	sha256->bits[0] = sha256->bits[1] = 0;
 }
 
-#define GET_UINT32(n, b, i)                                                    \
-	do {                                                                   \
-		(n) = ((uint32_t)(b)[(i)] << 24) |                             \
-		      ((uint32_t)(b)[(i) + 1] << 16) |                         \
-		      ((uint32_t)(b)[(i) + 2] << 8) |                          \
-		      ((uint32_t)(b)[(i) + 3]);                                \
+#define GET_UINT32(n, b, i)                                                     \
+	do {                                                                    \
+		(n) = ((uint32_t)(b)[(i)] << 24) |                              \
+		      ((uint32_t)(b)[(i) + 1] << 16) |                          \
+		      ((uint32_t)(b)[(i) + 2] << 8) | ((uint32_t)(b)[(i) + 3]); \
 	} while (0)
 
 #define PUT_UINT32(n, b, i)                                                    \
@@ -207,8 +206,7 @@ static void sha256_transform(uint32_t buf[8], uint8_t const data[64])
 	buf[7] += H;
 }
 
-static void sha256_sum_update(Sha256sum *sha256, const uint8_t *buffer,
-			      size_t length)
+static void sha256_sum_update(Sha256sum *sha256, const uint8_t *buffer, size_t length)
 {
 	uint32_t left, fill;
 	const uint8_t *input = buffer;
@@ -365,9 +363,8 @@ static void do_sha256(FsVerityContext *ctx, const uint8_t *data,
 #endif
 }
 
-static void lcfs_fsverity_context_update_level(FsVerityContext *ctx,
-					       uint8_t *data, size_t data_len,
-					       uint32_t level)
+static void lcfs_fsverity_context_update_level(FsVerityContext *ctx, uint8_t *data,
+					       size_t data_len, uint32_t level)
 {
 	assert(level < FSVERITY_MAX_LEVELS);
 
@@ -387,11 +384,10 @@ static void lcfs_fsverity_context_update_level(FsVerityContext *ctx,
 			ctx->buffer_pos[level] = 0;
 		}
 
-		size_t to_copy = MIN(
-			FSVERITY_BLOCK_SIZE - ctx->buffer_pos[level], data_len);
+		size_t to_copy =
+			MIN(FSVERITY_BLOCK_SIZE - ctx->buffer_pos[level], data_len);
 
-		memcpy(ctx->buffer[level] + ctx->buffer_pos[level], data,
-		       to_copy);
+		memcpy(ctx->buffer[level] + ctx->buffer_pos[level], data, to_copy);
 		ctx->buffer_pos[level] += to_copy;
 
 		data += to_copy;
@@ -399,15 +395,13 @@ static void lcfs_fsverity_context_update_level(FsVerityContext *ctx,
 	}
 }
 
-void lcfs_fsverity_context_update(FsVerityContext *ctx, void *data,
-				  size_t data_len)
+void lcfs_fsverity_context_update(FsVerityContext *ctx, void *data, size_t data_len)
 {
 	lcfs_fsverity_context_update_level(ctx, data, data_len, 0);
 	ctx->file_size += data_len;
 }
 
-static void lcfs_fsverity_context_flush_level(FsVerityContext *ctx,
-					      uint32_t level)
+static void lcfs_fsverity_context_flush_level(FsVerityContext *ctx, uint32_t level)
 {
 	uint8_t digest[32];
 
