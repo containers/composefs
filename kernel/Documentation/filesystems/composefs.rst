@@ -58,17 +58,17 @@ and validation of the backing files.
 
 For descriptor validation, the idea is that you enable fs-verity on
 the descriptor file which seals it from changes that would affect the
-directory metadata. Additionally you can pass a `digest` mount option,
-which composefs verifies against the descriptor fs-verity
-measure. Such a mount option could be encoded in a trusted source
-(like a signed kernel command line) and be used as a root of trust if
-using composefs for the root filesystem.
+directory metadata. Additionally you can pass a "digest" mount option,
+which composefs verifies against the descriptor fs-verity measure. Such
+an option could be embedded in a trusted source (like a signed kernel
+command line) and be used as a root of trust if using composefs for the
+root filesystem.
 
-For file validation, the descriptor can contain digest for each
-backing file, and you can enable fs-verity on the backing
-files. Composefs will validate the digest before using the backing
-files. This means any (accidental or malicious) modification of the
-basedir will be detected at the time the file is used.
+For file validation, the descriptor can contain digests for each
+backing file, and you can enable fs-verity on them too. Composefs will
+validate the digest before using the backing files. This means any
+(accidental or malicious) modification of the basedir will be detected
+at the time the file is used.
 
 Expected use-cases
 ==================
@@ -76,19 +76,18 @@ Expected use-cases
 Container Image Storage
 ```````````````````````
 
-Typically a container image is stored as a set of "layer"
-directories. merged into one mount by using overlayfs.  The lower
-layers are read-only image content and the upper layer is the
-writable state of a running container. Multiple uses of the same
-layer can be shared this way, but it is hard to share individual
-files between unrelated layers.
+Typically a container image is stored as a set of "layer" directories,
+merged into one mount by using overlayfs.  The lower layers are
+read-only image and the upper layer is the writable directory of a
+running container. Multiple uses of the same layer can be shared this
+way, but it is hard to share individual files between unrelated layers.
 
 Using composefs, we can instead use a shared, content-addressed
-store for all the images in the system, and use a composefs image
-for the read-only image content of each image, pointing into the
+store for all the images in the system, and use composefs
+for the read-only image of each container, pointing into the
 shared store. Then for a running container we use an overlayfs
 with the lower dir being the composefs and the upper dir being
-the writable state.
+the writable directory.
 
 
 Ostree root filesystem validation
@@ -99,12 +98,12 @@ allowing efficient updates and sharing of content. However to actually
 use these as a root filesystem it needs to create a real
 "chroot-style" directory, containing hard links into the store. The
 store itself is validated when created, but once the hard-link
-directory is created, nothing validates the directory structure of
-that.
+directory is created, nothing validates the directory structure for
+post-creation changes.
 
-Instead of a chroot we can use composefs. We create a composefs
-image pointing into the object store, enable fs-verity for everything
-and encode the fs-verity digest of the descriptor in the
+Instead of a chroot we can use composefs. The composefs image pointing
+to the object store is created, then fs-verity is enabled for
+everything and the descriptor digest is encoded in the
 kernel-command line. This will allow booting a trusted system where
 all directory metadata and file content is validated lazily at use.
 
@@ -117,12 +116,15 @@ basedir
     relative content paths.
 
 verity_check=[0,1,2]
-    When to verify backing file fs-verity: 0 == never, 1 == if specified in
-    image, 2 == always and require it in image.
+    When to verify backing file fs-verity:
+
+    * 0: never verify
+    * 1: if the digest is specified in image
+    * 2: always verify the file (and require digests in image)
 
 digest
     A fs-verity sha256 digest that the descriptor file must match. If set,
-    `verity_check` defaults to 2.
+    "verity_check" defaults to 2.
 
 
 Filesystem format
@@ -144,7 +146,7 @@ The fixed inode chunk starts with a flag that tells what parts of the
 inode are stored in the file (meaning it is only the maximal size that
 is fixed). After that the various inode attributes are serialized in
 order, such as mode, ownership, xattrs, and payload length. The
-payload length attribute gives the size of the variable chunk.
+latter attribute gives the size of the variable chunk.
 
 The inode variable chunk contains different things depending on the
 file type.  For regular files it is the backing filename. For symlinks
