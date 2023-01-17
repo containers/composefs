@@ -29,7 +29,7 @@ MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 #define FILEID_CFS 0x91
 
 struct cfs_info {
-	struct cfs_context_s cfs_ctx;
+	struct cfs_context cfs_ctx;
 
 	char *base_path;
 
@@ -42,10 +42,8 @@ struct cfs_info {
 };
 
 struct cfs_inode {
-	/* must be first for clear in cfs_alloc_inode to work */
 	struct inode vfs_inode;
-
-	struct cfs_inode_data_s inode_data;
+	struct cfs_inode_extra_data inode_data;
 };
 
 static inline struct cfs_inode *CFS_I(struct inode *inode)
@@ -93,89 +91,67 @@ static unsigned int cfs_split_basedirs(char *str)
 	return ctr;
 }
 
-static struct inode *cfs_make_inode(struct cfs_context_s *ctx,
+static struct inode *cfs_make_inode(struct cfs_context *ctx,
 				    struct super_block *sb, ino_t ino_num,
-				    struct cfs_inode_s *ino, const struct inode *dir)
+				    const struct inode *dir)
 {
-	struct cfs_inode_data_s inode_data = { 0 };
-	struct cfs_xattr_header_s *xattrs = NULL;
-	struct inode *inode = NULL;
+	struct inode *inode;
 	struct cfs_inode *cino;
-	int ret, res;
-
-	res = cfs_init_inode_data(ctx, ino, ino_num, &inode_data);
-	if (res < 0)
-		return ERR_PTR(res);
+	int ret;
 
 	inode = new_inode(sb);
-	if (inode) {
-		inode_init_owner(&init_user_ns, inode, dir, ino->st_mode);
-		inode->i_mapping->a_ops = &cfs_aops;
+	if (!inode)
+		return ERR_PTR(-ENOMEM);
 
-		cino = CFS_I(inode);
-		cino->inode_data = inode_data;
+	cino = CFS_I(inode);
 
-		inode->i_ino = ino_num;
-		set_nlink(inode, ino->st_nlink);
-		inode->i_rdev = ino->st_rdev;
-		inode->i_uid = make_kuid(current_user_ns(), ino->st_uid);
-		inode->i_gid = make_kgid(current_user_ns(), ino->st_gid);
-		inode->i_mode = ino->st_mode;
-		inode->i_atime = ino->st_mtim;
-		inode->i_mtime = ino->st_mtim;
-		inode->i_ctime = ino->st_ctim;
+	ret = cfs_init_inode(ctx, ino_num, inode, &cino->inode_data);
+	if (ret < 0)
+		goto fail;
 
-		switch (ino->st_mode & S_IFMT) {
-		case S_IFREG:
-			inode->i_op = &cfs_file_inode_operations;
-			inode->i_fop = &cfs_file_operations;
-			inode->i_size = ino->st_size;
-			break;
-		case S_IFLNK:
-			inode->i_link = cino->inode_data.path_payload;
-			inode->i_op = &cfs_link_inode_operations;
-			inode->i_fop = &cfs_file_operations;
-			break;
-		case S_IFDIR:
-			inode->i_op = &cfs_dir_inode_operations;
-			inode->i_fop = &cfs_dir_operations;
-			inode->i_size = 4096;
-			break;
-		case S_IFCHR:
-		case S_IFBLK:
-			if (current_user_ns() != &init_user_ns) {
-				ret = -EPERM;
-				goto fail;
-			}
-			fallthrough;
-		default:
-			inode->i_op = &cfs_file_inode_operations;
-			init_special_inode(inode, ino->st_mode, ino->st_rdev);
-			break;
+	inode_init_owner(&init_user_ns, inode, dir, inode->i_mode);
+	inode->i_mapping->a_ops = &cfs_aops;
+
+	switch (inode->i_mode & S_IFMT) {
+	case S_IFREG:
+		inode->i_op = &cfs_file_inode_operations;
+		inode->i_fop = &cfs_file_operations;
+		break;
+	case S_IFLNK:
+		inode->i_link = cino->inode_data.path_payload;
+		inode->i_op = &cfs_link_inode_operations;
+		inode->i_fop = &cfs_file_operations;
+		break;
+	case S_IFDIR:
+		inode->i_op = &cfs_dir_inode_operations;
+		inode->i_fop = &cfs_dir_operations;
+		inode->i_size = 4096;
+		break;
+	case S_IFCHR:
+	case S_IFBLK:
+		if (current_user_ns() != &init_user_ns) {
+			ret = -EPERM;
+			goto fail;
 		}
+		fallthrough;
+	default:
+		inode->i_op = &cfs_file_inode_operations;
+		init_special_inode(inode, inode->i_mode, inode->i_rdev);
+		break;
 	}
+
 	return inode;
 
 fail:
-	if (inode)
-		iput(inode);
-	kfree(xattrs);
-	cfs_inode_data_put(&inode_data);
+	iput(inode);
 	return ERR_PTR(ret);
 }
 
 static struct inode *cfs_get_root_inode(struct super_block *sb)
 {
 	struct cfs_info *fsi = sb->s_fs_info;
-	struct cfs_inode_s ino_buf;
-	struct cfs_inode_s *ino;
-	u64 index;
 
-	ino = cfs_get_root_ino(&fsi->cfs_ctx, &ino_buf, &index);
-	if (IS_ERR(ino))
-		return ERR_CAST(ino);
-
-	return cfs_make_inode(&fsi->cfs_ctx, sb, index, ino, NULL);
+	return cfs_make_inode(&fsi->cfs_ctx, sb, fsi->cfs_ctx.root_inode, NULL);
 }
 
 static bool cfs_iterate_cb(void *private, const char *name, int name_len,
@@ -208,8 +184,6 @@ static struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 {
 	struct cfs_info *fsi = dir->i_sb->s_fs_info;
 	struct cfs_inode *cino = CFS_I(dir);
-	struct cfs_inode_s ino_buf;
-	struct cfs_inode_s *ino_s;
 	struct inode *inode;
 	u64 index;
 	int ret;
@@ -224,11 +198,7 @@ static struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 	if (ret == 0)
 		goto return_negative;
 
-	ino_s = cfs_get_ino_index(&fsi->cfs_ctx, index, &ino_buf);
-	if (IS_ERR(ino_s))
-		return ERR_CAST(ino_s);
-
-	inode = cfs_make_inode(&fsi->cfs_ctx, dir->i_sb, index, ino_s, dir);
+	inode = cfs_make_inode(&fsi->cfs_ctx, dir->i_sb, index, dir);
 	if (IS_ERR(inode))
 		return ERR_CAST(inode);
 
@@ -295,8 +265,7 @@ static struct inode *cfs_alloc_inode(struct super_block *sb)
 	if (!cino)
 		return NULL;
 
-	memset((u8 *)cino + sizeof(struct inode), 0,
-	       sizeof(struct cfs_inode) - sizeof(struct inode));
+	memset(&cino->inode_data, 0, sizeof(cino->inode_data));
 
 	return &cino->vfs_inode;
 }
@@ -305,7 +274,7 @@ static void cfs_destroy_inode(struct inode *inode)
 {
 	struct cfs_inode *cino = CFS_I(inode);
 
-	cfs_inode_data_put(&cino->inode_data);
+	cfs_inode_extra_data_put(&cino->inode_data);
 }
 
 static void cfs_free_inode(struct inode *inode)
@@ -754,14 +723,7 @@ static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 
 	ino = ilookup(sb, inode_index);
 	if (!ino) {
-		struct cfs_inode_s inode_buf;
-		struct cfs_inode_s *inode;
-
-		inode = cfs_get_ino_index(&fsi->cfs_ctx, inode_index, &inode_buf);
-		if (IS_ERR(inode))
-			return ERR_CAST(inode);
-
-		ino = cfs_make_inode(&fsi->cfs_ctx, sb, inode_index, inode, NULL);
+		ino = cfs_make_inode(&fsi->cfs_ctx, sb, inode_index, NULL);
 		if (IS_ERR(ino))
 			return ERR_CAST(ino);
 	}

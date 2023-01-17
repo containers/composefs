@@ -59,95 +59,29 @@ static const void *get_v_data(struct lcfs_inode_s *ino, const uint8_t *vdata, vo
 	return vdata + ino->variable_data.off;
 }
 
-static uint32_t decode_uint32(const uint8_t **data)
-{
-	uint32_t *d = (uint32_t *)*data;
-	*data += sizeof(uint32_t);
-	return lcfs_u32_from_file(*d);
-}
-
-static uint64_t decode_uint64(const uint8_t **data)
-{
-	uint64_t *d = (uint64_t *)*data;
-	*data += sizeof(uint64_t);
-	return lcfs_u64_from_file(*d);
-}
-
 static void decode_inode(const uint8_t *inode_data, uint64_t inod_num,
 			 struct lcfs_inode_s *ino)
 {
-	const uint8_t *data = inode_data + inod_num;
+	const struct lcfs_inode_s *data = (const struct lcfs_inode_s *)(inode_data + inod_num);
 
-	memset(ino, 0, sizeof(struct lcfs_inode_s));
+	*ino = *data;
 
-	ino->flags = decode_uint32(&data);
-        ino->variable_data.off = decode_uint64(&data);
-        ino->variable_data.len = decode_uint32(&data);
+	ino->st_mode = lcfs_u32_from_file(ino->st_mode);
+	ino->st_nlink = lcfs_u32_from_file(ino->st_nlink);
+	ino->st_uid = lcfs_u32_from_file(ino->st_uid);
+	ino->st_gid = lcfs_u32_from_file(ino->st_gid);
+	ino->st_rdev = lcfs_u32_from_file(ino->st_rdev);
+	ino->st_size = lcfs_u64_from_file(ino->st_size);
+	ino->st_mtim_sec = lcfs_u64_from_file(ino->st_mtim_sec);
+	ino->st_mtim_nsec = lcfs_u32_from_file(ino->st_mtim_nsec);
+	ino->st_ctim_sec = lcfs_u64_from_file(ino->st_ctim_sec);
+	ino->st_ctim_nsec = lcfs_u32_from_file(ino->st_ctim_nsec);
 
-	if (LCFS_INODE_FLAG_CHECK(ino->flags, MODE)) {
-		ino->st_mode = decode_uint32(&data);
-	} else {
-		ino->st_mode = LCFS_INODE_DEFAULT_MODE;
-	}
+        ino->variable_data.off = lcfs_u64_from_file(ino->variable_data.off);
+        ino->variable_data.len = lcfs_u32_from_file(ino->variable_data.len);
 
-	if (LCFS_INODE_FLAG_CHECK(ino->flags, NLINK)) {
-		ino->st_nlink = decode_uint32(&data);
-	} else {
-		ino->st_nlink = LCFS_INODE_DEFAULT_NLINK;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(ino->flags, UIDGID)) {
-		ino->st_uid = decode_uint32(&data);
-		ino->st_gid = decode_uint32(&data);
-	} else {
-		ino->st_uid = LCFS_INODE_DEFAULT_UIDGID;
-		ino->st_gid = LCFS_INODE_DEFAULT_UIDGID;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(ino->flags, RDEV)) {
-		ino->st_rdev = decode_uint32(&data);
-	} else {
-		ino->st_rdev = LCFS_INODE_DEFAULT_RDEV;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(ino->flags, TIMES)) {
-		ino->st_mtim.tv_sec = decode_uint64(&data);
-		ino->st_ctim.tv_sec = decode_uint64(&data);
-	} else {
-		ino->st_mtim.tv_sec = LCFS_INODE_DEFAULT_TIMES;
-		ino->st_ctim.tv_sec = LCFS_INODE_DEFAULT_TIMES;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(ino->flags, TIMES_NSEC)) {
-		ino->st_mtim.tv_nsec = decode_uint32(&data);
-		ino->st_ctim.tv_nsec = decode_uint32(&data);
-	} else {
-		ino->st_mtim.tv_nsec = 0;
-		ino->st_ctim.tv_nsec = 0;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(ino->flags, LOW_SIZE)) {
-		ino->st_size = decode_uint32(&data);
-	} else {
-		ino->st_size = 0;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(ino->flags, HIGH_SIZE)) {
-		ino->st_size += (uint64_t)decode_uint32(&data) << 32;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(ino->flags, XATTRS)) {
-		ino->xattrs.off = decode_uint64(&data);
-		ino->xattrs.len = decode_uint32(&data);
-	} else {
-		ino->xattrs.off = 0;
-		ino->xattrs.len = 0;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(ino->flags, DIGEST)) {
-		memcpy(ino->digest, data, LCFS_DIGEST_SIZE);
-		data += LCFS_DIGEST_SIZE;
-	}
+        ino->xattrs.off = lcfs_u64_from_file(ino->xattrs.off);
+        ino->xattrs.len = lcfs_u32_from_file(ino->xattrs.len);
 }
 
 static void digest_to_string(const uint8_t *csum, char *buf)
@@ -226,17 +160,18 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 			n_xattrs = lcfs_u16_from_file(header->n_attr);
 		}
 
-		if (ino.flags & LCFS_INODE_FLAGS_DIGEST) {
-			digest_to_string(ino.digest, digest_str);
+		if (ino.digest.len == 64) {
+			const uint8_t *digest = (vdata + ino.digest.off);
+			digest_to_string(digest, digest_str);
 		}
 
 		printf("name:%.*s|ino:%" PRIu64
 		       "|mode:%o|nlinks:%u|uid:%d|gid:%d|rdev:%d|size:%" PRIu64
-		       "|mtim:%ld.%ld|ctim:%ld.%ld|nxargs:%d|digest:%s|payload:%s\n",
+		       "|mtim:%ld.%u|ctim:%ld.%u|nxargs:%d|digest:%s|payload:%s\n",
 		       (int)name_len, name, index, ino.st_mode, ino.st_nlink,
 		       ino.st_uid, ino.st_gid, ino.st_rdev, ino.st_size,
-		       ino.st_mtim.tv_sec, ino.st_mtim.tv_nsec, ino.st_ctim.tv_sec,
-		       ino.st_ctim.tv_nsec, n_xattrs, digest_str, payload);
+		       ino.st_mtim_sec, ino.st_mtim_nsec, ino.st_ctim_sec,
+		       ino.st_ctim_nsec, n_xattrs, digest_str, payload);
 	}
 
 	if (dirp && recurse && ino.variable_data.len != 0) {

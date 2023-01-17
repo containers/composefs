@@ -21,11 +21,6 @@
 
 #define CFS_MAGIC 0xc078629aU
 
-struct cfs_vdata {
-	u64 off;
-	u32 len;
-} __packed;
-
 struct cfs_superblock {
 	__le32 version;
 	__le32 magic;
@@ -35,80 +30,40 @@ struct cfs_superblock {
 	__le64 unused3[2];
 };
 
-enum cfs_inode_flags {
-	CFS_INODE_FLAGS_NONE = 0,
-	CFS_INODE_FLAGS_MODE = 1 << 1,
-	CFS_INODE_FLAGS_NLINK = 1 << 2,
-	CFS_INODE_FLAGS_UIDGID = 1 << 3,
-	CFS_INODE_FLAGS_RDEV = 1 << 4,
-	CFS_INODE_FLAGS_TIMES = 1 << 5,
-	CFS_INODE_FLAGS_TIMES_NSEC = 1 << 6,
-	CFS_INODE_FLAGS_LOW_SIZE = 1 << 7, /* Low 32bit of st_size */
-	CFS_INODE_FLAGS_HIGH_SIZE = 1 << 8, /* High 32bit of st_size */
-	CFS_INODE_FLAGS_XATTRS = 1 << 9,
-	CFS_INODE_FLAGS_DIGEST = 1 << 10, /* fs-verity sha256 digest */
+struct cfs_vdata {
+	__le64 off;
+	__le32 len;
 };
 
-#define CFS_INODE_FLAG_CHECK(_flag, _name)                                     \
-	(((_flag) & (CFS_INODE_FLAGS_##_name)) != 0)
-#define CFS_INODE_FLAG_CHECK_SIZE(_flag, _name, _size)                         \
-	(CFS_INODE_FLAG_CHECK(_flag, _name) ? (_size) : 0)
+struct cfs_inode_data {
+	__le32 st_mode; /* File type and mode.  */
+	__le32 st_nlink; /* Number of hard links, only for regular files.  */
+	__le32 st_uid; /* User ID of owner.  */
+	__le32 st_gid; /* Group ID of owner.  */
+	__le32 st_rdev; /* Device ID (if special file).  */
+	__le64 st_size; /* Size of file, only used for regular files */
+	__le64 st_mtim_sec;
+	__le32 st_mtim_nsec;
+	__le64 st_ctim_sec;
+	__le32 st_ctim_nsec;
 
-#define CFS_INODE_DEFAULT_MODE 0100644
-#define CFS_INODE_DEFAULT_NLINK 1
-#define CFS_INODE_DEFAULT_NLINK_DIR 2
-#define CFS_INODE_DEFAULT_UIDGID 0
-#define CFS_INODE_DEFAULT_RDEV 0
-#define CFS_INODE_DEFAULT_TIMES 0
-
-struct cfs_inode_s {
-	u32 flags;
+	/* References to variable storage area: */
 	struct cfs_vdata variable_data; /* dirent, backing file or symlink target */
-
-	/* Optional data: (selected by flags) */
-
-	u32 st_mode; /* File type and mode.  */
-	u32 st_nlink; /* Number of hard links, only for regular files.  */
-	u32 st_uid; /* User ID of owner.  */
-	u32 st_gid; /* Group ID of owner.  */
-	u32 st_rdev; /* Device ID (if special file).  */
-	u64 st_size; /* Size of file, only used for regular files */
-
 	struct cfs_vdata xattrs; /* ref to variable data */
-
-	u8 digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
-
-	struct timespec64 st_mtim; /* Time of last modification.  */
-	struct timespec64 st_ctim; /* Time of last status change.  */
+	struct cfs_vdata digest;
 };
-
-static inline u32 cfs_inode_encoded_size(u32 flags)
-{
-	return sizeof(u32) /* flags */ +
-	       sizeof(struct cfs_vdata) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, MODE, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, NLINK, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, UIDGID, sizeof(u32) + sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, RDEV, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, TIMES, sizeof(u64) * 2) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, TIMES_NSEC, sizeof(u32) * 2) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS, sizeof(u64) + sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, SHA256_DIGEST_SIZE);
-}
 
 struct cfs_dirent {
-	/* Index of struct cfs_inode_s */
-	u64 inode_index;
-	u32 name_offset;  /* Offset from end of dir_header */
+	/* Index of struct cfs_inode */
+	__le64 inode_index;
+	__le32 name_offset;  /* Offset from end of dir_header */
 	u8 name_len;
 	u8 d_type;
 	u16 _padding;
 };
 
 struct cfs_dir_header {
-	u32 n_dirents;
+	__le32 n_dirents;
 	struct cfs_dirent dirents[];
 };
 
@@ -118,12 +73,12 @@ static inline size_t cfs_dir_header_size(size_t n_dirents) {
 
 /* xattr representation.  */
 struct cfs_xattr_element {
-	u16 key_length;
-	u16 value_length;
+	__le16 key_length;
+	__le16 value_length;
 };
 
 struct cfs_xattr_header {
-	u16 n_attr;
+	__le16 n_attr;
 	struct cfs_xattr_element attr[0];
 };
 

@@ -62,22 +62,6 @@ static inline uint64_t lcfs_u64_from_file(uint64_t val)
 	return le64toh(val);
 }
 
-static inline int lcfs_xdigit_value(char c)
-{
-	if (c >= '0' && c <= '9')
-		return c - '0';
-	if (c >= 'A' && c <= 'F')
-		return c - 'A' + 10;
-	if (c >= 'a' && c <= 'f')
-		return c - 'a' + 10;
-	return -1;
-}
-
-struct lcfs_vdata_s {
-	uint64_t off;
-	uint32_t len;
-} __attribute__((packed));
-
 struct lcfs_superblock_s {
 	uint32_t version;
 	uint32_t magic;
@@ -87,69 +71,28 @@ struct lcfs_superblock_s {
 	uint64_t unused3[2];
 };
 
-enum lcfs_inode_flags {
-	LCFS_INODE_FLAGS_NONE = 0,
-	LCFS_INODE_FLAGS_MODE = 1 << 1,
-	LCFS_INODE_FLAGS_NLINK = 1 << 2,
-	LCFS_INODE_FLAGS_UIDGID = 1 << 3,
-	LCFS_INODE_FLAGS_RDEV = 1 << 4,
-	LCFS_INODE_FLAGS_TIMES = 1 << 5,
-	LCFS_INODE_FLAGS_TIMES_NSEC = 1 << 6,
-	LCFS_INODE_FLAGS_LOW_SIZE = 1 << 7, /* Low 32bit of st_size */
-	LCFS_INODE_FLAGS_HIGH_SIZE = 1 << 8, /* High 32bit of st_size */
-	LCFS_INODE_FLAGS_XATTRS = 1 << 9,
-	LCFS_INODE_FLAGS_DIGEST = 1 << 10, /* fs-verity sha256 digest */
+struct lcfs_vdata_s {
+	uint64_t off;
+	uint32_t len;
 };
 
-#define LCFS_INODE_FLAG_CHECK(_flag, _name)                                    \
-	(((_flag) & (LCFS_INODE_FLAGS_##_name)) != 0)
-#define LCFS_INODE_FLAG_CHECK_SIZE(_flag, _name, _size)                        \
-	(LCFS_INODE_FLAG_CHECK(_flag, _name) ? (_size) : 0)
-
-#define LCFS_INODE_DEFAULT_MODE 0100644
-#define LCFS_INODE_DEFAULT_NLINK 1
-#define LCFS_INODE_DEFAULT_NLINK_DIR 2
-#define LCFS_INODE_DEFAULT_UIDGID 0
-#define LCFS_INODE_DEFAULT_RDEV 0
-#define LCFS_INODE_DEFAULT_TIMES 0
-
 struct lcfs_inode_s {
-	uint32_t flags;
-	struct lcfs_vdata_s variable_data; /* dirent, backing file or symlink target */
-	/* Optional data: (selected by flags) */
-
 	uint32_t st_mode; /* File type and mode.  */
 	uint32_t st_nlink; /* Number of hard links, only for regular files.  */
 	uint32_t st_uid; /* User ID of owner.  */
 	uint32_t st_gid; /* Group ID of owner.  */
 	uint32_t st_rdev; /* Device ID (if special file).  */
 	uint64_t st_size; /* Size of file, only used for regular files */
+	int64_t  st_mtim_sec;
+	uint32_t st_mtim_nsec;
+	int64_t  st_ctim_sec;
+	uint32_t st_ctim_nsec;
 
-	struct lcfs_vdata_s xattrs; /* ref to variable data */
-
-	uint8_t digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
-
-	struct timespec st_mtim; /* Time of last modification.  */
-	struct timespec st_ctim; /* Time of last status change.  */
+	/* References to variable storage area: */
+	struct lcfs_vdata_s variable_data; /* dirent, backing file or symlink target */
+	struct lcfs_vdata_s xattrs;
+	struct lcfs_vdata_s digest;
 };
-
-static inline uint32_t lcfs_inode_encoded_size(uint32_t flags)
-{
-	return sizeof(uint32_t) /* flags */ +
-	       sizeof(struct lcfs_vdata_s) +
-	       LCFS_INODE_FLAG_CHECK_SIZE(flags, MODE, sizeof(uint32_t)) +
-	       LCFS_INODE_FLAG_CHECK_SIZE(flags, NLINK, sizeof(uint32_t)) +
-	       LCFS_INODE_FLAG_CHECK_SIZE(flags, UIDGID,
-					  sizeof(uint32_t) + sizeof(uint32_t)) +
-	       LCFS_INODE_FLAG_CHECK_SIZE(flags, RDEV, sizeof(uint32_t)) +
-	       LCFS_INODE_FLAG_CHECK_SIZE(flags, TIMES, sizeof(uint64_t) * 2) +
-	       LCFS_INODE_FLAG_CHECK_SIZE(flags, TIMES_NSEC, sizeof(uint32_t) * 2) +
-	       LCFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(uint32_t)) +
-	       LCFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(uint32_t)) +
-	       LCFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS,
-					  sizeof(uint64_t) + sizeof(uint32_t)) +
-	       LCFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, LCFS_DIGEST_SIZE);
-}
 
 struct lcfs_dirent_s {
 	/* Index of struct lcfs_inode_s */

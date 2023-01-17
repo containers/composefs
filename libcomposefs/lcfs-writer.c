@@ -66,6 +66,7 @@ struct lcfs_node_s {
 	size_t n_xattrs;
 
 	bool digest_set;
+	uint8_t digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
 
 	struct lcfs_inode_s inode;
 
@@ -287,39 +288,6 @@ static int cmp_xattr(const void *a, const void *b)
 	return strcmp(na->key, nb->key);
 }
 
-static uint32_t compute_flags(struct lcfs_node_s *node)
-{
-	uint32_t flags = 0;
-	if (node->inode.st_mode != LCFS_INODE_DEFAULT_MODE)
-		flags |= LCFS_INODE_FLAGS_MODE;
-	if ((node->inode.st_mode & S_IFMT) == S_IFDIR &&
-	    node->inode.st_nlink != LCFS_INODE_DEFAULT_NLINK_DIR)
-		flags |= LCFS_INODE_FLAGS_NLINK;
-	if ((node->inode.st_mode & S_IFMT) != S_IFDIR &&
-	    node->inode.st_nlink != LCFS_INODE_DEFAULT_NLINK)
-		flags |= LCFS_INODE_FLAGS_NLINK;
-	if (node->inode.st_uid != LCFS_INODE_DEFAULT_UIDGID ||
-	    node->inode.st_uid != LCFS_INODE_DEFAULT_UIDGID)
-		flags |= LCFS_INODE_FLAGS_UIDGID;
-	if (node->inode.st_rdev != LCFS_INODE_DEFAULT_RDEV)
-		flags |= LCFS_INODE_FLAGS_RDEV;
-	if (node->inode.st_mtim.tv_sec != LCFS_INODE_DEFAULT_TIMES ||
-	    node->inode.st_ctim.tv_sec != LCFS_INODE_DEFAULT_TIMES)
-		flags |= LCFS_INODE_FLAGS_TIMES;
-	if (node->inode.st_mtim.tv_nsec != 0 || node->inode.st_ctim.tv_nsec != 0)
-		flags |= LCFS_INODE_FLAGS_TIMES_NSEC;
-	if ((node->inode.st_size & UINT32_MAX) != 0)
-		flags |= LCFS_INODE_FLAGS_LOW_SIZE;
-	if ((node->inode.st_size >> 32) != 0)
-		flags |= LCFS_INODE_FLAGS_HIGH_SIZE;
-	if (node->n_xattrs > 0)
-		flags |= LCFS_INODE_FLAGS_XATTRS;
-	if (node->digest_set)
-		flags |= LCFS_INODE_FLAGS_DIGEST;
-
-	return flags;
-}
-
 /* This ensures that the tree is in a well defined order, with
    children sorted by name, and the nodes visited in breadth-first
    order.  It also updates the inode offset. */
@@ -327,8 +295,6 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 {
 	size_t i;
 	struct lcfs_node_s *node;
-	uint32_t inode_size;
-	uint32_t flags;
 
 	/* Start with the root node. */
 
@@ -363,15 +329,9 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		qsort(node->xattrs, node->n_xattrs, sizeof(node->xattrs[0]),
 		      cmp_xattr);
 
-		flags = compute_flags(node);
-
-		node->inode.flags = flags;
-
-		inode_size = lcfs_inode_encoded_size(flags);
-
 		/* Assign inode index */
 		node->inode_index = ctx->inode_table_size;
-		ctx->inode_table_size += inode_size;
+		ctx->inode_table_size += sizeof(struct lcfs_inode_s);
 
 		node->in_tree = true;
 		/* Append to queue for more work */
@@ -500,6 +460,13 @@ static int compute_variable_data(struct lcfs_ctx_s *ctx)
 					return r;
 			}
 		}
+
+		if (node->digest_set) {
+			r = lcfs_append_vdata(ctx, &node->inode.digest,
+					      node->digest, LCFS_DIGEST_SIZE);
+			if (r < 0)
+				return r;
+		}
 	}
 
 	return 0;
@@ -609,112 +576,34 @@ static int lcfs_write_pad(struct lcfs_ctx_s *ctx, size_t data_len)
 	return 0;
 }
 
-static int write_uint32(struct lcfs_ctx_s *ctx, uint32_t val)
-{
-	uint32_t _val = lcfs_u32_to_file(val);
-	return lcfs_write(ctx, &_val, sizeof(uint32_t));
-}
-
-static int write_uint64(struct lcfs_ctx_s *ctx, uint64_t val)
-{
-	uint64_t _val = lcfs_u64_to_file(val);
-	return lcfs_write(ctx, &_val, sizeof(uint64_t));
-}
-
 static int write_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_inode_s *ino)
 {
-	int ret;
-	uint32_t flags = ino->flags;
-	off_t file_start = ctx->bytes_written;
+	struct lcfs_inode_s copy;
 
-	ret = write_uint32(ctx, ino->flags);
-	if (ret < 0)
-		return ret;
+	/* Convert endianness */
+	copy.st_mode = lcfs_u32_to_file(ino->st_mode);
+	copy.st_nlink = lcfs_u32_to_file(ino->st_nlink);
+	copy.st_uid = lcfs_u32_to_file(ino->st_uid);
+	copy.st_gid = lcfs_u32_to_file(ino->st_gid);
+	copy.st_rdev = lcfs_u32_to_file(ino->st_rdev);
+	copy.st_size = lcfs_u64_to_file(ino->st_size);
 
-	ret = write_uint64(ctx, ino->variable_data.off);
-	if (ret < 0)
-		return ret;
+	copy.st_mtim_sec = lcfs_u64_to_file(ino->st_mtim_sec);
+	copy.st_mtim_nsec = lcfs_u32_to_file(ino->st_mtim_nsec);
 
-	ret = write_uint32(ctx, ino->variable_data.len);
-	if (ret < 0)
-		return ret;
+	copy.st_ctim_sec = lcfs_u64_to_file(ino->st_ctim_sec);
+	copy.st_ctim_nsec = lcfs_u32_to_file(ino->st_ctim_nsec);
 
-	if (LCFS_INODE_FLAG_CHECK(flags, MODE)) {
-		ret = write_uint32(ctx, ino->st_mode);
-		if (ret < 0)
-			return ret;
-	}
+	copy.variable_data.off = lcfs_u64_to_file(ino->variable_data.off);
+	copy.variable_data.len = lcfs_u64_to_file(ino->variable_data.len);
 
-	if (LCFS_INODE_FLAG_CHECK(flags, NLINK)) {
-		ret = write_uint32(ctx, ino->st_nlink);
-		if (ret < 0)
-			return ret;
-	}
+	copy.xattrs.off = lcfs_u64_to_file(ino->xattrs.off);
+	copy.xattrs.len = lcfs_u64_to_file(ino->xattrs.len);
 
-	if (LCFS_INODE_FLAG_CHECK(flags, UIDGID)) {
-		ret = write_uint32(ctx, ino->st_uid);
-		if (ret < 0)
-			return ret;
-		ret = write_uint32(ctx, ino->st_gid);
-		if (ret < 0)
-			return ret;
-	}
+	copy.digest.off = lcfs_u64_to_file(ino->digest.off);
+	copy.digest.len = lcfs_u64_to_file(ino->digest.len);
 
-	if (LCFS_INODE_FLAG_CHECK(flags, RDEV)) {
-		ret = write_uint32(ctx, ino->st_rdev);
-		if (ret < 0)
-			return ret;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(flags, TIMES)) {
-		ret = write_uint64(ctx, ino->st_mtim.tv_sec);
-		if (ret < 0)
-			return ret;
-		ret = write_uint64(ctx, ino->st_ctim.tv_sec);
-		if (ret < 0)
-			return ret;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(flags, TIMES_NSEC)) {
-		ret = write_uint32(ctx, ino->st_mtim.tv_nsec);
-		if (ret < 0)
-			return ret;
-		ret = write_uint32(ctx, ino->st_ctim.tv_nsec);
-		if (ret < 0)
-			return ret;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(flags, LOW_SIZE)) {
-		ret = write_uint32(ctx, ino->st_size & UINT32_MAX);
-		if (ret < 0)
-			return ret;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(flags, HIGH_SIZE)) {
-		ret = write_uint32(ctx, ino->st_size >> 32);
-		if (ret < 0)
-			return ret;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(flags, XATTRS)) {
-		ret = write_uint64(ctx, ino->xattrs.off);
-		if (ret < 0)
-			return ret;
-
-		ret = write_uint32(ctx, ino->xattrs.len);
-		if (ret < 0)
-			return ret;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
-		ret = lcfs_write(ctx, ino->digest, LCFS_DIGEST_SIZE);
-		if (ret < 0)
-			return ret;
-	}
-
-	assert(lcfs_inode_encoded_size(flags) == ctx->bytes_written - file_start);
-
-	return 0;
+	return lcfs_write(ctx, &copy, sizeof(struct lcfs_inode_s));
 }
 
 static int write_inodes(struct lcfs_ctx_s *ctx)
@@ -1030,8 +919,10 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 	}
 
 	if ((buildflags & LCFS_BUILD_USE_EPOCH) == 0) {
-		ret->inode.st_mtim = sb.st_mtim;
-		ret->inode.st_ctim = sb.st_ctim;
+		ret->inode.st_mtim_sec = sb.st_mtim.tv_sec;
+		ret->inode.st_mtim_nsec = sb.st_mtim.tv_nsec;
+		ret->inode.st_ctim_sec = sb.st_ctim.tv_sec;
+		ret->inode.st_ctim_nsec = sb.st_ctim.tv_nsec;
 	}
 
 	if ((buildflags & LCFS_BUILD_SKIP_XATTRS) == 0) {
@@ -1059,7 +950,7 @@ int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload)
 const uint8_t *lcfs_node_get_fsverity_digest(struct lcfs_node_s *node)
 {
 	if (node->digest_set)
-		return node->inode.digest;
+		return node->digest;
 	return NULL;
 }
 
@@ -1068,7 +959,7 @@ void lcfs_node_set_fsverity_digest(struct lcfs_node_s *node,
 				   uint8_t digest[LCFS_DIGEST_SIZE])
 {
 	node->digest_set = true;
-	memcpy(node->inode.digest, digest, LCFS_DIGEST_SIZE);
+	memcpy(node->digest, digest, LCFS_DIGEST_SIZE);
 }
 
 const char *lcfs_node_get_name(struct lcfs_node_s *node)
@@ -1150,22 +1041,26 @@ void lcfs_node_set_size(struct lcfs_node_s *node, uint64_t size)
 
 void lcfs_node_set_mtime(struct lcfs_node_s *node, struct timespec *time)
 {
-	node->inode.st_mtim = *time;
+	node->inode.st_mtim_sec = time->tv_sec;
+	node->inode.st_mtim_nsec = time->tv_nsec;
 }
 
 void lcfs_node_get_mtime(struct lcfs_node_s *node, struct timespec *time)
 {
-	*time = node->inode.st_mtim;
+	time->tv_sec = node->inode.st_mtim_sec;
+	time->tv_nsec = node->inode.st_mtim_nsec;
 }
 
 void lcfs_node_set_ctime(struct lcfs_node_s *node, struct timespec *time)
 {
-	node->inode.st_ctim = *time;
+	node->inode.st_ctim_sec = time->tv_sec;
+	node->inode.st_ctim_nsec = time->tv_nsec;
 }
 
 void lcfs_node_get_ctime(struct lcfs_node_s *node, struct timespec *time)
 {
-	*time = node->inode.st_ctim;
+	time->tv_sec = node->inode.st_ctim_sec;
+	time->tv_nsec = node->inode.st_ctim_nsec;
 }
 
 struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node, const char *name)
