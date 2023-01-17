@@ -805,8 +805,8 @@ static int write_inodes(struct lcfs_ctx_s *ctx)
 int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 		  uint8_t *digest_out)
 {
-	struct lcfs_header_s header = {
-		.version = LCFS_VERSION,
+	struct lcfs_superblock_s superblock = {
+		.version = lcfs_u32_to_file(LCFS_VERSION),
 		.magic = lcfs_u32_to_file(LCFS_MAGIC),
 	};
 	int ret = 0;
@@ -836,10 +836,10 @@ int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 		return ret;
 	}
 
-	data_offset = ALIGN_TO(sizeof(struct lcfs_header_s) + ctx->inode_table_size, 4);
+	data_offset = ALIGN_TO(sizeof(struct lcfs_superblock_s) + ctx->inode_table_size, 4);
 
-	header.data_offset = lcfs_u64_to_file(data_offset);
-	header.root_inode = lcfs_u64_to_file(root->inode_index);
+	superblock.data_offset = lcfs_u64_to_file(data_offset);
+	superblock.root_inode = lcfs_u64_to_file(root->inode_index);
 
 	ret = compute_dirents(ctx);
 	if (ret < 0) {
@@ -853,7 +853,7 @@ int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 		return ret;
 	}
 
-	ret = lcfs_write(ctx, &header, sizeof(header));
+	ret = lcfs_write(ctx, &superblock, sizeof(superblock));
 	if (ret < 0) {
 		lcfs_close(ctx);
 		return ret;
@@ -866,7 +866,7 @@ int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 	}
 
 	assert(ctx->bytes_written ==
-	       sizeof(struct lcfs_header_s) + ctx->inode_table_size);
+	       sizeof(struct lcfs_superblock_s) + ctx->inode_table_size);
 
 	if (ctx->vdata) {
 		/* Pad vdata to 4k alignment */

@@ -357,7 +357,7 @@ int main(int argc, char *argv[])
 	const uint8_t *inode_data;
 	uint8_t *vdata;
 	size_t root_index;
-	struct lcfs_header_s *header;
+	struct lcfs_superblock_s *superblock;
 	size_t data_offset;
 
 	if (argc < 3)
@@ -391,16 +391,16 @@ int main(int argc, char *argv[])
 	if (data == MAP_FAILED)
 		error(EXIT_FAILURE, errno, "fstat %s", argv[1]);
 
-	header = (struct lcfs_header_s *)data;
+	superblock = (struct lcfs_superblock_s *)data;
 
-	if (lcfs_u64_from_file(header->data_offset) > size)
+	if (lcfs_u64_from_file(superblock->data_offset) > size)
 		error(EXIT_FAILURE, EINVAL, "Invalid data offset");
 
-	inode_data = data + sizeof(struct lcfs_header_s);
-	data_offset = lcfs_u64_from_file(header->data_offset);
+	inode_data = data + sizeof(struct lcfs_superblock_s);
+	data_offset = lcfs_u64_from_file(superblock->data_offset);
 	assert(data_offset % 4 == 0);
 	vdata = data + data_offset;
-	root_index = lcfs_u64_from_file(header->root_inode);
+	root_index = lcfs_u64_from_file(superblock->root_inode);
 	if (mode == DUMP) {
 		dump_inode(inode_data, vdata, "", 0, root_index, 0, false,
 			   false, true);

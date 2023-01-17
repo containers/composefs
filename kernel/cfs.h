@@ -73,17 +73,14 @@ struct cfs_vdata {
 	u32 len;
 } __packed;
 
-struct cfs_header_s {
-	u8 version;
-	u8 unused1;
-	u16 unused2;
+struct cfs_superblock {
+	__le32 version;
+	__le32 magic;
+	__le64 data_offset;
+	__le64 root_inode;
 
-	u32 magic;
-	u64 data_offset;
-	u64 root_inode;
-
-	u64 unused3[2];
-} __packed;
+	__le64 unused3[2];
+};
 
 enum cfs_inode_flags {
 	CFS_INODE_FLAGS_NONE = 0,

@@ -24,8 +24,10 @@ struct cfs_inode_data_s {
 };
 
 struct cfs_context_s {
-	struct cfs_header_s header;
+	struct cfs_superblock superblock;
 	struct file *descriptor;
+	u64 data_offset;
+	u64 root_inode;
 
 	u64 descriptor_len;
 };

@@ -127,17 +127,14 @@ struct lcfs_vdata_s {
 	uint32_t len;
 } __attribute__((packed));
 
-struct lcfs_header_s {
-	uint8_t version;
-	uint8_t unused1;
-	uint16_t unused2;
-
+struct lcfs_superblock_s {
+	uint32_t version;
 	uint32_t magic;
 	uint64_t data_offset;
 	uint64_t root_inode;
 
 	uint64_t unused3[2];
-} __attribute__((packed));
+};
 
 enum lcfs_inode_flags {
 	LCFS_INODE_FLAGS_NONE = 0,

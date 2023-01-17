@@ -141,7 +141,8 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 		 struct cfs_context_s *ctx_out)
 {
 	u8 verity_digest[FS_VERITY_MAX_DIGEST_SIZE];
-	struct cfs_header_s *header;
+	struct cfs_superblock superblock_buf;
+	struct cfs_superblock *superblock;
 	enum hash_algo verity_algo;
 	struct cfs_context_s ctx;
 	struct file *descriptor;
@@ -168,7 +169,7 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	}
 
 	i_size = i_size_read(file_inode(descriptor));
-	if (i_size <= (sizeof(struct cfs_header_s) + sizeof(struct cfs_inode_s))) {
+	if (i_size <= (sizeof(struct cfs_superblock) + sizeof(struct cfs_inode_s))) {
 		res = -EINVAL;
 		goto fail;
 	}
@@ -177,18 +178,19 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	ctx.descriptor = descriptor;
 	ctx.descriptor_len = i_size;
 
-	header = cfs_read_data(&ctx, 0, sizeof(struct cfs_header_s),
-			       (u8 *)&ctx.header);
-	if (IS_ERR(header)) {
-		res = PTR_ERR(header);
+	superblock = cfs_read_data(&ctx, 0, sizeof(struct cfs_superblock),
+				   (u8 *)&superblock_buf);
+	if (IS_ERR(superblock)) {
+		res = PTR_ERR(superblock);
 		goto fail;
 	}
-	header->magic = le32_to_cpu(header->magic);
-	header->data_offset = le64_to_cpu(header->data_offset);
-	header->root_inode = le64_to_cpu(header->root_inode);
+	ctx.data_offset = le64_to_cpu(superblock->data_offset);
+	ctx.root_inode = le64_to_cpu(superblock->root_inode);
 
-	if (header->magic != CFS_MAGIC || header->data_offset > ctx.descriptor_len ||
-	    sizeof(struct cfs_header_s) + header->root_inode > ctx.descriptor_len) {
+	if (le32_to_cpu(superblock->version) != CFS_VERSION ||
+	    le32_to_cpu(superblock->magic) != CFS_MAGIC ||
+	    ctx.data_offset > ctx.descriptor_len ||
+	    sizeof(struct cfs_superblock) + ctx.root_inode > ctx.descriptor_len) {
 		res = -EINVAL;
 		goto fail;
 	}
@@ -212,13 +214,13 @@ void cfs_ctx_put(struct cfs_context_s *ctx)
 static void *cfs_get_inode_data(struct cfs_context_s *ctx, u64 offset, u64 size,
 				u8 *dest)
 {
-	return cfs_read_data(ctx, offset + sizeof(struct cfs_header_s), size, dest);
+	return cfs_read_data(ctx, offset + sizeof(struct cfs_superblock), size, dest);
 }
 
 static void *cfs_get_inode_data_max(struct cfs_context_s *ctx, u64 offset,
 				    u64 max_size, u64 *read_size, u8 *dest)
 {
-	u64 remaining = ctx->descriptor_len - sizeof(struct cfs_header_s);
+	u64 remaining = ctx->descriptor_len - sizeof(struct cfs_superblock);
 	u64 size;
 
 	if (offset > remaining)
@@ -259,13 +261,13 @@ static void *cfs_get_inode_payload(struct cfs_context_s *ctx,
 static void *cfs_get_vdata_buf(struct cfs_context_s *ctx, u64 offset, u32 len,
 			       struct cfs_buf *buf)
 {
-	if (offset > ctx->descriptor_len - ctx->header.data_offset)
+	if (offset > ctx->descriptor_len - ctx->data_offset)
 		return ERR_PTR(-EINVAL);
 
-	if (len > ctx->descriptor_len - ctx->header.data_offset - offset)
+	if (len > ctx->descriptor_len - ctx->data_offset - offset)
 		return ERR_PTR(-EINVAL);
 
-	return cfs_get_buf(ctx, ctx->header.data_offset + offset, len, buf);
+	return cfs_get_buf(ctx, ctx->data_offset + offset, len, buf);
 }
 
 static u32 cfs_read_u32(u8 **data)
@@ -386,7 +388,7 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 struct cfs_inode_s *cfs_get_root_ino(struct cfs_context_s *ctx,
 				     struct cfs_inode_s *ino_buf, u64 *index)
 {
-	u64 root_ino = ctx->header.root_inode;
+	u64 root_ino = ctx->root_inode;
 
 	*index = root_ino;
 	return cfs_get_ino_index(ctx, root_ino, ino_buf);
