@@ -467,7 +467,7 @@ static int compute_dirents(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, str
 		name_offset += dirent->name_len;
 	}
 
-	r = lcfs_append_vdata(ctx, vdata, buffer, dirents_size);
+	r = lcfs_append_vdata_no_dedup(ctx, vdata, buffer, dirents_size);
 	free(buffer);
 	return r;
 }
