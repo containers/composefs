@@ -59,10 +59,10 @@ static const void *get_v_data(struct lcfs_inode_s *ino, const uint8_t *vdata, vo
 	return vdata + ino->variable_data.off;
 }
 
-static void decode_inode(const uint8_t *inode_data, uint64_t inod_num,
+static void decode_inode(const uint8_t *inode_data, uint32_t inod_num,
 			 struct lcfs_inode_s *ino)
 {
-	const struct lcfs_inode_s *data = (const struct lcfs_inode_s *)(inode_data + inod_num);
+	const struct lcfs_inode_s *data = (const struct lcfs_inode_s *)(inode_data + inod_num * sizeof(struct lcfs_inode_s));
 
 	*ino = *data;
 
@@ -98,7 +98,7 @@ static void digest_to_string(const uint8_t *csum, char *buf)
 }
 
 static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
-		      const char *name, size_t name_len, uint64_t index,
+		      const char *name, size_t name_len, uint32_t index,
 		      size_t rec, bool extended, bool xattrs, bool recurse)
 {
 	struct lcfs_inode_s ino;
@@ -165,8 +165,7 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 			digest_to_string(digest, digest_str);
 		}
 
-		printf("name:%.*s|ino:%" PRIu64
-		       "|mode:%o|nlinks:%u|uid:%d|gid:%d|rdev:%d|size:%" PRIu64
+		printf("name:%.*s|ino:%u|mode:%o|nlinks:%u|uid:%d|gid:%d|rdev:%d|size:%" PRIu64
 		       "|mtim:%ld.%u|ctim:%ld.%u|nxargs:%d|digest:%s|payload:%s\n",
 		       (int)name_len, name, index, ino.st_mode, ino.st_nlink,
 		       ino.st_uid, ino.st_gid, ino.st_rdev, ino.st_size,
@@ -184,7 +183,7 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 			size_t child_name_offset = lcfs_u32_from_file(dir->dirents[i].name_offset);
 
 			dump_inode(inode_data, vdata, namedata + child_name_offset, child_name_len,
-				   lcfs_u64_from_file(dir->dirents[i].inode_index),
+				   lcfs_u32_from_file(dir->dirents[i].inode_num),
 				   rec + 1, extended, xattrs, recurse);
 		}
 	}
@@ -193,7 +192,7 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 }
 
 static uint64_t find_child(const uint8_t *inode_data, const uint8_t *vdata,
-                           uint64_t current, const char *name)
+                           uint32_t current, const char *name)
 {
 	struct lcfs_inode_s ino;
 	const struct lcfs_dir_header_s *dir;
@@ -219,7 +218,7 @@ static uint64_t find_child(const uint8_t *inode_data, const uint8_t *vdata,
 		size_t child_name_offset = lcfs_u32_from_file(dir->dirents[i].name_offset);
 		if (name_len == child_name_len &&
 		    memcmp(name, namedata + child_name_offset, name_len) == 0) {
-			return lcfs_u64_from_file(dir->dirents[i].inode_index);
+			return lcfs_u64_from_file(dir->dirents[i].inode_num);
 		}
 	}
 
@@ -271,7 +270,6 @@ int main(int argc, char *argv[])
 	int mode;
 	const uint8_t *inode_data;
 	uint8_t *vdata;
-	size_t root_index;
 	struct lcfs_superblock_s *superblock;
 	size_t data_offset;
 
@@ -315,16 +313,15 @@ int main(int argc, char *argv[])
 	data_offset = lcfs_u64_from_file(superblock->data_offset);
 	assert(data_offset % 4 == 0);
 	vdata = data + data_offset;
-	root_index = lcfs_u64_from_file(superblock->root_inode);
 	if (mode == DUMP) {
-		dump_inode(inode_data, vdata, "", 0, root_index, 0, false,
+		dump_inode(inode_data, vdata, "", 0, 0, 0, false,
 			   false, true);
 	} else if (mode == DUMP_EXTENDED) {
-		dump_inode(inode_data, vdata, "", 0, root_index, 0, true, false, true);
+		dump_inode(inode_data, vdata, "", 0, 0, 0, true, false, true);
 	} else if (mode == LOOKUP) {
 		uint64_t index;
 
-		index = lookup(inode_data, vdata, root_index, argv[3]);
+		index = lookup(inode_data, vdata, 0, argv[3]);
 		if (index == UINT64_MAX)
 			error(EXIT_FAILURE, 0, "file %s not found", argv[3]);
 
@@ -332,7 +329,7 @@ int main(int argc, char *argv[])
 	} else if (mode == XATTRS) {
 		uint64_t index;
 
-		index = lookup(inode_data, vdata, root_index, argv[3]);
+		index = lookup(inode_data, vdata, 0, argv[3]);
 		if (index == UINT64_MAX)
 			error(EXIT_FAILURE, 0, "file %s not found", argv[3]);
 

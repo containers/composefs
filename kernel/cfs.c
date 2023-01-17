@@ -26,8 +26,6 @@ MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 
 #define CFS_MAX_STACK 500
 
-#define FILEID_CFS 0x91
-
 struct cfs_info {
 	struct cfs_context cfs_ctx;
 
@@ -145,13 +143,6 @@ static struct inode *cfs_make_inode(struct cfs_context *ctx,
 fail:
 	iput(inode);
 	return ERR_PTR(ret);
-}
-
-static struct inode *cfs_get_root_inode(struct super_block *sb)
-{
-	struct cfs_info *fsi = sb->s_fs_info;
-
-	return cfs_make_inode(&fsi->cfs_ctx, sb, fsi->cfs_ctx.root_inode, NULL);
 }
 
 static bool cfs_iterate_cb(void *private, const char *name, int name_len,
@@ -477,7 +468,7 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	if (ret < 0)
 		goto fail;
 
-	inode = cfs_get_root_inode(sb);
+	inode = cfs_make_inode(&fsi->cfs_ctx, sb, CFS_ROOT_INO, NULL);
 	if (IS_ERR(inode)) {
 		ret = PTR_ERR(inode);
 		goto fail;
@@ -681,84 +672,6 @@ static int cfs_fadvise(struct file *file, loff_t offset, loff_t len, int advice)
 
 	return vfs_fadvise(realfile, offset, len, advice);
 }
-
-static int cfs_encode_fh(struct inode *inode, u32 *fh, int *max_len,
-			 struct inode *parent)
-{
-	u32 generation;
-	int len = 3;
-	u64 nodeid;
-
-	if (*max_len < len) {
-		*max_len = len;
-		return FILEID_INVALID;
-	}
-
-	nodeid = inode->i_ino;
-	generation = inode->i_generation;
-
-	fh[0] = (u32)(nodeid >> 32);
-	fh[1] = (u32)(nodeid & 0xffffffff);
-	fh[2] = generation;
-
-	*max_len = len;
-
-	return FILEID_CFS;
-}
-
-static struct dentry *cfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
-				       int fh_len, int fh_type)
-{
-	struct cfs_info *fsi = sb->s_fs_info;
-	struct inode *ino;
-	u64 inode_index;
-	u32 generation;
-
-	if (fh_type != FILEID_CFS || fh_len < 3)
-		return NULL;
-
-	inode_index = (u64)(fid->raw[0]) << 32;
-	inode_index |= fid->raw[1];
-	generation = fid->raw[2];
-
-	ino = ilookup(sb, inode_index);
-	if (!ino) {
-		ino = cfs_make_inode(&fsi->cfs_ctx, sb, inode_index, NULL);
-		if (IS_ERR(ino))
-			return ERR_CAST(ino);
-	}
-	if (ino->i_generation != generation) {
-		iput(ino);
-		return ERR_PTR(-ESTALE);
-	}
-	return d_obtain_alias(ino);
-}
-
-static struct dentry *cfs_fh_to_parent(struct super_block *sb, struct fid *fid,
-				       int fh_len, int fh_type)
-{
-	return ERR_PTR(-EACCES);
-}
-
-static int cfs_get_name(struct dentry *parent, char *name, struct dentry *child)
-{
-	WARN_ON_ONCE(1);
-	return -EIO;
-}
-
-static struct dentry *cfs_get_parent(struct dentry *dentry)
-{
-	WARN_ON_ONCE(1);
-	return ERR_PTR(-EIO);
-}
-
-static const struct export_operations cfs_export_operations = {
-	.fh_to_dentry = cfs_fh_to_dentry,
-	.fh_to_parent = cfs_fh_to_parent,
-	.encode_fh = cfs_encode_fh,
-	.get_parent = cfs_get_parent,
-	.get_name = cfs_get_name,
-};
 
 static int cfs_getxattr(const struct xattr_handler *handler,
 			struct dentry *unused2, struct inode *inode,

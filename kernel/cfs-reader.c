@@ -226,12 +226,11 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 		goto fail;
 	}
 	ctx.data_offset = le64_to_cpu(superblock->data_offset);
-	ctx.root_inode = le64_to_cpu(superblock->root_inode);
 
 	if (le32_to_cpu(superblock->version) != CFS_VERSION ||
 	    le32_to_cpu(superblock->magic) != CFS_MAGIC ||
 	    ctx.data_offset > ctx.descriptor_len ||
-	    sizeof(struct cfs_superblock) + ctx.root_inode > ctx.descriptor_len) {
+	    sizeof(struct cfs_superblock) + sizeof(struct cfs_inode_data) > ctx.descriptor_len) {
 		res = -EINVAL;
 		goto fail;
 	}
@@ -293,7 +292,7 @@ static bool cfs_validate_filename(const char *name, size_t name_len)
 	return true;
 }
 
-int cfs_init_inode(struct cfs_context *ctx, u64 index,
+int cfs_init_inode(struct cfs_context *ctx, u32 inode_num,
 		   struct inode *inode,
 		   struct cfs_inode_extra_data *inode_data)
 {
@@ -308,11 +307,12 @@ int cfs_init_inode(struct cfs_context *ctx, u64 index,
 	u32 digest_len;
 	u32 st_type;
 
-	disk_data = cfs_get_inode_buf(ctx, index, sizeof(struct cfs_inode_data), &vdata_buf);
+	disk_data = cfs_get_inode_buf(ctx, inode_num * sizeof(struct cfs_inode_data),
+				      sizeof(struct cfs_inode_data), &vdata_buf);
 	if (IS_ERR(disk_data))
 		return PTR_ERR(disk_data);
 
-	inode->i_ino = index;
+	inode->i_ino = inode_num;
 
 	inode->i_mode = le32_to_cpu(disk_data->st_mode);
 	set_nlink(inode, le32_to_cpu(disk_data->st_nlink));
@@ -603,7 +603,7 @@ int cfs_dir_iterate(struct cfs_context *ctx, u64 index,
 			continue;
 
 		if (!cb(private, dirent_name, dirent_name_len,
-			le64_to_cpu(dirent->inode_index), dirent->d_type)) {
+			le32_to_cpu(dirent->inode_num), dirent->d_type)) {
 			break;
 		}
 	}
@@ -660,7 +660,7 @@ int cfs_dir_lookup(struct cfs_context *ctx, u64 index,
 
 		cmp = memcmp2(name, name_len, dirent_name, dirent_name_len);
 		if (cmp == 0) {
-			*index_out = le64_to_cpu(dirent->inode_index);
+			*index_out = le32_to_cpu(dirent->inode_num);
 			res = 1;
 			goto exit;
 		}

@@ -38,7 +38,7 @@ void cfs_ctx_put(struct cfs_context *ctx);
 
 void cfs_inode_extra_data_put(struct cfs_inode_extra_data *inode_data);
 
-int cfs_init_inode(struct cfs_context *ctx, u64 index,
+int cfs_init_inode(struct cfs_context *ctx, u32 inode_num,
                    struct inode *inode,
                    struct cfs_inode_extra_data *data);
 

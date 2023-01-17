@@ -60,7 +60,7 @@ struct lcfs_node_s {
 	char *name;
 	char *payload; /* backing file or symlink target */
 	struct lcfs_dirent_s data;
-	uint64_t inode_index;
+	uint32_t inode_num;
 
 	struct lcfs_xattr_s *xattrs;
 	size_t n_xattrs;
@@ -293,7 +293,7 @@ static int cmp_xattr(const void *a, const void *b)
    order.  It also updates the inode offset. */
 static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 {
-	size_t i;
+	uint32_t index;
 	struct lcfs_node_s *node;
 
 	/* Start with the root node. */
@@ -303,7 +303,7 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 
 	node = root;
 
-	for (node = root; node != NULL; node = node->next) {
+	for (node = root, index = 0; node != NULL; node = node->next, index++) {
 		if ((node->inode.st_mode & S_IFMT) != S_IFDIR &&
 		    node->children_size != 0) {
 			/* Only dirs can have children */
@@ -314,7 +314,7 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		/* Fix up directory n_links counts, they are 2 + nr of subdirs */
 		if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
 			size_t n_link = 2;
-			for (i = 0; i < node->children_size; i++) {
+			for (size_t i = 0; i < node->children_size; i++) {
 				struct lcfs_node_s *child = node->children[i];
 				if ((child->inode.st_mode & S_IFMT) == S_IFDIR) {
 					n_link++;
@@ -330,12 +330,12 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		      cmp_xattr);
 
 		/* Assign inode index */
-		node->inode_index = ctx->inode_table_size;
+		node->inode_num = index;
 		ctx->inode_table_size += sizeof(struct lcfs_inode_s);
 
 		node->in_tree = true;
 		/* Append to queue for more work */
-		for (i = 0; i < node->children_size; i++) {
+		for (size_t i = 0; i < node->children_size; i++) {
 			struct lcfs_node_s *child = node->children[i];
 
 			/* Skip hardlinks, they will not be serialized separately */
@@ -416,7 +416,7 @@ static int compute_dirents(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, str
 		struct lcfs_dirent_s *dirent =	&header->dirents[i];
 		size_t name_len = strlen(dirent_child->name);
 
-		dirent->inode_index = lcfs_u64_to_file(target_child->inode_index);
+		dirent->inode_num = lcfs_u32_to_file(target_child->inode_num);
 		dirent->d_type = node_get_dtype(target_child);
 		dirent->name_len = name_len;
 		dirent->name_offset = lcfs_u32_to_file(name_offset);
@@ -595,13 +595,13 @@ static int write_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_inode_s *ino)
 	copy.st_ctim_nsec = lcfs_u32_to_file(ino->st_ctim_nsec);
 
 	copy.variable_data.off = lcfs_u64_to_file(ino->variable_data.off);
-	copy.variable_data.len = lcfs_u64_to_file(ino->variable_data.len);
+	copy.variable_data.len = lcfs_u32_to_file(ino->variable_data.len);
 
 	copy.xattrs.off = lcfs_u64_to_file(ino->xattrs.off);
-	copy.xattrs.len = lcfs_u64_to_file(ino->xattrs.len);
+	copy.xattrs.len = lcfs_u32_to_file(ino->xattrs.len);
 
 	copy.digest.off = lcfs_u64_to_file(ino->digest.off);
-	copy.digest.len = lcfs_u64_to_file(ino->digest.len);
+	copy.digest.len = lcfs_u32_to_file(ino->digest.len);
 
 	return lcfs_write(ctx, &copy, sizeof(struct lcfs_inode_s));
 }
@@ -657,7 +657,6 @@ int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 	data_offset = ALIGN_TO(sizeof(struct lcfs_superblock_s) + ctx->inode_table_size, 4);
 
 	superblock.data_offset = lcfs_u64_to_file(data_offset);
-	superblock.root_inode = lcfs_u64_to_file(root->inode_index);
 
 	ret = compute_variable_data(ctx);
 	if (ret < 0) {

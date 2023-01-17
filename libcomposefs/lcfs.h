@@ -66,7 +66,6 @@ struct lcfs_superblock_s {
 	uint32_t version;
 	uint32_t magic;
 	uint64_t data_offset;
-	uint64_t root_inode;
 
 	uint64_t unused3[2];
 };
@@ -95,8 +94,7 @@ struct lcfs_inode_s {
 };
 
 struct lcfs_dirent_s {
-	/* Index of struct lcfs_inode_s */
-	uint64_t inode_index;
+	uint32_t inode_num;
 	uint32_t name_offset; /* Offset from end of dir_header */
 	uint8_t name_len;
 	uint8_t d_type;

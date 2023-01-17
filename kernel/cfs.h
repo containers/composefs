@@ -21,11 +21,12 @@
 
 #define CFS_MAGIC 0xc078629aU
 
+#define CFS_ROOT_INO 0
+
 struct cfs_superblock {
 	__le32 version;
 	__le32 magic;
 	__le64 data_offset;
-	__le64 root_inode;
 
 	__le64 unused3[2];
 };
@@ -54,8 +55,7 @@ struct cfs_inode_data {
 };
 
 struct cfs_dirent {
-	/* Index of struct cfs_inode */
-	__le64 inode_index;
+	__le32 inode_num;
 	__le32 name_offset;  /* Offset from end of dir_header */
 	u8 name_len;
 	u8 d_type;
