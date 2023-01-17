@@ -28,9 +28,6 @@
 
 #define LCFS_DIGEST_SIZE 32
 
-#define LCFS_MAX_DIR_CHUNK_SIZE 4096
-#define LCFS_MAX_XATTRS_SIZE 4096
-
 #define LCFS_MAX_NAME_LENGTH 255 /* max len of file name excluding NULL */
 
 #define LCFS_MAGIC 0xc078629aU
@@ -172,7 +169,7 @@ enum lcfs_inode_flags {
 
 struct lcfs_inode_s {
 	uint32_t flags;
-
+	struct lcfs_vdata_s variable_data; /* dirent, backing file or symlink target */
 	/* Optional data: (selected by flags) */
 
 	/* This is the size of the type specific data that comes directly after
@@ -204,6 +201,7 @@ struct lcfs_inode_s {
 static inline uint32_t lcfs_inode_encoded_size(uint32_t flags)
 {
 	return sizeof(uint32_t) /* flags */ +
+	       sizeof(struct lcfs_vdata_s) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, PAYLOAD, sizeof(uint32_t)) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, MODE, sizeof(uint32_t)) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, NLINK, sizeof(uint32_t)) +
@@ -219,41 +217,37 @@ static inline uint32_t lcfs_inode_encoded_size(uint32_t flags)
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, LCFS_DIGEST_SIZE);
 }
 
-struct lcfs_dentry_s {
+struct lcfs_dirent_s {
 	/* Index of struct lcfs_inode_s */
 	uint64_t inode_index;
-	uint8_t d_type;
+	uint32_t name_offset; /* Offset from end of dir_header */
 	uint8_t name_len;
-	uint16_t name_offset;
-} __attribute__((packed));
+	uint8_t d_type;
+	uint16_t _padding;
+};
 
-struct lcfs_dir_chunk_s {
-	uint16_t n_dentries;
-	uint16_t chunk_size; /* < 4k */
-	uint64_t chunk_offset; /* Offset in data */
-} __attribute__((packed));
+struct lcfs_dir_header_s {
+	uint32_t n_dirents;
+	struct lcfs_dirent_s dirents[0];
+};
 
-struct lcfs_dir_s {
-	uint32_t n_chunks;
-	struct lcfs_dir_chunk_s chunks[];
-} __attribute__((packed));
-
-#define lcfs_dir_size(_n_chunks)                                               \
-	(sizeof(struct lcfs_dir_s) + (_n_chunks) * sizeof(struct lcfs_dir_chunk_s))
+static inline size_t lcfs_dir_header_size(size_t n_dirents) {
+	return sizeof(struct lcfs_dir_header_s) + n_dirents * sizeof(struct lcfs_dirent_s);
+}
 
 /* xattr representation.  */
 struct lcfs_xattr_element_s {
 	uint16_t key_length;
 	uint16_t value_length;
-} __attribute__((packed));
+};
 
 struct lcfs_xattr_header_s {
 	uint16_t n_attr;
 	struct lcfs_xattr_element_s attr[0];
-} __attribute__((packed));
+};
 
-#define lcfs_xattr_header_size(_n_element)                                     \
-	(sizeof(struct lcfs_xattr_header_s) +                                  \
-	 (_n_element) * sizeof(struct lcfs_xattr_element_s))
+static inline size_t lcfs_xattr_header_size(size_t n_element) {
+	return sizeof(struct lcfs_xattr_header_s) + n_element * sizeof(struct lcfs_xattr_element_s);
+}
 
 #endif

@@ -21,9 +21,6 @@
 
 #define CFS_MAGIC 0xc078629aU
 
-#define CFS_MAX_DIR_CHUNK_SIZE 4096
-#define CFS_MAX_XATTRS_SIZE 4096
-
 static inline int cfs_digest_from_payload(const char *payload, size_t payload_len,
 					  u8 digest_out[SHA256_DIGEST_SIZE])
 {
@@ -71,7 +68,7 @@ static inline int cfs_digest_from_payload(const char *payload, size_t payload_le
 	return 0;
 }
 
-struct cfs_vdata_s {
+struct cfs_vdata {
 	u64 off;
 	u32 len;
 } __packed;
@@ -118,6 +115,7 @@ enum cfs_inode_flags {
 
 struct cfs_inode_s {
 	u32 flags;
+	struct cfs_vdata variable_data; /* dirent, backing file or symlink target */
 
 	/* Optional data: (selected by flags) */
 
@@ -139,7 +137,7 @@ struct cfs_inode_s {
 	u32 st_rdev; /* Device ID (if special file).  */
 	u64 st_size; /* Size of file, only used for regular files */
 
-	struct cfs_vdata_s xattrs; /* ref to variable data */
+	struct cfs_vdata xattrs; /* ref to variable data */
 
 	u8 digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 
@@ -150,6 +148,7 @@ struct cfs_inode_s {
 static inline u32 cfs_inode_encoded_size(u32 flags)
 {
 	return sizeof(u32) /* flags */ +
+	       sizeof(struct cfs_vdata) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, PAYLOAD, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, MODE, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, NLINK, sizeof(u32)) +
@@ -163,41 +162,37 @@ static inline u32 cfs_inode_encoded_size(u32 flags)
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, SHA256_DIGEST_SIZE);
 }
 
-struct cfs_dentry_s {
+struct cfs_dirent {
 	/* Index of struct cfs_inode_s */
 	u64 inode_index;
-	u8 d_type;
+	u32 name_offset;  /* Offset from end of dir_header */
 	u8 name_len;
-	u16 name_offset;
-} __packed;
+	u8 d_type;
+	u16 _padding;
+};
 
-struct cfs_dir_chunk_s {
-	u16 n_dentries;
-	u16 chunk_size;
-	u64 chunk_offset;
-} __packed;
+struct cfs_dir_header {
+	u32 n_dirents;
+	struct cfs_dirent dirents[];
+};
 
-struct cfs_dir_s {
-	u32 n_chunks;
-	struct cfs_dir_chunk_s chunks[];
-} __packed;
-
-#define cfs_dir_size(_n_chunks)                                                \
-	(sizeof(struct cfs_dir_s) + (_n_chunks) * sizeof(struct cfs_dir_chunk_s))
+static inline size_t cfs_dir_header_size(size_t n_dirents) {
+	return sizeof(struct cfs_dir_header) + n_dirents * sizeof(struct cfs_dirent);
+}
 
 /* xattr representation.  */
-struct cfs_xattr_element_s {
+struct cfs_xattr_element {
 	u16 key_length;
 	u16 value_length;
-} __packed;
+};
 
-struct cfs_xattr_header_s {
+struct cfs_xattr_header {
 	u16 n_attr;
-	struct cfs_xattr_element_s attr[0];
-} __packed;
+	struct cfs_xattr_element attr[0];
+};
 
-#define cfs_xattr_header_size(_n_element)                                      \
-	(sizeof(struct cfs_xattr_header_s) +                                   \
-	 (_n_element) * sizeof(struct cfs_xattr_element_s))
+static inline size_t cfs_xattr_header_size(size_t n_element) {
+	return sizeof(struct cfs_xattr_header) + n_element * sizeof(struct cfs_xattr_element);
+}
 
 #endif

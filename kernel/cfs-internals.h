@@ -12,11 +12,12 @@
 struct cfs_inode_data_s {
 	u32 payload_length;
 	char *path_payload; /* Real pathname for files, target for symlinks */
-	u32 n_dir_chunks;
-	struct cfs_dir_chunk_s preloaded_dir_chunks[CFS_N_PRELOAD_DIR_CHUNKS];
 
 	u64 xattrs_offset;
 	u32 xattrs_len;
+
+	u64 dirents_offset;
+	u32 dirents_len;
 
 	bool has_digest;
 	u8 digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
