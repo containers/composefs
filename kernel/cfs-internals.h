@@ -10,7 +10,6 @@
 #define CFS_N_PRELOAD_DIR_CHUNKS 4
 
 struct cfs_inode_data_s {
-	u32 payload_length;
 	char *path_payload; /* Real pathname for files, target for symlinks */
 
 	u64 xattrs_offset;

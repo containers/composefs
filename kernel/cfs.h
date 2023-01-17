@@ -21,53 +21,6 @@
 
 #define CFS_MAGIC 0xc078629aU
 
-static inline int cfs_digest_from_payload(const char *payload, size_t payload_len,
-					  u8 digest_out[SHA256_DIGEST_SIZE])
-{
-	const char *p, *end;
-	u8 last_digit = 0;
-	int digit = 0;
-	size_t n_nibbles = 0;
-
-	/* This handles payloads (i.e. path names) that are "essentially" a
-	 * digest as the digest (if the DIGEST_FROM_PAYLOAD flag is set). The
-	 * "essential" part means that we ignore hierarchical structure as well
-	 * as any extension. So, for example "ef/deadbeef.file" would match the
-	 * (too short) digest "efdeadbeef".
-	 *
-	 * This allows images to avoid storing both the digest and the pathname,
-	 * yet work with pre-existing object store formats of various kinds.
-	 */
-
-	end = payload + payload_len;
-	for (p = payload; p != end; p++) {
-		/* Skip subdir structure */
-		if (*p == '/')
-			continue;
-
-		/* Break at (and ignore) extension */
-		if (*p == '.')
-			break;
-
-		if (n_nibbles == SHA256_DIGEST_SIZE * 2)
-			return -EINVAL; /* Too long */
-
-		digit = hex_to_bin(*p);
-		if (digit == -1)
-			return -EINVAL; /* Not hex digit */
-
-		n_nibbles++;
-		if ((n_nibbles % 2) == 0)
-			digest_out[n_nibbles / 2 - 1] = (last_digit << 4) | digit;
-		last_digit = digit;
-	}
-
-	if (n_nibbles != SHA256_DIGEST_SIZE * 2)
-		return -EINVAL; /* Too short */
-
-	return 0;
-}
-
 struct cfs_vdata {
 	u64 off;
 	u32 len;
@@ -84,7 +37,6 @@ struct cfs_superblock {
 
 enum cfs_inode_flags {
 	CFS_INODE_FLAGS_NONE = 0,
-	CFS_INODE_FLAGS_PAYLOAD = 1 << 0,
 	CFS_INODE_FLAGS_MODE = 1 << 1,
 	CFS_INODE_FLAGS_NLINK = 1 << 2,
 	CFS_INODE_FLAGS_UIDGID = 1 << 3,
@@ -95,7 +47,6 @@ enum cfs_inode_flags {
 	CFS_INODE_FLAGS_HIGH_SIZE = 1 << 8, /* High 32bit of st_size */
 	CFS_INODE_FLAGS_XATTRS = 1 << 9,
 	CFS_INODE_FLAGS_DIGEST = 1 << 10, /* fs-verity sha256 digest */
-	CFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD = 1 << 11, /* Compute digest from payload */
 };
 
 #define CFS_INODE_FLAG_CHECK(_flag, _name)                                     \
@@ -116,17 +67,6 @@ struct cfs_inode_s {
 
 	/* Optional data: (selected by flags) */
 
-	/* This is the size of the type specific data that comes directly after
-	 * the inode in the file. Of this type:
-	 *
-	 * directory: cfs_dir_s
-	 * regular file: the backing filename
-	 * symlink: the target link
-	 *
-	 * Canonically payload_length is 0 for empty dir/file/symlink.
-	 */
-	u32 payload_length;
-
 	u32 st_mode; /* File type and mode.  */
 	u32 st_nlink; /* Number of hard links, only for regular files.  */
 	u32 st_uid; /* User ID of owner.  */
@@ -146,7 +86,6 @@ static inline u32 cfs_inode_encoded_size(u32 flags)
 {
 	return sizeof(u32) /* flags */ +
 	       sizeof(struct cfs_vdata) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, PAYLOAD, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, MODE, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, NLINK, sizeof(u32)) +
 	       CFS_INODE_FLAG_CHECK_SIZE(flags, UIDGID, sizeof(u32) + sizeof(u32)) +

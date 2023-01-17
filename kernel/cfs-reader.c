@@ -137,6 +137,36 @@ static void *cfs_read_data(struct cfs_context_s *ctx, u64 offset, u64 size, u8 *
 	return dest;
 }
 
+static char *cfs_read_vdata_path(struct cfs_context_s *ctx, u64 offset, u32 len)
+{
+	char *path;
+	void *res;
+
+	if (len > PATH_MAX)
+		return ERR_PTR(-EINVAL);
+
+	if (offset > ctx->descriptor_len - ctx->data_offset)
+		return ERR_PTR(-EINVAL);
+
+	if (len > ctx->descriptor_len - ctx->data_offset - offset)
+		return ERR_PTR(-EINVAL);
+
+	path = kmalloc(len + 1, GFP_KERNEL);
+	if (!path)
+		return ERR_PTR(-ENOMEM);
+
+	res = cfs_read_data(ctx, ctx->data_offset + offset, len, path);
+	if (IS_ERR(res)) {
+		kfree(path);
+		return ERR_CAST(res);
+	}
+
+	/* zero terminate */
+	path[len] = 0;
+
+	return path;
+}
+
 int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 		 struct cfs_context_s *ctx_out)
 {
@@ -234,30 +264,6 @@ static void *cfs_get_inode_data_max(struct cfs_context_s *ctx, u64 offset,
 	return cfs_get_inode_data(ctx, offset, size, dest);
 }
 
-static void *cfs_get_inode_payload_w_len(struct cfs_context_s *ctx,
-					 u32 payload_length, u64 index,
-					 u8 *dest, u64 offset, size_t len)
-{
-	/* Payload is stored before the inode, check it fits */
-	if (payload_length > index)
-		return ERR_PTR(-EINVAL);
-
-	if (offset > payload_length)
-		return ERR_PTR(-EINVAL);
-
-	if (offset + len > payload_length)
-		return ERR_PTR(-EINVAL);
-
-	return cfs_get_inode_data(ctx, index - payload_length + offset, len, dest);
-}
-
-static void *cfs_get_inode_payload(struct cfs_context_s *ctx,
-				   struct cfs_inode_s *ino, u64 index, u8 *dest)
-{
-	return cfs_get_inode_payload_w_len(ctx, ino->payload_length, index,
-					   dest, 0, ino->payload_length);
-}
-
 static void *cfs_get_vdata_buf(struct cfs_context_s *ctx, u64 offset, u32 len,
 			       struct cfs_buf *buf)
 {
@@ -312,11 +318,6 @@ struct cfs_inode_s *cfs_get_ino_index(struct cfs_context_s *ctx, u64 index,
 	/* Shouldn't happen, but let's check */
 	if (inode_size > sizeof(buffer))
 		return ERR_PTR(-EFSCORRUPTED);
-
-	if (CFS_INODE_FLAG_CHECK(ino->flags, PAYLOAD))
-		ino->payload_length = cfs_read_u32(&data);
-	else
-		ino->payload_length = 0;
 
 	if (CFS_INODE_FLAG_CHECK(ino->flags, MODE))
 		ino->st_mode = cfs_read_u32(&data);
@@ -395,19 +396,10 @@ struct cfs_inode_s *cfs_get_root_ino(struct cfs_context_s *ctx,
 }
 
 static int cfs_get_digest(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
-			  const char *payload, u8 digest_out[SHA256_DIGEST_SIZE])
+			  u8 digest_out[SHA256_DIGEST_SIZE])
 {
-	int r;
-
 	if (CFS_INODE_FLAG_CHECK(ino->flags, DIGEST)) {
 		memcpy(digest_out, ino->digest, SHA256_DIGEST_SIZE);
-		return 1;
-	}
-
-	if (payload && CFS_INODE_FLAG_CHECK(ino->flags, DIGEST_FROM_PAYLOAD)) {
-		r = cfs_digest_from_payload(payload, ino->payload_length, digest_out);
-		if (r < 0)
-			return r;
 		return 1;
 	}
 
@@ -431,58 +423,41 @@ static bool cfs_validate_filename(const char *name, size_t name_len)
 	return true;
 }
 
-static char *cfs_dup_payload_path(struct cfs_context_s *ctx,
-				  struct cfs_inode_s *ino, u64 index)
-{
-	const char *v;
-	u8 *path;
-
-	if ((ino->st_mode & S_IFMT) != S_IFREG && (ino->st_mode & S_IFMT) != S_IFLNK)
-		return ERR_PTR(-EINVAL);
-
-	if (ino->payload_length == 0 || ino->payload_length > PATH_MAX)
-		return ERR_PTR(-EFSCORRUPTED);
-
-	path = kmalloc(ino->payload_length + 1, GFP_KERNEL);
-	if (!path)
-		return ERR_PTR(-ENOMEM);
-
-	v = cfs_get_inode_payload(ctx, ino, index, path);
-	if (IS_ERR(v)) {
-		kfree(path);
-		return ERR_CAST(v);
-	}
-
-	/* zero terminate */
-	path[ino->payload_length] = 0;
-
-	return (char *)path;
-}
-
 int cfs_init_inode_data(struct cfs_context_s *ctx, struct cfs_inode_s *ino,
 			u64 index, struct cfs_inode_data_s *inode_data)
 {
 	char *path_payload = NULL;
 	int ret = 0;
 
-	inode_data->payload_length = ino->payload_length;
-
-	if ((ino->st_mode & S_IFMT) == S_IFLNK ||
-	    ((ino->st_mode & S_IFMT) == S_IFREG && ino->payload_length > 0)) {
-		path_payload = cfs_dup_payload_path(ctx, ino, index);
+	if ((ino->st_mode & S_IFMT) == S_IFDIR) {
+		inode_data->dirents_offset = ino->variable_data.off;
+		inode_data->dirents_len = ino->variable_data.len;
+	} else if (((ino->st_mode & S_IFMT) == S_IFLNK || (ino->st_mode & S_IFMT) == S_IFREG) &&
+		   ino->variable_data.len > 0) {
+		path_payload = cfs_read_vdata_path(ctx, ino->variable_data.off, ino->variable_data.len);
 		if (IS_ERR(path_payload)) {
 			ret = PTR_ERR(path_payload);
 			goto fail;
 		}
-	}
-	inode_data->path_payload = path_payload;
-
-	if ((ino->st_mode & S_IFMT) == S_IFDIR) {
-		inode_data->dirents_offset = ino->variable_data.off;
-		inode_data->dirents_len = ino->variable_data.len;
+		inode_data->path_payload = path_payload;
 	}
 
-	ret = cfs_get_digest(ctx, ino, path_payload, inode_data->digest);
+	if ((ino->st_mode & S_IFMT) == S_IFLNK) {
+		/* Symbolic link must have a non-empty target */
+		if (!inode_data->path_payload) {
+			ret = -EFSCORRUPTED;
+			goto fail;
+		}
+	} else if ((ino->st_mode & S_IFMT) == S_IFREG) {
+		/* Regular file must have backing file except empty files */
+		if ((inode_data->path_payload && ino->st_size == 0) ||
+		    (!inode_data->path_payload && ino->st_size > 0)) {
+			    ret = -EFSCORRUPTED;
+			    goto fail;
+		}
+	}
+
+	ret = cfs_get_digest(ctx, ino, inode_data->digest);
 	if (ret < 0)
 		goto fail;
 

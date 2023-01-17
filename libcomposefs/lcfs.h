@@ -73,55 +73,6 @@ static inline int lcfs_xdigit_value(char c)
 	return -1;
 }
 
-static inline int lcfs_digest_from_payload(const char *payload, size_t payload_len,
-					   uint8_t digest_out[LCFS_DIGEST_SIZE])
-{
-	const char *p, *end;
-	uint8_t last_digit = 0;
-	int digit = 0;
-	size_t n_nibbles = 0;
-
-	/* This handles payloads (i.e. path names) that are "essentially" a
-	 * digest as the digest (if the DIGEST_FROM_PAYLOAD flag is set). The
-	 * "essential" part means that we ignore hierarchical structure as well
-	 * as any extension. So, for example "ef/deadbeef.file" would match the
-	 * (too short) digest "efdeadbeef".
-	 *
-	 * This allows images to avoid storing both the digest and the pathname,
-	 * yet work with pre-existing object store formats of various kinds.
-	 */
-
-	end = payload + payload_len;
-	for (p = payload; p != end; p++) {
-		/* Skip subdir structure */
-		if (*p == '/')
-			continue;
-
-		/* Break at (and ignore) extension */
-		if (*p == '.')
-			break;
-
-		if (n_nibbles == LCFS_DIGEST_SIZE * 2)
-			return -EINVAL; /* Too long */
-
-		digit = lcfs_xdigit_value(*p);
-		if (digit == -1) {
-			return -EINVAL; /* Not hex digit */
-		}
-
-		n_nibbles++;
-		if ((n_nibbles % 2) == 0) {
-			digest_out[n_nibbles / 2 - 1] = (last_digit << 4) | digit;
-		}
-		last_digit = digit;
-	}
-
-	if (n_nibbles != LCFS_DIGEST_SIZE * 2)
-		return -EINVAL; /* Too short */
-
-	return 0;
-}
-
 struct lcfs_vdata_s {
 	uint64_t off;
 	uint32_t len;
@@ -138,7 +89,6 @@ struct lcfs_superblock_s {
 
 enum lcfs_inode_flags {
 	LCFS_INODE_FLAGS_NONE = 0,
-	LCFS_INODE_FLAGS_PAYLOAD = 1 << 0,
 	LCFS_INODE_FLAGS_MODE = 1 << 1,
 	LCFS_INODE_FLAGS_NLINK = 1 << 2,
 	LCFS_INODE_FLAGS_UIDGID = 1 << 3,
@@ -149,7 +99,6 @@ enum lcfs_inode_flags {
 	LCFS_INODE_FLAGS_HIGH_SIZE = 1 << 8, /* High 32bit of st_size */
 	LCFS_INODE_FLAGS_XATTRS = 1 << 9,
 	LCFS_INODE_FLAGS_DIGEST = 1 << 10, /* fs-verity sha256 digest */
-	LCFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD = 1 << 11, /* Compute digest from payload */
 };
 
 #define LCFS_INODE_FLAG_CHECK(_flag, _name)                                    \
@@ -168,17 +117,6 @@ struct lcfs_inode_s {
 	uint32_t flags;
 	struct lcfs_vdata_s variable_data; /* dirent, backing file or symlink target */
 	/* Optional data: (selected by flags) */
-
-	/* This is the size of the type specific data that comes directly after
-	   the inode in the file. Of this type:
-	   *
-	   * directory: lcfs_dir_s
-	   * regular file: the backing filename
-	   * symlink: the target link
-	   *
-	   * Canonically payload_length is 0 for empty dir/file/symlink
-	   */
-	uint32_t payload_length;
 
 	uint32_t st_mode; /* File type and mode.  */
 	uint32_t st_nlink; /* Number of hard links, only for regular files.  */
@@ -199,7 +137,6 @@ static inline uint32_t lcfs_inode_encoded_size(uint32_t flags)
 {
 	return sizeof(uint32_t) /* flags */ +
 	       sizeof(struct lcfs_vdata_s) +
-	       LCFS_INODE_FLAG_CHECK_SIZE(flags, PAYLOAD, sizeof(uint32_t)) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, MODE, sizeof(uint32_t)) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, NLINK, sizeof(uint32_t)) +
 	       LCFS_INODE_FLAG_CHECK_SIZE(flags, UIDGID,
