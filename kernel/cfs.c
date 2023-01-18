@@ -30,7 +30,7 @@ MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 enum cfs_verity_policy {
 	CFS_VERITY_CHECK_NONE = 0, /* Never verify digest */
 	CFS_VERITY_CHECK_IF_SPECIFIED = 1, /* Verify if specified in image */
-	CFS_VERITY_CHECK_REQUIRED = 2, /* Always verify, fail if not if specified in image */
+	CFS_VERITY_CHECK_REQUIRED = 2, /* Always verify, fail if not specified in image */
 };
 
 #define CFS_VERITY_CHECK_MAX_POLICY 2
