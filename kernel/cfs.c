@@ -131,7 +131,6 @@ static struct inode *cfs_make_inode(struct cfs_context *ctx, struct super_block 
 	case S_IFDIR:
 		inode->i_op = &cfs_dir_inode_operations;
 		inode->i_fop = &cfs_dir_operations;
-		inode->i_size = 4096;
 		break;
 	case S_IFCHR:
 	case S_IFBLK:
@@ -697,9 +696,6 @@ static const struct xattr_handler *cfs_xattr_handlers[] = {
 };
 
 static const struct inode_operations cfs_file_inode_operations = {
-	.setattr = simple_setattr,
-	.getattr = simple_getattr,
-
 	.listxattr = cfs_listxattr,
 };
 
