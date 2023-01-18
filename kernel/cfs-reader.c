@@ -14,14 +14,26 @@
 #include <linux/pagemap.h>
 #include <linux/vmalloc.h>
 
-#define CFS_BUF_MAXPAGES 256 /* arbitrary limit to avoid extreme memory use */
+/* When mapping buffers via page arrays this is an "arbitrary" limit
+ * to ensure we're not ballooning memory use for the page array and
+ * mapping. On a 4k page, 64bit machine this limit will make the page
+ * array fit in one page, and will allow a mapping of 2MB. When
+ * applied to e.g. dirents this will allow more than 27000 filenames
+ * of length 64, which seems ok. If we need to support more, at that
+ * point we really should fall back to an approach that maps
+ * incrementally.
+ */
+#define CFS_BUF_MAXPAGES 512
+
 #define CFS_BUF_PREALLOC_SIZE 4
 
 struct cfs_buf {
 	struct page **pages;
 	size_t n_pages;
 	void *base;
-	struct page *prealloc[CFS_BUF_PREALLOC_SIZE]; /* No need for allocation for small buffers */
+
+	/* Used as "pages" above to avoid allocation for small buffers */
+	struct page *prealloc[CFS_BUF_PREALLOC_SIZE];
 };
 
 static void cfs_buf_put(struct cfs_buf *buf)
