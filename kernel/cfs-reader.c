@@ -337,6 +337,7 @@ int cfs_init_inode(struct cfs_context *ctx, u32 inode_num, struct inode *inode,
 	u64 digest_off;
 	u32 digest_len;
 	u32 st_type;
+	u64 size;
 
 	disk_data = cfs_get_inode_buf(ctx, inode_num * sizeof(struct cfs_inode_data),
 				      sizeof(struct cfs_inode_data), &vdata_buf);
@@ -350,7 +351,11 @@ int cfs_init_inode(struct cfs_context *ctx, u32 inode_num, struct inode *inode,
 	inode->i_uid = make_kuid(current_user_ns(), le32_to_cpu(disk_data->st_uid));
 	inode->i_gid = make_kgid(current_user_ns(), le32_to_cpu(disk_data->st_gid));
 	inode->i_rdev = le32_to_cpu(disk_data->st_rdev);
-	inode->i_size = le64_to_cpu(disk_data->st_size);
+
+	size = le64_to_cpu(disk_data->st_size);
+	i_size_write(inode, size);
+	inode_set_bytes(inode, size);
+
 	inode->i_mtime.tv_sec = le64_to_cpu(disk_data->st_mtim_sec);
 	inode->i_mtime.tv_nsec = le32_to_cpu(disk_data->st_mtim_nsec);
 	inode->i_ctime.tv_sec = le64_to_cpu(disk_data->st_ctim_sec);
@@ -383,8 +388,8 @@ int cfs_init_inode(struct cfs_context *ctx, u32 inode_num, struct inode *inode,
 		}
 	} else if (st_type == S_IFREG) {
 		/* Regular file must have backing file except empty files */
-		if ((inode_data->path_payload && inode->i_size == 0) ||
-		    (!inode_data->path_payload && inode->i_size > 0)) {
+		if ((inode_data->path_payload && size == 0) ||
+		    (!inode_data->path_payload && size > 0)) {
 			ret = -EFSCORRUPTED;
 			goto fail;
 		}

@@ -892,10 +892,9 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 	ret->inode.st_uid = sb.st_uid;
 	ret->inode.st_gid = sb.st_gid;
 	ret->inode.st_rdev = sb.st_rdev;
+	ret->inode.st_size = sb.st_size;
 
 	if ((sb.st_mode & S_IFMT) == S_IFREG) {
-		ret->inode.st_size = sb.st_size;
-
 		if (sb.st_size != 0 && (buildflags & LCFS_BUILD_COMPUTE_DIGEST) != 0) {
 			int fd = openat(dirfd, fname, O_RDONLY | O_CLOEXEC);
 			if (fd < 0) {
