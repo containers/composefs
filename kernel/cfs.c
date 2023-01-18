@@ -370,32 +370,22 @@ static struct vfsmount *resolve_basedir(const char *name)
 
 	if (!*name) {
 		pr_err("empty basedir\n");
-		goto out;
+		return ERR_PTR(-EINVAL);
 	}
-	err = kern_path(name, LOOKUP_FOLLOW, &path);
+	err = kern_path(name, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &path);
 	if (err) {
 		pr_err("failed to resolve '%s': %i\n", name, err);
-		goto out;
+		return ERR_PTR(-EINVAL);
 	}
 
 	mnt = clone_private_mount(&path);
-	err = PTR_ERR(mnt);
-	if (IS_ERR(mnt)) {
-		pr_err("failed to clone basedir\n");
-		goto out_put;
+	path_put(&path);
+	if (!IS_ERR(mnt)) {
+		/* Don't inherit atime flags */
+		mnt->mnt_flags &= ~(MNT_NOATIME | MNT_NODIRATIME | MNT_RELATIME);
 	}
 
-	path_put(&path);
-
-	/* Don't inherit atime flags */
-	mnt->mnt_flags &= ~(MNT_NOATIME | MNT_NODIRATIME | MNT_RELATIME);
-
 	return mnt;
-
-out_put:
-	path_put(&path);
-out:
-	return ERR_PTR(err);
 }
 
 static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
@@ -406,9 +396,6 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	struct inode *inode;
 	struct vfsmount *mnt;
 	int ret;
-
-	if (sb->s_root)
-		return -EINVAL;
 
 	/* Set up the inode allocator early */
 	sb->s_op = &cfs_ops;
@@ -514,7 +501,7 @@ static struct file *open_base_file(struct cfs_info *fsi, struct inode *inode,
 	for (size_t i = 0; i < fsi->n_bases; i++) {
 		real_file = file_open_root_mnt(fsi->bases[i], real_path,
 					       file->f_flags, 0);
-		if (!IS_ERR(real_file) || PTR_ERR(real_file) != -ENOENT)
+		if (real_file != ERR_PTR(-ENOENT))
 			return real_file;
 	}
 
@@ -529,9 +516,6 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	struct file *faked_file;
 	struct file *real_file;
 
-	if (WARN_ON(!file))
-		return -EIO;
-
 	if (file->f_flags & (O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_TRUNC))
 		return -EROFS;
 
@@ -541,8 +525,8 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	}
 
 	if (fsi->verity_check >= CFS_VERITY_CHECK_REQUIRED && !cino->inode_data.has_digest) {
-		pr_warn("WARNING: composefs image file '%pd' specified no fs-verity digest\n",
-			file->f_path.dentry);
+		pr_warn("WARNING: composefs image file '%pD' specified no fs-verity digest\n",
+			file);
 		return -EIO;
 	}
 
@@ -562,16 +546,16 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 		res = fsverity_get_digest(d_inode(real_file->f_path.dentry),
 					  verity_digest, &verity_algo);
 		if (res < 0) {
-			pr_warn("WARNING: composefs backing file '%pd' has no fs-verity digest\n",
-				real_file->f_path.dentry);
+			pr_warn("WARNING: composefs backing file '%pD' has no fs-verity digest\n",
+				real_file);
 			fput(real_file);
 			return -EIO;
 		}
 		if (verity_algo != HASH_ALGO_SHA256 ||
 		    memcmp(cino->inode_data.digest, verity_digest,
 			   SHA256_DIGEST_SIZE) != 0) {
-			pr_warn("WARNING: composefs backing file '%pd' has the wrong fs-verity digest\n",
-				real_file->f_path.dentry);
+			pr_warn("WARNING: composefs backing file '%pD' has the wrong fs-verity digest\n",
+				real_file);
 			fput(real_file);
 			return -EIO;
 		}
