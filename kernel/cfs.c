@@ -183,7 +183,7 @@ static struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 {
 	struct cfs_info *fsi = dir->i_sb->s_fs_info;
 	struct cfs_inode *cino = CFS_I(dir);
-	struct inode *inode;
+	struct inode *inode = NULL;
 	u64 index;
 	int ret;
 
@@ -192,20 +192,13 @@ static struct dentry *cfs_lookup(struct inode *dir, struct dentry *dentry,
 
 	ret = cfs_dir_lookup(&fsi->cfs_ctx, dir->i_ino, &cino->inode_data,
 			     dentry->d_name.name, dentry->d_name.len, &index);
-	if (ret < 0)
-		return ERR_PTR(ret);
-	if (ret == 0)
-		goto return_negative;
-
-	inode = cfs_make_inode(&fsi->cfs_ctx, dir->i_sb, index, dir);
-	if (IS_ERR(inode))
-		return ERR_CAST(inode);
+	if (ret) {
+		if (ret < 0)
+			return ERR_PTR(ret);
+		inode = cfs_make_inode(&fsi->cfs_ctx, dir->i_sb, index, dir);
+	}
 
 	return d_splice_alias(inode, dentry);
-
-return_negative:
-	d_add(dentry, NULL);
-	return NULL;
 }
 
 static const struct file_operations cfs_dir_operations = {
