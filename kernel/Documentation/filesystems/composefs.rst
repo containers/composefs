@@ -130,36 +130,24 @@ digest
 Filesystem format
 =================
 
-The format of the descriptor contains three sections: header,
+The format of the descriptor contains three sections: superblock,
 inodes and variable data. All data in the file is stored in
 little-endian form.
 
-The header starts at the beginning of the file and contains version,
-magic value, offsets to the variable data and the root inode nr.
+The superblock starts at the beginning of the file and contains
+version, magic value, and offsets to the variable data section.
 
-The inode section starts at a fixed location right after the
-header. It is a array of inode data, where for each inode there is
-first a variable length chunk and then a fixed size chunk. An inode nr
-is the offset in the inode data to the start of the fixed chunk.
-
-The fixed inode chunk starts with a flag that tells what parts of the
-inode are stored in the file (meaning it is only the maximal size that
-is fixed). After that the various inode attributes are serialized in
-order, such as mode, ownership, xattrs, and payload length. The
-latter attribute gives the size of the variable chunk.
-
-The inode variable chunk contains different things depending on the
-file type.  For regular files it is the backing filename. For symlinks
-it is the symlink target. For directories it is a list of references to
-dentries, stored in chunks of maximum 4k. The dentry chunks themselves
-are stored in the variable data section.
+The inode table starts at a fixed location right after the
+header. It is a array of fixed size inode data. The first inode
+is the root inode, and inode numbers are index into this array.
 
 The variable data section is stored after the inode section, and you
-can find it from the offset in the header. It contains dentries and
-Xattrs data. The xattrs are referred to by offset and size in the
-xattr attribute in the inode data. Each xattr data can be used by many
-inodes in the filesystem. The variable data chunks are all smaller than
-a page (4K) and are padded to not span pages.
+can find it from the offset in the header. It contains paths, digests,
+dirents and Xattrs data. The xattrs are referred to by offset and size
+in the xattr attribute in the inode data. Each xattr data can be used
+by many inodes in the filesystem.
+
+For more details, see cfs.h.
 
 Tools
 =====

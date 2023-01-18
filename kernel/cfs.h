@@ -17,187 +17,137 @@
 #include <linux/stat.h>
 #include <linux/types.h>
 
+/* Descriptor file layout:
+ *
+ *  +-----------------------+
+ *  | cfs_superblock        |
+ *  |   vdata_offfset       |---|
+ *  +-----------------------|   |
+ *  | Inode table           |   |
+ *  |  N * cfs_inode_data   |   |
+ *  +-----------------------|   |
+ *  | Variable data section |<--/
+ *  | Used for:             |
+ *  |  symlink targets      |
+ *  |  backing file paths   |
+ *  |  dirents              |
+ *  |  xattrs               |
+ *  |  digests              |
+ *  +-----------------------+
+ *
+ * The superblock is at the start of the file, and the inode table
+ * directly follows it. The variable data section found via
+ * vdata_offset and all sections are 32bit aligned. All data is
+ *  little endian.
+ *
+ * The inode table is a table of fixed size cfs_inode_data elements.
+ * The filesystem inode numbers are 32bit indexes into this table.
+ * Actual file content (for regular files) is referenced by a backing
+ * file path which is looked up relative to a given base dir.
+ *
+ * All variable size data are stored in the variable data section and
+ * are referenced using cfs_vdata (64bit offset from the start of the
+ * vdata section and 32bit lengths).
+ *
+ * Directory dirent data is stored in one 32bit aligned vdata chunk,
+ * staring with a table of fixed size cfs_dirents and which is
+ * followed by a string table. The dirents reference the strings by
+ * offsets form the string table. The dirents are sorted for efficient
+ * binary search lookups.
+ *
+ * Xattrs data are stored in a 32bit aligned vdata chunk. This is
+ * a table of cfs_xattr, followed by the key/value data. The
+ * xattrs are sorted by key. Note that many inodes can reference
+ * the same xattr data.
+ */
+
+/* Current (and atm only) version of the image format. */
 #define CFS_VERSION 1
 
 #define CFS_MAGIC 0xc078629aU
 
-#define CFS_MAX_DIR_CHUNK_SIZE 4096
-#define CFS_MAX_XATTRS_SIZE 4096
+#define CFS_SUPERBLOCK_OFFSET 0
+#define CFS_INODE_TABLE_OFFSET sizeof(struct cfs_superblock)
+#define CFS_ROOT_INO 0
 
-static inline int cfs_digest_from_payload(const char *payload, size_t payload_len,
-					  u8 digest_out[SHA256_DIGEST_SIZE])
-{
-	const char *p, *end;
-	u8 last_digit = 0;
-	int digit = 0;
-	size_t n_nibbles = 0;
+struct cfs_superblock {
+	__le32 version; /* CFS_VERSION */
+	__le32 magic; /* CFS_MAGIC */
 
-	/* This handles payloads (i.e. path names) that are "essentially" a
-	 * digest as the digest (if the DIGEST_FROM_PAYLOAD flag is set). The
-	 * "essential" part means that we ignore hierarchical structure as well
-	 * as any extension. So, for example "ef/deadbeef.file" would match the
-	 * (too short) digest "efdeadbeef".
-	 *
-	 * This allows images to avoid storing both the digest and the pathname,
-	 * yet work with pre-existing object store formats of various kinds.
-	 */
+	/* Offset of the variable data section from start of file */
+	__le64 vdata_offset;
 
-	end = payload + payload_len;
-	for (p = payload; p != end; p++) {
-		/* Skip subdir structure */
-		if (*p == '/')
-			continue;
-
-		/* Break at (and ignore) extension */
-		if (*p == '.')
-			break;
-
-		if (n_nibbles == SHA256_DIGEST_SIZE * 2)
-			return -EINVAL; /* Too long */
-
-		digit = hex_to_bin(*p);
-		if (digit == -1)
-			return -EINVAL; /* Not hex digit */
-
-		n_nibbles++;
-		if ((n_nibbles % 2) == 0)
-			digest_out[n_nibbles / 2 - 1] = (last_digit << 4) | digit;
-		last_digit = digit;
-	}
-
-	if (n_nibbles != SHA256_DIGEST_SIZE * 2)
-		return -EINVAL; /* Too short */
-
-	return 0;
-}
-
-struct cfs_vdata_s {
-	u64 off;
-	u32 len;
-} __packed;
-
-struct cfs_header_s {
-	u8 version;
-	u8 unused1;
-	u16 unused2;
-
-	u32 magic;
-	u64 data_offset;
-	u64 root_inode;
-
-	u64 unused3[2];
-} __packed;
-
-enum cfs_inode_flags {
-	CFS_INODE_FLAGS_NONE = 0,
-	CFS_INODE_FLAGS_PAYLOAD = 1 << 0,
-	CFS_INODE_FLAGS_MODE = 1 << 1,
-	CFS_INODE_FLAGS_NLINK = 1 << 2,
-	CFS_INODE_FLAGS_UIDGID = 1 << 3,
-	CFS_INODE_FLAGS_RDEV = 1 << 4,
-	CFS_INODE_FLAGS_TIMES = 1 << 5,
-	CFS_INODE_FLAGS_TIMES_NSEC = 1 << 6,
-	CFS_INODE_FLAGS_LOW_SIZE = 1 << 7, /* Low 32bit of st_size */
-	CFS_INODE_FLAGS_HIGH_SIZE = 1 << 8, /* High 32bit of st_size */
-	CFS_INODE_FLAGS_XATTRS = 1 << 9,
-	CFS_INODE_FLAGS_DIGEST = 1 << 10, /* fs-verity sha256 digest */
-	CFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD = 1 << 11, /* Compute digest from payload */
+	__le64 unused[2]; /* For future use */
 };
 
-#define CFS_INODE_FLAG_CHECK(_flag, _name)                                     \
-	(((_flag) & (CFS_INODE_FLAGS_##_name)) != 0)
-#define CFS_INODE_FLAG_CHECK_SIZE(_flag, _name, _size)                         \
-	(CFS_INODE_FLAG_CHECK(_flag, _name) ? (_size) : 0)
-
-#define CFS_INODE_DEFAULT_MODE 0100644
-#define CFS_INODE_DEFAULT_NLINK 1
-#define CFS_INODE_DEFAULT_NLINK_DIR 2
-#define CFS_INODE_DEFAULT_UIDGID 0
-#define CFS_INODE_DEFAULT_RDEV 0
-#define CFS_INODE_DEFAULT_TIMES 0
-
-struct cfs_inode_s {
-	u32 flags;
-
-	/* Optional data: (selected by flags) */
-
-	/* This is the size of the type specific data that comes directly after
-	 * the inode in the file. Of this type:
-	 *
-	 * directory: cfs_dir_s
-	 * regular file: the backing filename
-	 * symlink: the target link
-	 *
-	 * Canonically payload_length is 0 for empty dir/file/symlink.
-	 */
-	u32 payload_length;
-
-	u32 st_mode; /* File type and mode.  */
-	u32 st_nlink; /* Number of hard links, only for regular files.  */
-	u32 st_uid; /* User ID of owner.  */
-	u32 st_gid; /* Group ID of owner.  */
-	u32 st_rdev; /* Device ID (if special file).  */
-	u64 st_size; /* Size of file, only used for regular files */
-
-	struct cfs_vdata_s xattrs; /* ref to variable data */
-
-	u8 digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
-
-	struct timespec64 st_mtim; /* Time of last modification.  */
-	struct timespec64 st_ctim; /* Time of last status change.  */
+struct cfs_vdata {
+	__le64 off; /* Offset into variable data section */
+	__le32 len;
 };
 
-static inline u32 cfs_inode_encoded_size(u32 flags)
-{
-	return sizeof(u32) /* flags */ +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, PAYLOAD, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, MODE, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, NLINK, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, UIDGID, sizeof(u32) + sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, RDEV, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, TIMES, sizeof(u64) * 2) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, TIMES_NSEC, sizeof(u32) * 2) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, LOW_SIZE, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, HIGH_SIZE, sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, XATTRS, sizeof(u64) + sizeof(u32)) +
-	       CFS_INODE_FLAG_CHECK_SIZE(flags, DIGEST, SHA256_DIGEST_SIZE);
-}
+struct cfs_inode_data {
+	__le32 st_mode; /* File type and mode.  */
+	__le32 st_nlink; /* Number of hard links, only for regular files.  */
+	__le32 st_uid; /* User ID of owner.  */
+	__le32 st_gid; /* Group ID of owner.  */
+	__le32 st_rdev; /* Device ID (if special file).  */
+	__le64 st_size; /* Size of file */
+	__le64 st_mtim_sec;
+	__le32 st_mtim_nsec;
+	__le64 st_ctim_sec;
+	__le32 st_ctim_nsec;
 
-struct cfs_dentry_s {
-	/* Index of struct cfs_inode_s */
-	u64 inode_index;
-	u8 d_type;
+	/* References to variable storage area: */
+
+	/* per-type variable data:
+	 * S_IFDIR: dirents
+	 * S_IFREG: backing file pathnem
+	 * S_IFLNLK; symlink target
+	 */
+	struct cfs_vdata variable_data;
+
+	struct cfs_vdata xattrs;
+	struct cfs_vdata digest; /* Expected fs-verity digest of backing file */
+};
+
+struct cfs_dirent {
+	__le32 inode_num; /* Index in inode table */
+	__le32 name_offset; /* Offset from end of cfs_dir_header */
 	u8 name_len;
-	u16 name_offset;
-} __packed;
+	u8 d_type;
+	u16 _padding;
+};
 
-struct cfs_dir_chunk_s {
-	u16 n_dentries;
-	u16 chunk_size;
-	u64 chunk_offset;
-} __packed;
+/* Directory entries, stored in variable data section, 32bit aligned,
+ * followed by name string table
+ */
+struct cfs_dir_header {
+	__le32 n_dirents;
+	struct cfs_dirent dirents[];
+};
 
-struct cfs_dir_s {
-	u32 n_chunks;
-	struct cfs_dir_chunk_s chunks[];
-} __packed;
+static inline size_t cfs_dir_header_size(size_t n_dirents)
+{
+	return sizeof(struct cfs_dir_header) + n_dirents * sizeof(struct cfs_dirent);
+}
 
-#define cfs_dir_size(_n_chunks)                                                \
-	(sizeof(struct cfs_dir_s) + (_n_chunks) * sizeof(struct cfs_dir_chunk_s))
+struct cfs_xattr_element {
+	__le16 key_length;
+	__le16 value_length;
+};
 
-/* xattr representation.  */
-struct cfs_xattr_element_s {
-	u16 key_length;
-	u16 value_length;
-} __packed;
+/* Xattrs, stored in variable data section , 32bit aligned, followed
+ * by key/value table
+ */
+struct cfs_xattr_header {
+	__le16 n_attr;
+	struct cfs_xattr_element attr[0];
+};
 
-struct cfs_xattr_header_s {
-	u16 n_attr;
-	struct cfs_xattr_element_s attr[0];
-} __packed;
-
-#define cfs_xattr_header_size(_n_element)                                      \
-	(sizeof(struct cfs_xattr_header_s) +                                   \
-	 (_n_element) * sizeof(struct cfs_xattr_element_s))
+static inline size_t cfs_xattr_header_size(size_t n_element)
+{
+	return sizeof(struct cfs_xattr_header) +
+	       n_element * sizeof(struct cfs_xattr_element);
+}
 
 #endif

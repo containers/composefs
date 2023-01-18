@@ -58,18 +58,17 @@ struct lcfs_node_s {
 	struct lcfs_node_s *link_to; /* Owns refs */
 
 	char *name;
-	char *payload;
-	struct lcfs_dentry_s data;
-	uint64_t inode_index;
+	char *payload; /* backing file or symlink target */
+	struct lcfs_dirent_s data;
+	uint32_t inode_num;
 
 	struct lcfs_xattr_s *xattrs;
 	size_t n_xattrs;
 
 	bool digest_set;
+	uint8_t digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
 
 	struct lcfs_inode_s inode;
-	size_t n_dir_chunks;
-	struct lcfs_dir_chunk_s *dir_chunks;
 
 	/* Used during compute_tree */
 	struct lcfs_node_s *next; /* Use for the queue in compute_tree */
@@ -94,22 +93,13 @@ struct lcfs_ctx_s {
 	lcfs_write_cb write_cb;
 	off_t bytes_written;
 	FsVerityContext *fsverity_ctx;
-
-#ifdef LCFS_SIZE_STATS
-	loff_t inode_data_size;
-	loff_t payload_data_size;
-	loff_t dir_data_size;
-#endif
 };
 
+#define APPEND_FLAGS_DEDUP (1 << 0)
+#define APPEND_FLAGS_ALIGN (1 << 1)
+
 int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-		      const void *data, size_t len);
-
-int lcfs_append_vdata_no_dedup(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-			       const void *data, size_t len);
-
-int lcfs_append_vdata_opts(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-			   const void *data, size_t len, bool dedup);
+		      const void *data, size_t len, uint32_t flags);
 
 static int lcfs_close(struct lcfs_ctx_s *ctx);
 
@@ -184,13 +174,14 @@ static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root)
 
 #define max(a, b) ((a > b) ? (a) : (b))
 
-int lcfs_append_vdata_opts(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-			   const void *data, size_t len, bool dedup)
+int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
+		      const void *data, size_t len, uint32_t flags)
 {
 	struct hasher_vdata_s *key;
 	char *new_vdata;
 	size_t pad_length;
-	size_t remaining_in_page;
+	bool dedup = (flags & APPEND_FLAGS_DEDUP) != 0;
+	bool align = (flags & APPEND_FLAGS_ALIGN) != 0;
 
 	if (dedup) {
 		struct hasher_vdata_s *ent;
@@ -209,13 +200,10 @@ int lcfs_append_vdata_opts(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 		}
 	}
 
-	/* We ensure that no data overlaps a (4k) page boundary (except if data itself > 4k)
-	   by padding to next page */
-	remaining_in_page = 4096 - (ctx->vdata_len % 4096);
+	/* We ensure that all vdata are aligned to start at 4 bytes  */
 	pad_length = 0;
-	if (len > remaining_in_page) {
-		pad_length = remaining_in_page;
-	}
+	if (align && ctx->vdata_len % 4 != 0)
+		pad_length = 4 - ctx->vdata_len % 4;
 
 	if (ctx->vdata_len + pad_length + len > ctx->vdata_allocated) {
 		size_t new_size, increment;
@@ -299,126 +287,13 @@ static int cmp_xattr(const void *a, const void *b)
 	return strcmp(na->key, nb->key);
 }
 
-static ssize_t compute_dir_payload_size(struct lcfs_node_s *node)
-{
-	size_t chunk_size = 0;
-	size_t payload_size;
-	size_t n_chunks = 1;
-	size_t i;
-
-	if (node->children_size == 0)
-		return 0;
-
-	for (i = 0; i < node->children_size; i++) {
-		struct lcfs_node_s *child = node->children[i];
-		size_t child_name_len = strlen(child->name);
-		size_t child_size;
-
-		/* Need valid names for all children */
-		if (child->name == NULL || child_name_len > LCFS_MAX_NAME_LENGTH) {
-			errno = EINVAL;
-			return -1;
-		}
-
-		child_size = sizeof(struct lcfs_dentry_s) + child_name_len;
-
-		chunk_size += child_size;
-
-		if (chunk_size > LCFS_MAX_DIR_CHUNK_SIZE) {
-			/* Didn't fit, add new chunk */
-			n_chunks++;
-			chunk_size = child_size;
-		}
-	}
-
-	payload_size = lcfs_dir_size(n_chunks);
-
-	node->dir_chunks = calloc(sizeof(struct lcfs_dir_chunk_s), n_chunks);
-	if (node->dir_chunks == NULL) {
-		errno = ENOMEM;
-		return -1;
-	}
-	node->n_dir_chunks = n_chunks;
-
-	return payload_size;
-}
-
-static ssize_t compute_payload_size(struct lcfs_node_s *node)
-{
-	ssize_t payload_size = 0;
-
-	if ((node->inode.st_mode & S_IFMT) == S_IFLNK) {
-		if (node->payload && strlen(node->payload) != 0) {
-			payload_size = strlen(node->payload);
-		}
-	} else if ((node->inode.st_mode & S_IFMT) == S_IFREG) {
-		/* Ensure we never use a payload for empty files, for canonicalization purposes */
-		if (node->inode.st_size != 0 && node->payload &&
-		    strlen(node->payload) != 0) {
-			payload_size = strlen(node->payload);
-		}
-	} else if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
-		payload_size = compute_dir_payload_size(node);
-		if (payload_size < 0)
-			return payload_size;
-	}
-
-	return payload_size;
-}
-
-static uint32_t compute_flags(struct lcfs_node_s *node)
-{
-	uint32_t flags = 0;
-	if (node->inode.payload_length != 0)
-		flags |= LCFS_INODE_FLAGS_PAYLOAD;
-	if (node->inode.st_mode != LCFS_INODE_DEFAULT_MODE)
-		flags |= LCFS_INODE_FLAGS_MODE;
-	if ((node->inode.st_mode & S_IFMT) == S_IFDIR &&
-	    node->inode.st_nlink != LCFS_INODE_DEFAULT_NLINK_DIR)
-		flags |= LCFS_INODE_FLAGS_NLINK;
-	if ((node->inode.st_mode & S_IFMT) != S_IFDIR &&
-	    node->inode.st_nlink != LCFS_INODE_DEFAULT_NLINK)
-		flags |= LCFS_INODE_FLAGS_NLINK;
-	if (node->inode.st_uid != LCFS_INODE_DEFAULT_UIDGID ||
-	    node->inode.st_uid != LCFS_INODE_DEFAULT_UIDGID)
-		flags |= LCFS_INODE_FLAGS_UIDGID;
-	if (node->inode.st_rdev != LCFS_INODE_DEFAULT_RDEV)
-		flags |= LCFS_INODE_FLAGS_RDEV;
-	if (node->inode.st_mtim.tv_sec != LCFS_INODE_DEFAULT_TIMES ||
-	    node->inode.st_ctim.tv_sec != LCFS_INODE_DEFAULT_TIMES)
-		flags |= LCFS_INODE_FLAGS_TIMES;
-	if (node->inode.st_mtim.tv_nsec != 0 || node->inode.st_ctim.tv_nsec != 0)
-		flags |= LCFS_INODE_FLAGS_TIMES_NSEC;
-	if ((node->inode.st_size & UINT32_MAX) != 0)
-		flags |= LCFS_INODE_FLAGS_LOW_SIZE;
-	if ((node->inode.st_size >> 32) != 0)
-		flags |= LCFS_INODE_FLAGS_HIGH_SIZE;
-	if (node->n_xattrs > 0)
-		flags |= LCFS_INODE_FLAGS_XATTRS;
-	if (node->digest_set) {
-		uint8_t payload_digest[LCFS_DIGEST_SIZE];
-		if (lcfs_digest_from_payload(node->payload, node->inode.payload_length,
-					     payload_digest) == 0 &&
-		    memcmp(payload_digest, node->inode.digest, LCFS_DIGEST_SIZE) == 0)
-			flags |= LCFS_INODE_FLAGS_DIGEST_FROM_PAYLOAD;
-		else
-			flags |= LCFS_INODE_FLAGS_DIGEST;
-	}
-
-	return flags;
-}
-
 /* This ensures that the tree is in a well defined order, with
    children sorted by name, and the nodes visited in breadth-first
-   order.  It also updates the payload length of the nodes and using
-   that, their inode offset. */
+   order.  It also updates the inode offset. */
 static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 {
-	size_t i;
-	ssize_t payload_length;
+	uint32_t index;
 	struct lcfs_node_s *node;
-	uint32_t inode_size;
-	uint32_t flags;
 
 	/* Start with the root node. */
 
@@ -427,7 +302,7 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 
 	node = root;
 
-	for (node = root; node != NULL; node = node->next) {
+	for (node = root, index = 0; node != NULL; node = node->next, index++) {
 		if ((node->inode.st_mode & S_IFMT) != S_IFDIR &&
 		    node->children_size != 0) {
 			/* Only dirs can have children */
@@ -438,7 +313,7 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		/* Fix up directory n_links counts, they are 2 + nr of subdirs */
 		if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
 			size_t n_link = 2;
-			for (i = 0; i < node->children_size; i++) {
+			for (size_t i = 0; i < node->children_size; i++) {
 				struct lcfs_node_s *child = node->children[i];
 				if ((child->inode.st_mode & S_IFMT) == S_IFDIR) {
 					n_link++;
@@ -453,40 +328,13 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		qsort(node->xattrs, node->n_xattrs, sizeof(node->xattrs[0]),
 		      cmp_xattr);
 
-		/* Compute payload length */
-		payload_length = compute_payload_size(node);
-		if (payload_length < 0)
-			return payload_length;
-		if (payload_length > UINT32_MAX) {
-			errno = EINVAL;
-			return -1;
-		}
-		node->inode.payload_length = payload_length;
-
-		flags = compute_flags(node);
-
-		node->inode.flags = flags;
-
-		inode_size = lcfs_inode_encoded_size(flags);
-
 		/* Assign inode index */
-		ctx->inode_table_size += payload_length;
-		node->inode_index = ctx->inode_table_size;
-		ctx->inode_table_size += inode_size;
-
-#ifdef LCFS_SIZE_STATS
-		ctx->inode_data_size += inode_size;
-		if ((node->inode.st_mode & S_IFMT) == S_IFLNK ||
-		    (node->inode.st_mode & S_IFMT) == S_IFREG) {
-			ctx->payload_data_size += payload_length;
-		} else if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
-			ctx->dir_data_size += payload_length;
-		}
-#endif
+		node->inode_num = index;
+		ctx->inode_table_size += sizeof(struct lcfs_inode_s);
 
 		node->in_tree = true;
 		/* Append to queue for more work */
-		for (i = 0; i < node->children_size; i++) {
+		for (size_t i = 0; i < node->children_size; i++) {
 			struct lcfs_node_s *child = node->children[i];
 
 			/* Skip hardlinks, they will not be serialized separately */
@@ -505,31 +353,6 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 	return 0;
 }
 
-static size_t get_dir_chunk_n_dentries(struct lcfs_node_s *node, size_t start,
-				       size_t *chunk_size_out)
-{
-	size_t i;
-	size_t chunk_size;
-
-	chunk_size = 0;
-	for (i = start; i < node->children_size; i++) {
-		struct lcfs_node_s *dirent_child = node->children[i];
-		size_t name_len = strlen(dirent_child->name);
-		size_t child_size = sizeof(struct lcfs_dentry_s) + name_len;
-
-		/* Will this outgrow the current chunk */
-		if (chunk_size + child_size > LCFS_MAX_DIR_CHUNK_SIZE) {
-			break;
-		}
-
-		chunk_size += child_size;
-	}
-
-	if (chunk_size_out)
-		*chunk_size_out = chunk_size;
-	return i - start;
-}
-
 static struct lcfs_node_s *follow_links(struct lcfs_node_s *node)
 {
 	if (node->link_to)
@@ -537,69 +360,117 @@ static struct lcfs_node_s *follow_links(struct lcfs_node_s *node)
 	return node;
 }
 
-static int compute_dirents(struct lcfs_ctx_s *ctx)
+static ssize_t compute_dirents_size(struct lcfs_node_s *node)
+{
+	size_t names_size = 0;
+	size_t i;
+
+	if (node->children_size == 0)
+		return 0;
+
+	for (i = 0; i < node->children_size; i++) {
+		struct lcfs_node_s *child = node->children[i];
+		size_t child_name_len = strlen(child->name);
+
+		/* Need valid names for all children */
+		if (child->name == NULL || child_name_len > LCFS_MAX_NAME_LENGTH) {
+			errno = EINVAL;
+			return -1;
+		}
+
+		names_size += child_name_len;
+	}
+
+	return lcfs_dir_header_size(node->children_size) + names_size;
+}
+
+static int compute_dirents(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
+			   struct lcfs_vdata_s *vdata)
+{
+	char *names;
+	char *buffer;
+	ssize_t dirents_size;
+	;
+	struct lcfs_dir_header_s *header;
+	size_t name_offset = 0;
+	int r;
+
+	dirents_size = compute_dirents_size(node);
+	if (dirents_size == 0)
+		return 0;
+
+	buffer = calloc(1, dirents_size);
+	if (buffer == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	header = (struct lcfs_dir_header_s *)buffer;
+	names = (char *)buffer + lcfs_dir_header_size(node->children_size);
+	header->n_dirents = lcfs_u32_to_file(node->children_size);
+
+	/* Write dir data */
+	for (size_t i = 0; i < node->children_size; i++) {
+		struct lcfs_node_s *dirent_child = node->children[i];
+		struct lcfs_node_s *target_child = follow_links(dirent_child);
+		struct lcfs_dirent_s *dirent = &header->dirents[i];
+		size_t name_len = strlen(dirent_child->name);
+
+		dirent->inode_num = lcfs_u32_to_file(target_child->inode_num);
+		dirent->d_type = node_get_dtype(target_child);
+		dirent->name_len = name_len;
+		dirent->name_offset = lcfs_u32_to_file(name_offset);
+		dirent->_padding = 0;
+
+		memcpy(names + name_offset, dirent_child->name, dirent->name_len);
+		name_offset += dirent->name_len;
+	}
+
+	r = lcfs_append_vdata(ctx, vdata, buffer, dirents_size, APPEND_FLAGS_ALIGN);
+	free(buffer);
+	return r;
+}
+
+static int compute_variable_data(struct lcfs_ctx_s *ctx)
 {
 	struct lcfs_node_s *node;
-	char buffer[LCFS_MAX_DIR_CHUNK_SIZE];
+	int r;
 
 	for (node = ctx->root; node != NULL; node = node->next) {
-		size_t chunk_start, chunk_nr;
-		int r;
-
-		if ((node->inode.st_mode & S_IFMT) != S_IFDIR ||
-		    node->inode.payload_length == 0)
-			continue;
-
-		/* Write chunk data */
-		for (chunk_nr = 0, chunk_start = 0;
-		     chunk_start < node->children_size; chunk_nr++) {
-			struct lcfs_dir_chunk_s *dir_chunk =
-				&node->dir_chunks[chunk_nr];
-			size_t chunk_n_dentries =
-				get_dir_chunk_n_dentries(node, chunk_start, NULL);
-			struct lcfs_dentry_s *dentries =
-				(struct lcfs_dentry_s *)buffer;
-			char *names =
-				(char *)buffer +
-				(sizeof(struct lcfs_dentry_s) * chunk_n_dentries);
-			size_t name_offset = 0;
-			size_t chunk_size;
-			struct lcfs_vdata_s vdata;
-
-			for (size_t i = chunk_start;
-			     i < chunk_start + chunk_n_dentries; i++) {
-				struct lcfs_node_s *dirent_child =
-					node->children[i];
-				struct lcfs_node_s *target_child =
-					follow_links(dirent_child);
-				struct lcfs_dentry_s *dentry =
-					&dentries[i - chunk_start];
-				size_t name_len = strlen(dirent_child->name);
-
-				dentry->inode_index =
-					lcfs_u64_to_file(target_child->inode_index);
-				dentry->d_type = node_get_dtype(target_child);
-				dentry->name_len = name_len;
-				dentry->name_offset = lcfs_u16_to_file(name_offset);
-				memcpy(names + name_offset, dirent_child->name,
-				       dentry->name_len);
-				name_offset += dentry->name_len;
-			}
-
-			chunk_size = sizeof(struct lcfs_dentry_s) * chunk_n_dentries +
-				     name_offset;
-			assert(chunk_size <= LCFS_MAX_DIR_CHUNK_SIZE);
-
-			r = lcfs_append_vdata(ctx, &vdata, buffer, chunk_size);
-			if (r < 0) {
+		if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
+			r = compute_dirents(ctx, node, &node->inode.variable_data);
+			if (r < 0)
 				return r;
+		}
+		if ((node->inode.st_mode & S_IFMT) == S_IFREG) {
+			/* Ensure we never use a payload for empty files, for canonicalization purposes */
+			if (node->inode.st_size != 0 && node->payload &&
+			    strlen(node->payload) != 0) {
+				r = lcfs_append_vdata(ctx, &node->inode.variable_data,
+						      node->payload,
+						      strlen(node->payload),
+						      APPEND_FLAGS_DEDUP);
+				if (r < 0)
+					return r;
 			}
+		}
+		if ((node->inode.st_mode & S_IFMT) == S_IFLNK) {
+			if (node->payload && strlen(node->payload) != 0) {
+				r = lcfs_append_vdata(ctx, &node->inode.variable_data,
+						      node->payload,
+						      strlen(node->payload),
+						      APPEND_FLAGS_DEDUP);
+				if (r < 0)
+					return r;
+			}
+		}
 
-			dir_chunk->n_dentries = chunk_n_dentries;
-			dir_chunk->chunk_size = chunk_size;
-			dir_chunk->chunk_offset = vdata.off;
-
-			chunk_start += chunk_n_dentries;
+		if (node->digest_set) {
+			r = lcfs_append_vdata(ctx, &node->inode.digest,
+					      node->digest, LCFS_DIGEST_SIZE,
+					      APPEND_FLAGS_DEDUP);
+			if (r < 0)
+				return r;
 		}
 	}
 
@@ -633,12 +504,6 @@ static int compute_xattrs(struct lcfs_ctx_s *ctx)
 		header_len = lcfs_xattr_header_size(node->n_xattrs);
 		buffer_len = header_len + data_length;
 
-		/* Limit to max xattrs size */
-		if (buffer_len > LCFS_MAX_XATTRS_SIZE) {
-			errno = EINVAL;
-			return -1;
-		}
-
 		buffer = calloc(1, buffer_len);
 		if (buffer == NULL) {
 			errno = ENOMEM;
@@ -663,7 +528,8 @@ static int compute_xattrs(struct lcfs_ctx_s *ctx)
 			data += xattr->value_len;
 		}
 
-		r = lcfs_append_vdata(ctx, &out, buffer, buffer_len);
+		r = lcfs_append_vdata(ctx, &out, buffer, buffer_len,
+				      APPEND_FLAGS_DEDUP | APPEND_FLAGS_ALIGN);
 		if (r < 0) {
 			free(buffer);
 			return r;
@@ -715,161 +581,34 @@ static int lcfs_write_pad(struct lcfs_ctx_s *ctx, size_t data_len)
 	return 0;
 }
 
-static int write_uint32(struct lcfs_ctx_s *ctx, uint32_t val)
-{
-	uint32_t _val = lcfs_u32_to_file(val);
-	return lcfs_write(ctx, &_val, sizeof(uint32_t));
-}
-
-static int write_uint64(struct lcfs_ctx_s *ctx, uint64_t val)
-{
-	uint64_t _val = lcfs_u64_to_file(val);
-	return lcfs_write(ctx, &_val, sizeof(uint64_t));
-}
-
 static int write_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_inode_s *ino)
 {
-	int ret;
-	uint32_t flags = ino->flags;
-	off_t file_start = ctx->bytes_written;
+	struct lcfs_inode_s copy;
 
-	ret = write_uint32(ctx, ino->flags);
-	if (ret < 0)
-		return ret;
+	/* Convert endianness */
+	copy.st_mode = lcfs_u32_to_file(ino->st_mode);
+	copy.st_nlink = lcfs_u32_to_file(ino->st_nlink);
+	copy.st_uid = lcfs_u32_to_file(ino->st_uid);
+	copy.st_gid = lcfs_u32_to_file(ino->st_gid);
+	copy.st_rdev = lcfs_u32_to_file(ino->st_rdev);
+	copy.st_size = lcfs_u64_to_file(ino->st_size);
 
-	if (LCFS_INODE_FLAG_CHECK(flags, PAYLOAD)) {
-		ret = write_uint32(ctx, ino->payload_length);
-		if (ret < 0)
-			return ret;
-	}
+	copy.st_mtim_sec = lcfs_u64_to_file(ino->st_mtim_sec);
+	copy.st_mtim_nsec = lcfs_u32_to_file(ino->st_mtim_nsec);
 
-	if (LCFS_INODE_FLAG_CHECK(flags, MODE)) {
-		ret = write_uint32(ctx, ino->st_mode);
-		if (ret < 0)
-			return ret;
-	}
+	copy.st_ctim_sec = lcfs_u64_to_file(ino->st_ctim_sec);
+	copy.st_ctim_nsec = lcfs_u32_to_file(ino->st_ctim_nsec);
 
-	if (LCFS_INODE_FLAG_CHECK(flags, NLINK)) {
-		ret = write_uint32(ctx, ino->st_nlink);
-		if (ret < 0)
-			return ret;
-	}
+	copy.variable_data.off = lcfs_u64_to_file(ino->variable_data.off);
+	copy.variable_data.len = lcfs_u32_to_file(ino->variable_data.len);
 
-	if (LCFS_INODE_FLAG_CHECK(flags, UIDGID)) {
-		ret = write_uint32(ctx, ino->st_uid);
-		if (ret < 0)
-			return ret;
-		ret = write_uint32(ctx, ino->st_gid);
-		if (ret < 0)
-			return ret;
-	}
+	copy.xattrs.off = lcfs_u64_to_file(ino->xattrs.off);
+	copy.xattrs.len = lcfs_u32_to_file(ino->xattrs.len);
 
-	if (LCFS_INODE_FLAG_CHECK(flags, RDEV)) {
-		ret = write_uint32(ctx, ino->st_rdev);
-		if (ret < 0)
-			return ret;
-	}
+	copy.digest.off = lcfs_u64_to_file(ino->digest.off);
+	copy.digest.len = lcfs_u32_to_file(ino->digest.len);
 
-	if (LCFS_INODE_FLAG_CHECK(flags, TIMES)) {
-		ret = write_uint64(ctx, ino->st_mtim.tv_sec);
-		if (ret < 0)
-			return ret;
-		ret = write_uint64(ctx, ino->st_ctim.tv_sec);
-		if (ret < 0)
-			return ret;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(flags, TIMES_NSEC)) {
-		ret = write_uint32(ctx, ino->st_mtim.tv_nsec);
-		if (ret < 0)
-			return ret;
-		ret = write_uint32(ctx, ino->st_ctim.tv_nsec);
-		if (ret < 0)
-			return ret;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(flags, LOW_SIZE)) {
-		ret = write_uint32(ctx, ino->st_size & UINT32_MAX);
-		if (ret < 0)
-			return ret;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(flags, HIGH_SIZE)) {
-		ret = write_uint32(ctx, ino->st_size >> 32);
-		if (ret < 0)
-			return ret;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(flags, XATTRS)) {
-		ret = write_uint64(ctx, ino->xattrs.off);
-		if (ret < 0)
-			return ret;
-
-		ret = write_uint32(ctx, ino->xattrs.len);
-		if (ret < 0)
-			return ret;
-	}
-
-	if (LCFS_INODE_FLAG_CHECK(flags, DIGEST)) {
-		ret = lcfs_write(ctx, ino->digest, LCFS_DIGEST_SIZE);
-		if (ret < 0)
-			return ret;
-	}
-
-	assert(lcfs_inode_encoded_size(flags) == ctx->bytes_written - file_start);
-
-	return 0;
-}
-
-static int write_dir_payload_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
-{
-	int ret;
-	struct lcfs_dir_s dir = { lcfs_u32_to_file(node->n_dir_chunks) };
-
-	ret = lcfs_write(ctx, &dir, sizeof(dir));
-	if (ret < 0)
-		return ret;
-
-	for (size_t i = 0; i < node->n_dir_chunks; i++) {
-		struct lcfs_dir_chunk_s *chunk = &node->dir_chunks[i];
-		struct lcfs_dir_chunk_s out = {
-			lcfs_u16_to_file(chunk->n_dentries),
-			lcfs_u16_to_file(chunk->chunk_size),
-			lcfs_u64_to_file(chunk->chunk_offset),
-		};
-
-		ret = lcfs_write(ctx, &out, sizeof(out));
-		if (ret < 0)
-			return ret;
-	}
-
-	return 0;
-}
-
-static int write_payload_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
-{
-	struct lcfs_inode_s *ino = &(node->inode);
-	off_t file_start = ctx->bytes_written;
-	int ret;
-
-	if (ino->payload_length == 0)
-		return 0;
-
-	if ((node->inode.st_mode & S_IFMT) == S_IFLNK ||
-	    (node->inode.st_mode & S_IFMT) == S_IFREG) {
-		assert(ino->payload_length == strlen(node->payload));
-		ret = lcfs_write(ctx, node->payload, strlen(node->payload));
-		if (ret < 0)
-			return ret;
-	} else if ((node->inode.st_mode & S_IFMT) == S_IFDIR) {
-		ret = write_dir_payload_data(ctx, node);
-		if (ret < 0)
-			return ret;
-	}
-
-	assert(node->inode.payload_length == ctx->bytes_written - file_start);
-
-	return 0;
+	return lcfs_write(ctx, &copy, sizeof(struct lcfs_inode_s));
 }
 
 static int write_inodes(struct lcfs_ctx_s *ctx)
@@ -878,10 +617,6 @@ static int write_inodes(struct lcfs_ctx_s *ctx)
 	int ret;
 
 	for (node = ctx->root; node != NULL; node = node->next) {
-		ret = write_payload_data(ctx, node);
-		if (ret < 0)
-			return ret;
-
 		ret = write_inode_data(ctx, &(node->inode));
 		if (ret < 0)
 			return ret;
@@ -893,8 +628,8 @@ static int write_inodes(struct lcfs_ctx_s *ctx)
 int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 		  uint8_t *digest_out)
 {
-	struct lcfs_header_s header = {
-		.version = LCFS_VERSION,
+	struct lcfs_superblock_s superblock = {
+		.version = lcfs_u32_to_file(LCFS_VERSION),
 		.magic = lcfs_u32_to_file(LCFS_MAGIC),
 	};
 	int ret = 0;
@@ -924,13 +659,12 @@ int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 		return ret;
 	}
 
-	data_offset =
-		ALIGN_TO(sizeof(struct lcfs_header_s) + ctx->inode_table_size, 4096);
+	data_offset = ALIGN_TO(
+		sizeof(struct lcfs_superblock_s) + ctx->inode_table_size, 4);
 
-	header.data_offset = lcfs_u64_to_file(data_offset);
-	header.root_inode = lcfs_u64_to_file(root->inode_index);
+	superblock.vdata_offset = lcfs_u64_to_file(data_offset);
 
-	ret = compute_dirents(ctx);
+	ret = compute_variable_data(ctx);
 	if (ret < 0) {
 		lcfs_close(ctx);
 		return ret;
@@ -942,7 +676,7 @@ int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 		return ret;
 	}
 
-	ret = lcfs_write(ctx, &header, sizeof(header));
+	ret = lcfs_write(ctx, &superblock, sizeof(superblock));
 	if (ret < 0) {
 		lcfs_close(ctx);
 		return ret;
@@ -955,7 +689,7 @@ int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 	}
 
 	assert(ctx->bytes_written ==
-	       sizeof(struct lcfs_header_s) + ctx->inode_table_size);
+	       sizeof(struct lcfs_superblock_s) + ctx->inode_table_size);
 
 	if (ctx->vdata) {
 		/* Pad vdata to 4k alignment */
@@ -976,13 +710,6 @@ int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 		lcfs_fsverity_context_get_digest(ctx->fsverity_ctx, digest_out);
 	}
 
-#ifdef LCFS_SIZE_STATS
-	fprintf(stderr,
-		"Size - Inodes: %ld kb, payload: %ld kb, dir: %ld kb, xattrs: %ld kb\n",
-		ctx->inode_data_size / 1024, ctx->payload_data_size / 1024,
-		ctx->dir_data_size / 1024, ctx->vdata_len / 1024);
-#endif
-
 	lcfs_close(ctx);
 	return 0;
 }
@@ -1000,18 +727,6 @@ static int lcfs_close(struct lcfs_ctx_s *ctx)
 	free(ctx);
 
 	return 0;
-}
-
-int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-		      const void *data, size_t len)
-{
-	return lcfs_append_vdata_opts(ctx, out, data, len, true);
-}
-
-int lcfs_append_vdata_no_dedup(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-			       const void *data, size_t len)
-{
-	return lcfs_append_vdata_opts(ctx, out, data, len, false);
 }
 
 static int read_xattrs(struct lcfs_node_s *ret, int dirfd, const char *fname)
@@ -1197,8 +912,10 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 	}
 
 	if ((buildflags & LCFS_BUILD_USE_EPOCH) == 0) {
-		ret->inode.st_mtim = sb.st_mtim;
-		ret->inode.st_ctim = sb.st_ctim;
+		ret->inode.st_mtim_sec = sb.st_mtim.tv_sec;
+		ret->inode.st_mtim_nsec = sb.st_mtim.tv_nsec;
+		ret->inode.st_ctim_sec = sb.st_ctim.tv_sec;
+		ret->inode.st_ctim_nsec = sb.st_ctim.tv_nsec;
 	}
 
 	if ((buildflags & LCFS_BUILD_SKIP_XATTRS) == 0) {
@@ -1226,7 +943,7 @@ int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload)
 const uint8_t *lcfs_node_get_fsverity_digest(struct lcfs_node_s *node)
 {
 	if (node->digest_set)
-		return node->inode.digest;
+		return node->digest;
 	return NULL;
 }
 
@@ -1235,7 +952,7 @@ void lcfs_node_set_fsverity_digest(struct lcfs_node_s *node,
 				   uint8_t digest[LCFS_DIGEST_SIZE])
 {
 	node->digest_set = true;
-	memcpy(node->inode.digest, digest, LCFS_DIGEST_SIZE);
+	memcpy(node->digest, digest, LCFS_DIGEST_SIZE);
 }
 
 const char *lcfs_node_get_name(struct lcfs_node_s *node)
@@ -1317,22 +1034,26 @@ void lcfs_node_set_size(struct lcfs_node_s *node, uint64_t size)
 
 void lcfs_node_set_mtime(struct lcfs_node_s *node, struct timespec *time)
 {
-	node->inode.st_mtim = *time;
+	node->inode.st_mtim_sec = time->tv_sec;
+	node->inode.st_mtim_nsec = time->tv_nsec;
 }
 
 void lcfs_node_get_mtime(struct lcfs_node_s *node, struct timespec *time)
 {
-	*time = node->inode.st_mtim;
+	time->tv_sec = node->inode.st_mtim_sec;
+	time->tv_nsec = node->inode.st_mtim_nsec;
 }
 
 void lcfs_node_set_ctime(struct lcfs_node_s *node, struct timespec *time)
 {
-	node->inode.st_ctim = *time;
+	node->inode.st_ctim_sec = time->tv_sec;
+	node->inode.st_ctim_nsec = time->tv_nsec;
 }
 
 void lcfs_node_get_ctime(struct lcfs_node_s *node, struct timespec *time)
 {
-	*time = node->inode.st_ctim;
+	time->tv_sec = node->inode.st_ctim_sec;
+	time->tv_nsec = node->inode.st_ctim_nsec;
 }
 
 struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node, const char *name)
@@ -1477,7 +1198,6 @@ void lcfs_node_unref(struct lcfs_node_s *node)
 
 	free(node->name);
 	free(node->payload);
-	free(node->dir_chunks);
 
 	for (i = 0; i < node->n_xattrs; i++) {
 		free(node->xattrs[i].key);
