@@ -52,11 +52,12 @@ static int get_file_size(int fd, off_t *out)
 }
 
 static const void *get_v_data(struct lcfs_inode_s *ino, const uint8_t *vdata,
-			      void *default_val)
+			      int *len, void *default_val)
 {
 	if (ino->variable_data.len == 0)
 		return default_val;
 
+	*len = ino->variable_data.len;
 	return vdata + ino->variable_data.off;
 }
 
@@ -141,20 +142,25 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 		if (is_dir(&ino))
 			printf("%.*s/\n", (int)name_len, name);
 		else {
-			const char *payload = get_v_data(&ino, vdata, "");
+			int payload_len = 0;
+			const char *payload =
+				get_v_data(&ino, vdata, &payload_len, "");
 			if ((ino.st_mode & S_IFMT) == S_IFLNK) {
-				printf("%.*s -> %s\n", (int)name_len, name, payload);
+				printf("%.*s -> %.*s\n", (int)name_len, name,
+				       payload_len, payload);
 			} else {
-				printf("%.*s [%s]\n", (int)name_len, name, payload);
+				printf("%.*s [%.*s]\n", (int)name_len, name,
+				       payload_len, payload);
 			}
 		}
 	else {
 		int n_xattrs = 0;
 		char digest_str[LCFS_DIGEST_SIZE * 2 + 1] = { 0 };
 		const char *payload = "";
+		int payload_len = 0;
 
 		if (!is_dir(&ino))
-			payload = get_v_data(&ino, vdata, "");
+			payload = get_v_data(&ino, vdata, &payload_len, "");
 
 		if (ino.xattrs.len != 0) {
 			struct lcfs_xattr_header_s *header =
@@ -169,11 +175,12 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 		}
 
 		printf("name:%.*s|ino:%u|mode:%o|nlinks:%u|uid:%d|gid:%d|rdev:%d|size:%" PRIu64
-		       "|mtim:%ld.%u|ctim:%ld.%u|nxargs:%d|digest:%s|payload:%s\n",
+		       "|mtim:%" PRIi64 ".%u|ctim:%" PRIi64
+		       ".%u|nxargs:%d|digest:%s|payload:%.*s\n",
 		       (int)name_len, name, index, ino.st_mode, ino.st_nlink,
 		       ino.st_uid, ino.st_gid, ino.st_rdev, ino.st_size,
 		       ino.st_mtim_sec, ino.st_mtim_nsec, ino.st_ctim_sec,
-		       ino.st_ctim_nsec, n_xattrs, digest_str, payload);
+		       ino.st_ctim_nsec, n_xattrs, digest_str, payload_len, payload);
 	}
 
 	if (dirp && recurse && ino.variable_data.len != 0) {
