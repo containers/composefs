@@ -28,10 +28,11 @@ MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 
 /* Backing file fs-verity check policy, ordered in strictness */
 enum cfs_verity_policy {
-	CFS_VERITY_CHECK_NONE = 0,         /* Never verify digest */
+	CFS_VERITY_CHECK_NONE = 0, /* Never verify digest */
 	CFS_VERITY_CHECK_IF_SPECIFIED = 1, /* Verify if specified in image */
-	CFS_VERITY_CHECK_REQUIRED = 2,     /* Always verify, fail if not if specified in image */
+	CFS_VERITY_CHECK_REQUIRED = 2, /* Always verify, fail if not if specified in image */
 };
+
 #define CFS_VERITY_CHECK_MAX_POLICY 2
 
 struct cfs_info {
@@ -97,9 +98,8 @@ static unsigned int cfs_split_basedirs(char *str)
 	return ctr;
 }
 
-static struct inode *cfs_make_inode(struct cfs_context *ctx,
-				    struct super_block *sb, ino_t ino_num,
-				    const struct inode *dir)
+static struct inode *cfs_make_inode(struct cfs_context *ctx, struct super_block *sb,
+				    ino_t ino_num, const struct inode *dir)
 {
 	struct inode *inode;
 	struct cfs_inode *cino;
@@ -524,7 +524,8 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 		return 0;
 	}
 
-	if (fsi->verity_check >= CFS_VERITY_CHECK_REQUIRED && !cino->inode_data.has_digest) {
+	if (fsi->verity_check >= CFS_VERITY_CHECK_REQUIRED &&
+	    !cino->inode_data.has_digest) {
 		pr_warn("WARNING: composefs image file '%pD' specified no fs-verity digest\n",
 			file);
 		return -EIO;
@@ -538,7 +539,8 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	/* If metadata records a digest for the file, ensure it is there
 	 * and correct before using the contents.
 	 */
-	if (cino->inode_data.has_digest && fsi->verity_check >= CFS_VERITY_CHECK_IF_SPECIFIED) {
+	if (cino->inode_data.has_digest &&
+	    fsi->verity_check >= CFS_VERITY_CHECK_IF_SPECIFIED) {
 		u8 verity_digest[FS_VERITY_MAX_DIGEST_SIZE];
 		enum hash_algo verity_algo;
 		int res;

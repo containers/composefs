@@ -99,7 +99,7 @@ struct lcfs_ctx_s {
 #define APPEND_FLAGS_ALIGN (1 << 1)
 
 int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-			   const void *data, size_t len, uint32_t flags);
+		      const void *data, size_t len, uint32_t flags);
 
 static int lcfs_close(struct lcfs_ctx_s *ctx);
 
@@ -384,7 +384,8 @@ static ssize_t compute_dirents_size(struct lcfs_node_s *node)
 	return lcfs_dir_header_size(node->children_size) + names_size;
 }
 
-static int compute_dirents(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, struct lcfs_vdata_s *vdata)
+static int compute_dirents(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node,
+			   struct lcfs_vdata_s *vdata)
 {
 	char *names;
 	char *buffer;
@@ -412,7 +413,7 @@ static int compute_dirents(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, str
 	for (size_t i = 0; i < node->children_size; i++) {
 		struct lcfs_node_s *dirent_child = node->children[i];
 		struct lcfs_node_s *target_child = follow_links(dirent_child);
-		struct lcfs_dirent_s *dirent =	&header->dirents[i];
+		struct lcfs_dirent_s *dirent = &header->dirents[i];
 		size_t name_len = strlen(dirent_child->name);
 
 		dirent->inode_num = lcfs_u32_to_file(target_child->inode_num);
@@ -421,8 +422,7 @@ static int compute_dirents(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, str
 		dirent->name_offset = lcfs_u32_to_file(name_offset);
 		dirent->_padding = 0;
 
-		memcpy(names + name_offset, dirent_child->name,
-		       dirent->name_len);
+		memcpy(names + name_offset, dirent_child->name, dirent->name_len);
 		name_offset += dirent->name_len;
 	}
 
@@ -444,9 +444,12 @@ static int compute_variable_data(struct lcfs_ctx_s *ctx)
 		}
 		if ((node->inode.st_mode & S_IFMT) == S_IFREG) {
 			/* Ensure we never use a payload for empty files, for canonicalization purposes */
-			if (node->inode.st_size != 0 && node->payload && strlen(node->payload) != 0) {
+			if (node->inode.st_size != 0 && node->payload &&
+			    strlen(node->payload) != 0) {
 				r = lcfs_append_vdata(ctx, &node->inode.variable_data,
-						      node->payload, strlen(node->payload), APPEND_FLAGS_DEDUP);
+						      node->payload,
+						      strlen(node->payload),
+						      APPEND_FLAGS_DEDUP);
 				if (r < 0)
 					return r;
 			}
@@ -454,7 +457,9 @@ static int compute_variable_data(struct lcfs_ctx_s *ctx)
 		if ((node->inode.st_mode & S_IFMT) == S_IFLNK) {
 			if (node->payload && strlen(node->payload) != 0) {
 				r = lcfs_append_vdata(ctx, &node->inode.variable_data,
-						      node->payload, strlen(node->payload), APPEND_FLAGS_DEDUP);
+						      node->payload,
+						      strlen(node->payload),
+						      APPEND_FLAGS_DEDUP);
 				if (r < 0)
 					return r;
 			}
@@ -462,7 +467,8 @@ static int compute_variable_data(struct lcfs_ctx_s *ctx)
 
 		if (node->digest_set) {
 			r = lcfs_append_vdata(ctx, &node->inode.digest,
-					      node->digest, LCFS_DIGEST_SIZE, APPEND_FLAGS_DEDUP);
+					      node->digest, LCFS_DIGEST_SIZE,
+					      APPEND_FLAGS_DEDUP);
 			if (r < 0)
 				return r;
 		}
@@ -470,7 +476,6 @@ static int compute_variable_data(struct lcfs_ctx_s *ctx)
 
 	return 0;
 }
-
 
 /* Canonicalizes and computes xattrs, sharing equal vdatas */
 static int compute_xattrs(struct lcfs_ctx_s *ctx)
@@ -523,7 +528,8 @@ static int compute_xattrs(struct lcfs_ctx_s *ctx)
 			data += xattr->value_len;
 		}
 
-		r = lcfs_append_vdata(ctx, &out, buffer, buffer_len, APPEND_FLAGS_DEDUP | APPEND_FLAGS_ALIGN);
+		r = lcfs_append_vdata(ctx, &out, buffer, buffer_len,
+				      APPEND_FLAGS_DEDUP | APPEND_FLAGS_ALIGN);
 		if (r < 0) {
 			free(buffer);
 			return r;
@@ -653,7 +659,8 @@ int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 		return ret;
 	}
 
-	data_offset = ALIGN_TO(sizeof(struct lcfs_superblock_s) + ctx->inode_table_size, 4);
+	data_offset = ALIGN_TO(
+		sizeof(struct lcfs_superblock_s) + ctx->inode_table_size, 4);
 
 	superblock.vdata_offset = lcfs_u64_to_file(data_offset);
 

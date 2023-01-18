@@ -28,7 +28,8 @@
 #define CFS_BUF_PREALLOC_SIZE 4
 
 static bool cfs_is_in_section(u64 section_start, u64 section_end,
-			      u64 element_start, u64 element_size) {
+			      u64 element_start, u64 element_size)
+{
 	u64 element_end;
 
 	if (element_start < section_start || element_start >= section_end)
@@ -77,12 +78,10 @@ static void *cfs_get_buf(struct cfs_context *ctx, u64 offset, u32 size,
 	struct page **pages;
 	void *base;
 
-	if (buf->pages != NULL) {
+	if (buf->pages)
 		return ERR_PTR(-EINVAL);
-	}
 
-	if (!cfs_is_in_section(0, ctx->descriptor_len, offset, size) ||
-	    size == 0)
+	if (!cfs_is_in_section(0, ctx->descriptor_len, offset, size) || size == 0)
 		return ERR_PTR(-EFSCORRUPTED);
 
 	index = offset >> PAGE_SHIFT;
@@ -102,7 +101,8 @@ static void *cfs_get_buf(struct cfs_context *ctx, u64 offset, u32 size,
 	}
 
 	for (read_pages = 0; read_pages < n_pages; read_pages++) {
-		struct page *page = read_cache_page(mapping, index + read_pages, NULL, NULL);
+		struct page *page =
+			read_cache_page(mapping, index + read_pages, NULL, NULL);
 		if (IS_ERR(page))
 			goto nomem;
 		pages[read_pages] = page;
@@ -122,7 +122,7 @@ static void *cfs_get_buf(struct cfs_context *ctx, u64 offset, u32 size,
 
 	return base + (offset & (PAGE_SIZE - 1));
 
- nomem:
+nomem:
 	for (size_t i = 0; i < read_pages; i++)
 		put_page(pages[i]);
 	if (n_pages > CFS_BUF_PREALLOC_SIZE)
@@ -135,8 +135,7 @@ static void *cfs_get_buf(struct cfs_context *ctx, u64 offset, u32 size,
 static void *cfs_get_inode_buf(struct cfs_context *ctx, u64 offset, u32 len,
 			       struct cfs_buf *buf)
 {
-	if (!cfs_is_in_section(CFS_INODE_TABLE_OFFSET, ctx->vdata_offset,
-			       offset, len))
+	if (!cfs_is_in_section(CFS_INODE_TABLE_OFFSET, ctx->vdata_offset, offset, len))
 		return ERR_PTR(-EINVAL);
 
 	return cfs_get_buf(ctx, CFS_INODE_TABLE_OFFSET + offset, len, buf);
@@ -146,8 +145,7 @@ static void *cfs_get_inode_buf(struct cfs_context *ctx, u64 offset, u32 len,
 static void *cfs_get_vdata_buf(struct cfs_context *ctx, u64 offset, u32 len,
 			       struct cfs_buf *buf)
 {
-	if (!cfs_is_in_section(ctx->vdata_offset, ctx->descriptor_len,
-			       offset, len))
+	if (!cfs_is_in_section(ctx->vdata_offset, ctx->descriptor_len, offset, len))
 		return ERR_PTR(-EINVAL);
 
 	return cfs_get_buf(ctx, ctx->vdata_offset + offset, len, buf);
@@ -186,14 +184,12 @@ static void *cfs_read_vdata(struct cfs_context *ctx, u64 offset, u32 len, char *
 {
 	void *res;
 
-	if (!cfs_is_in_section(ctx->vdata_offset, ctx->descriptor_len,
-			       offset, len))
+	if (!cfs_is_in_section(ctx->vdata_offset, ctx->descriptor_len, offset, len))
 		return ERR_PTR(-EINVAL);
 
 	res = cfs_read_data(ctx, ctx->vdata_offset + offset, len, buf);
-	if (IS_ERR(res)) {
+	if (IS_ERR(res))
 		return ERR_CAST(res);
-	}
 
 	return buf;
 }
@@ -255,7 +251,8 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	}
 
 	i_size = i_size_read(file_inode(descriptor));
-	if (i_size <= (sizeof(struct cfs_superblock) + sizeof(struct cfs_inode_data))) {
+	if (i_size <=
+	    (sizeof(struct cfs_superblock) + sizeof(struct cfs_inode_data))) {
 		res = -EINVAL;
 		goto fail;
 	}
@@ -264,7 +261,8 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	ctx.descriptor = descriptor;
 	ctx.descriptor_len = i_size;
 
-	superblock = cfs_read_data(&ctx, CFS_SUPERBLOCK_OFFSET, sizeof(struct cfs_superblock),
+	superblock = cfs_read_data(&ctx, CFS_SUPERBLOCK_OFFSET,
+				   sizeof(struct cfs_superblock),
 				   (u8 *)&superblock_buf);
 	if (IS_ERR(superblock)) {
 		res = PTR_ERR(superblock);
@@ -282,7 +280,8 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	    /* vdata is aligned */
 	    ctx.vdata_offset % 4 != 0 ||
 	    /* Fits at least the root inode */
-	    sizeof(struct cfs_superblock) + sizeof(struct cfs_inode_data) > ctx.descriptor_len) {
+	    sizeof(struct cfs_superblock) + sizeof(struct cfs_inode_data) >
+		    ctx.descriptor_len) {
 		res = -EFSCORRUPTED;
 		goto fail;
 	}
@@ -320,8 +319,7 @@ static bool cfs_validate_filename(const char *name, size_t name_len)
 	return true;
 }
 
-int cfs_init_inode(struct cfs_context *ctx, u32 inode_num,
-		   struct inode *inode,
+int cfs_init_inode(struct cfs_context *ctx, u32 inode_num, struct inode *inode,
 		   struct cfs_inode_extra_data *inode_data)
 {
 	struct cfs_buf vdata_buf = { NULL };
@@ -363,7 +361,8 @@ int cfs_init_inode(struct cfs_context *ctx, u32 inode_num,
 		inode_data->dirents_len = variable_data_len;
 	} else if ((st_type == S_IFLNK || st_type == S_IFREG) &&
 		   variable_data_len > 0) {
-		path_payload = cfs_read_vdata_path(ctx, variable_data_off, variable_data_len);
+		path_payload = cfs_read_vdata_path(ctx, variable_data_off,
+						   variable_data_len);
 		if (IS_ERR(path_payload)) {
 			ret = PTR_ERR(path_payload);
 			goto fail;
@@ -381,8 +380,8 @@ int cfs_init_inode(struct cfs_context *ctx, u32 inode_num,
 		/* Regular file must have backing file except empty files */
 		if ((inode_data->path_payload && inode->i_size == 0) ||
 		    (!inode_data->path_payload && inode->i_size > 0)) {
-			    ret = -EFSCORRUPTED;
-			    goto fail;
+			ret = -EFSCORRUPTED;
+			goto fail;
 		}
 	}
 
@@ -429,7 +428,8 @@ void cfs_inode_extra_data_put(struct cfs_inode_extra_data *inode_data)
 }
 
 ssize_t cfs_list_xattrs(struct cfs_context *ctx,
-			struct cfs_inode_extra_data *inode_data, char *names, size_t size)
+			struct cfs_inode_extra_data *inode_data, char *names,
+			size_t size)
 {
 	const struct cfs_xattr_header *xattrs;
 	struct cfs_buf vdata_buf = { NULL };
@@ -613,7 +613,8 @@ int cfs_dir_iterate(struct cfs_context *ctx, u64 index,
 	pos = 0;
 	for (size_t i = 0; i < n_dirents; i++) {
 		const struct cfs_dirent *dirent = &dir->dirents[i];
-		char *dirent_name = (char *)namedata + le32_to_cpu(dirent->name_offset);
+		char *dirent_name =
+			(char *)namedata + le32_to_cpu(dirent->name_offset);
 		size_t dirent_name_len = dirent->name_len;
 
 		/* name needs to fit in namedata */
@@ -677,7 +678,8 @@ int cfs_dir_lookup(struct cfs_context *ctx, u64 index,
 	while (start_dirent <= end_dirent) {
 		int mid_dirent = start_dirent + (end_dirent - start_dirent) / 2;
 		const struct cfs_dirent *dirent = &dir->dirents[mid_dirent];
-		char *dirent_name = (char *)namedata + le32_to_cpu(dirent->name_offset);
+		char *dirent_name =
+			(char *)namedata + le32_to_cpu(dirent->name_offset);
 		size_t dirent_name_len = dirent->name_len;
 
 		/* name needs to fit in namedata */

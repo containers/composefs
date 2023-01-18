@@ -37,12 +37,12 @@ void cfs_ctx_put(struct cfs_context *ctx);
 
 void cfs_inode_extra_data_put(struct cfs_inode_extra_data *inode_data);
 
-int cfs_init_inode(struct cfs_context *ctx, u32 inode_num,
-                   struct inode *inode,
-                   struct cfs_inode_extra_data *data);
+int cfs_init_inode(struct cfs_context *ctx, u32 inode_num, struct inode *inode,
+		   struct cfs_inode_extra_data *data);
 
-ssize_t cfs_list_xattrs(struct cfs_context *ctx, struct cfs_inode_extra_data *inode_data,
-			char *names, size_t size);
+ssize_t cfs_list_xattrs(struct cfs_context *ctx,
+			struct cfs_inode_extra_data *inode_data, char *names,
+			size_t size);
 int cfs_get_xattr(struct cfs_context *ctx, struct cfs_inode_extra_data *inode_data,
 		  const char *name, void *value, size_t size);
 

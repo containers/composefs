@@ -35,9 +35,9 @@
  *  |  digests              |
  *  +-----------------------+
  *
- *  The superblock is at the start of the file, and the inode table
- *  directly follows it. The variable data section found via
- *  vdata_offset and all sections are 32bit aligned. All data is
+ * The superblock is at the start of the file, and the inode table
+ * directly follows it. The variable data section found via
+ * vdata_offset and all sections are 32bit aligned. All data is
  *  little endian.
  *
  * The inode table is a table of fixed size cfs_inode_data elements.
@@ -71,56 +71,63 @@
 #define CFS_ROOT_INO 0
 
 struct cfs_superblock {
-	__le32 version;      /* CFS_VERSION */
-	__le32 magic;        /* CFS_MAGIC */
-	__le64 vdata_offset; /* Offset of the variable data data
-				section from start of file */
+	__le32 version; /* CFS_VERSION */
+	__le32 magic; /* CFS_MAGIC */
 
-	__le64 unused[2];    /* For future use */
+	/* Offset of the variable data section from start of file */
+	__le64 vdata_offset;
+
+	__le64 unused[2]; /* For future use */
 };
 
 struct cfs_vdata {
-	__le64 off;  /* Offset into variable data section */
+	__le64 off; /* Offset into variable data section */
 	__le32 len;
 };
 
 struct cfs_inode_data {
-	__le32 st_mode;      /* File type and mode.  */
-	__le32 st_nlink;     /* Number of hard links, only for regular files.  */
-	__le32 st_uid;       /* User ID of owner.  */
-	__le32 st_gid;       /* Group ID of owner.  */
-	__le32 st_rdev;      /* Device ID (if special file).  */
-	__le64 st_size;      /* Size of file */
+	__le32 st_mode; /* File type and mode.  */
+	__le32 st_nlink; /* Number of hard links, only for regular files.  */
+	__le32 st_uid; /* User ID of owner.  */
+	__le32 st_gid; /* Group ID of owner.  */
+	__le32 st_rdev; /* Device ID (if special file).  */
+	__le64 st_size; /* Size of file */
 	__le64 st_mtim_sec;
 	__le32 st_mtim_nsec;
 	__le64 st_ctim_sec;
 	__le32 st_ctim_nsec;
 
 	/* References to variable storage area: */
-	struct cfs_vdata variable_data; /* per-type variable data:
-					   S_IFDIR: dirents
-					   S_IFREG: backing file pathnem
-					   S_IFLNLK; symlink target */
+
+	/* per-type variable data:
+	 * S_IFDIR: dirents
+	 * S_IFREG: backing file pathnem
+	 * S_IFLNLK; symlink target
+	 */
+	struct cfs_vdata variable_data;
+
 	struct cfs_vdata xattrs;
-	struct cfs_vdata digest;  /* Expected fs-verity digest of backing file */
+	struct cfs_vdata digest; /* Expected fs-verity digest of backing file */
 };
 
 struct cfs_dirent {
-	__le32 inode_num;    /* Index in inode table */
-	__le32 name_offset;  /* Offset from end of cfs_dir_header */
+	__le32 inode_num; /* Index in inode table */
+	__le32 name_offset; /* Offset from end of cfs_dir_header */
 	u8 name_len;
 	u8 d_type;
 	u16 _padding;
 };
 
-/* Directory entries, stored in variable data section, 32bit aligned, followed
- * by name string table */
+/* Directory entries, stored in variable data section, 32bit aligned,
+ * followed by name string table
+ */
 struct cfs_dir_header {
 	__le32 n_dirents;
 	struct cfs_dirent dirents[];
 };
 
-static inline size_t cfs_dir_header_size(size_t n_dirents) {
+static inline size_t cfs_dir_header_size(size_t n_dirents)
+{
 	return sizeof(struct cfs_dir_header) + n_dirents * sizeof(struct cfs_dirent);
 }
 
@@ -130,14 +137,17 @@ struct cfs_xattr_element {
 };
 
 /* Xattrs, stored in variable data section , 32bit aligned, followed
- * by key/value table */
+ * by key/value table
+ */
 struct cfs_xattr_header {
 	__le16 n_attr;
 	struct cfs_xattr_element attr[0];
 };
 
-static inline size_t cfs_xattr_header_size(size_t n_element) {
-	return sizeof(struct cfs_xattr_header) + n_element * sizeof(struct cfs_xattr_element);
+static inline size_t cfs_xattr_header_size(size_t n_element)
+{
+	return sizeof(struct cfs_xattr_header) +
+	       n_element * sizeof(struct cfs_xattr_element);
 }
 
 #endif

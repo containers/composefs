@@ -51,7 +51,8 @@ static int get_file_size(int fd, off_t *out)
 	return 0;
 }
 
-static const void *get_v_data(struct lcfs_inode_s *ino, const uint8_t *vdata, void *default_val)
+static const void *get_v_data(struct lcfs_inode_s *ino, const uint8_t *vdata,
+			      void *default_val)
 {
 	if (ino->variable_data.len == 0)
 		return default_val;
@@ -62,7 +63,9 @@ static const void *get_v_data(struct lcfs_inode_s *ino, const uint8_t *vdata, vo
 static void decode_inode(const uint8_t *inode_data, uint32_t inod_num,
 			 struct lcfs_inode_s *ino)
 {
-	const struct lcfs_inode_s *data = (const struct lcfs_inode_s *)(inode_data + inod_num * sizeof(struct lcfs_inode_s));
+	const struct lcfs_inode_s *data =
+		(const struct lcfs_inode_s *)(inode_data +
+					      inod_num * sizeof(struct lcfs_inode_s));
 
 	*ino = *data;
 
@@ -77,11 +80,11 @@ static void decode_inode(const uint8_t *inode_data, uint32_t inod_num,
 	ino->st_ctim_sec = lcfs_u64_from_file(ino->st_ctim_sec);
 	ino->st_ctim_nsec = lcfs_u32_from_file(ino->st_ctim_nsec);
 
-        ino->variable_data.off = lcfs_u64_from_file(ino->variable_data.off);
-        ino->variable_data.len = lcfs_u32_from_file(ino->variable_data.len);
+	ino->variable_data.off = lcfs_u64_from_file(ino->variable_data.off);
+	ino->variable_data.len = lcfs_u32_from_file(ino->variable_data.len);
 
-        ino->xattrs.off = lcfs_u64_from_file(ino->xattrs.off);
-        ino->xattrs.len = lcfs_u32_from_file(ino->xattrs.len);
+	ino->xattrs.off = lcfs_u64_from_file(ino->xattrs.off);
+	ino->xattrs.len = lcfs_u32_from_file(ino->xattrs.len);
 }
 
 static void digest_to_string(const uint8_t *csum, char *buf)
@@ -174,15 +177,20 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 	}
 
 	if (dirp && recurse && ino.variable_data.len != 0) {
-		const struct lcfs_dir_header_s *dir = (const struct lcfs_dir_header_s *)(vdata + ino.variable_data.off);
+		const struct lcfs_dir_header_s *dir =
+			(const struct lcfs_dir_header_s *)(vdata +
+							   ino.variable_data.off);
 		uint32_t n_dirents = lcfs_u32_from_file(dir->n_dirents);
-		const char *namedata = (const char *)dir + lcfs_dir_header_size(n_dirents);
+		const char *namedata =
+			(const char *)dir + lcfs_dir_header_size(n_dirents);
 
 		for (i = 0; i < n_dirents; i++) {
 			size_t child_name_len = dir->dirents[i].name_len;
-			size_t child_name_offset = lcfs_u32_from_file(dir->dirents[i].name_offset);
+			size_t child_name_offset =
+				lcfs_u32_from_file(dir->dirents[i].name_offset);
 
-			dump_inode(inode_data, vdata, namedata + child_name_offset, child_name_len,
+			dump_inode(inode_data, vdata,
+				   namedata + child_name_offset, child_name_len,
 				   lcfs_u32_from_file(dir->dirents[i].inode_num),
 				   rec + 1, extended, xattrs, recurse);
 		}
@@ -192,7 +200,7 @@ static int dump_inode(const uint8_t *inode_data, const uint8_t *vdata,
 }
 
 static uint64_t find_child(const uint8_t *inode_data, const uint8_t *vdata,
-                           uint32_t current, const char *name)
+			   uint32_t current, const char *name)
 {
 	struct lcfs_inode_s ino;
 	const struct lcfs_dir_header_s *dir;
@@ -215,7 +223,8 @@ static uint64_t find_child(const uint8_t *inode_data, const uint8_t *vdata,
 	name_len = strlen(name);
 	for (i = 0; i < n_dirents; i++) {
 		size_t child_name_len = dir->dirents[i].name_len;
-		size_t child_name_offset = lcfs_u32_from_file(dir->dirents[i].name_offset);
+		size_t child_name_offset =
+			lcfs_u32_from_file(dir->dirents[i].name_offset);
 		if (name_len == child_name_len &&
 		    memcmp(name, namedata + child_name_offset, name_len) == 0) {
 			return lcfs_u64_from_file(dir->dirents[i].inode_num);
@@ -226,7 +235,7 @@ static uint64_t find_child(const uint8_t *inode_data, const uint8_t *vdata,
 }
 
 static uint64_t lookup(const uint8_t *inode_data, const uint8_t *vdata,
-                       uint64_t parent, const void *what)
+		       uint64_t parent, const void *what)
 {
 	char *it;
 	char *dpath, *path;
@@ -313,8 +322,7 @@ int main(int argc, char *argv[])
 	inode_data = data + sizeof(struct lcfs_superblock_s);
 	vdata = data + data_offset;
 	if (mode == DUMP) {
-		dump_inode(inode_data, vdata, "", 0, 0, 0, false,
-			   false, true);
+		dump_inode(inode_data, vdata, "", 0, 0, 0, false, false, true);
 	} else if (mode == DUMP_EXTENDED) {
 		dump_inode(inode_data, vdata, "", 0, 0, 0, true, false, true);
 	} else if (mode == LOOKUP) {

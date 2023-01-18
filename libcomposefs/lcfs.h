@@ -82,9 +82,9 @@ struct lcfs_inode_s {
 	uint32_t st_gid; /* Group ID of owner.  */
 	uint32_t st_rdev; /* Device ID (if special file).  */
 	uint64_t st_size; /* Size of file, only used for regular files */
-	int64_t  st_mtim_sec;
+	int64_t st_mtim_sec;
 	uint32_t st_mtim_nsec;
-	int64_t  st_ctim_sec;
+	int64_t st_ctim_sec;
 	uint32_t st_ctim_nsec;
 
 	/* References to variable storage area: */
@@ -106,8 +106,10 @@ struct lcfs_dir_header_s {
 	struct lcfs_dirent_s dirents[0];
 };
 
-static inline size_t lcfs_dir_header_size(size_t n_dirents) {
-	return sizeof(struct lcfs_dir_header_s) + n_dirents * sizeof(struct lcfs_dirent_s);
+static inline size_t lcfs_dir_header_size(size_t n_dirents)
+{
+	return sizeof(struct lcfs_dir_header_s) +
+	       n_dirents * sizeof(struct lcfs_dirent_s);
 }
 
 /* xattr representation.  */
@@ -121,8 +123,10 @@ struct lcfs_xattr_header_s {
 	struct lcfs_xattr_element_s attr[0];
 };
 
-static inline size_t lcfs_xattr_header_size(size_t n_element) {
-	return sizeof(struct lcfs_xattr_header_s) + n_element * sizeof(struct lcfs_xattr_element_s);
+static inline size_t lcfs_xattr_header_size(size_t n_element)
+{
+	return sizeof(struct lcfs_xattr_header_s) +
+	       n_element * sizeof(struct lcfs_xattr_element_s);
 }
 
 #endif
