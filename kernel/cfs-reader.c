@@ -27,16 +27,21 @@
 
 #define CFS_BUF_PREALLOC_SIZE 4
 
+/* Check if the element, which is supposed to be offset from section_start
+ * actually fits in the section starting at section_start ending at section_end,
+ * and doesn't wrap.
+ */
 static bool cfs_is_in_section(u64 section_start, u64 section_end,
-			      u64 element_start, u64 element_size)
+			      u64 element_offset, u64 element_size)
 {
 	u64 element_end;
+	u64 element_start;
 
+	element_start = section_start + element_offset;
 	if (element_start < section_start || element_start >= section_end)
 		return false;
 
 	element_end = element_start + element_size;
-	/* Avoid potential overflow here */
 	if (element_end < element_start || element_end > section_end)
 		return false;
 
