@@ -65,7 +65,7 @@ static inline uint64_t lcfs_u64_from_file(uint64_t val)
 struct lcfs_superblock_s {
 	uint32_t version;
 	uint32_t magic;
-	uint64_t data_offset;
+	uint64_t vdata_offset;
 
 	uint64_t unused3[2];
 };

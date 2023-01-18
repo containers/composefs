@@ -20,12 +20,27 @@
  * array fit in one page, and will allow a mapping of 2MB. When
  * applied to e.g. dirents this will allow more than 27000 filenames
  * of length 64, which seems ok. If we need to support more, at that
- * point we really should fall back to an approach that maps
+ * point we should probably fall back to an approach that maps pages
  * incrementally.
  */
 #define CFS_BUF_MAXPAGES 512
 
 #define CFS_BUF_PREALLOC_SIZE 4
+
+static bool cfs_is_in_section(u64 section_start, u64 section_end,
+			      u64 element_start, u64 element_size) {
+	u64 element_end;
+
+	if (element_start < section_start || element_start >= section_end)
+		return false;
+
+	element_end = element_start + element_size;
+	/* Avoid potential overflow here */
+	if (element_end < element_start || element_end > section_end)
+		return false;
+
+	return true;
+}
 
 struct cfs_buf {
 	struct page **pages;
@@ -51,6 +66,7 @@ static void cfs_buf_put(struct cfs_buf *buf)
 	}
 }
 
+/* Map data from anywhere in the descriptor */
 static void *cfs_get_buf(struct cfs_context *ctx, u64 offset, u32 size,
 			 struct cfs_buf *buf)
 {
@@ -65,10 +81,7 @@ static void *cfs_get_buf(struct cfs_context *ctx, u64 offset, u32 size,
 		return ERR_PTR(-EINVAL);
 	}
 
-	if (offset > ctx->descriptor_len)
-		return ERR_PTR(-EFSCORRUPTED);
-
-	if ((offset + size < offset) || (offset + size > ctx->descriptor_len) ||
+	if (!cfs_is_in_section(0, ctx->descriptor_len, offset, size) ||
 	    size == 0)
 		return ERR_PTR(-EFSCORRUPTED);
 
@@ -118,15 +131,35 @@ static void *cfs_get_buf(struct cfs_context *ctx, u64 offset, u32 size,
 	return ERR_PTR(-ENOMEM);
 }
 
+/* Map data from the inode table */
+static void *cfs_get_inode_buf(struct cfs_context *ctx, u64 offset, u32 len,
+			       struct cfs_buf *buf)
+{
+	if (!cfs_is_in_section(CFS_INODE_TABLE_OFFSET, ctx->vdata_offset,
+			       offset, len))
+		return ERR_PTR(-EINVAL);
+
+	return cfs_get_buf(ctx, CFS_INODE_TABLE_OFFSET + offset, len, buf);
+}
+
+/* Map data from the variable data section */
+static void *cfs_get_vdata_buf(struct cfs_context *ctx, u64 offset, u32 len,
+			       struct cfs_buf *buf)
+{
+	if (!cfs_is_in_section(ctx->vdata_offset, ctx->descriptor_len,
+			       offset, len))
+		return ERR_PTR(-EINVAL);
+
+	return cfs_get_buf(ctx, ctx->vdata_offset + offset, len, buf);
+}
+
+/* Read data from anywhere in the descriptor */
 static void *cfs_read_data(struct cfs_context *ctx, u64 offset, u64 size, u8 *dest)
 {
 	loff_t pos = offset;
 	size_t copied;
 
-	if (offset > ctx->descriptor_len)
-		return ERR_PTR(-EFSCORRUPTED);
-
-	if ((offset + size < offset) || (offset + size > ctx->descriptor_len))
+	if (!cfs_is_in_section(0, ctx->descriptor_len, offset, size))
 		return ERR_PTR(-EFSCORRUPTED);
 
 	copied = 0;
@@ -148,17 +181,16 @@ static void *cfs_read_data(struct cfs_context *ctx, u64 offset, u64 size, u8 *de
 	return dest;
 }
 
+/* Read data from the variable data section */
 static void *cfs_read_vdata(struct cfs_context *ctx, u64 offset, u32 len, char *buf)
 {
 	void *res;
 
-	if (offset > ctx->descriptor_len - ctx->data_offset)
+	if (!cfs_is_in_section(ctx->vdata_offset, ctx->descriptor_len,
+			       offset, len))
 		return ERR_PTR(-EINVAL);
 
-	if (len > ctx->descriptor_len - ctx->data_offset - offset)
-		return ERR_PTR(-EINVAL);
-
-	res = cfs_read_data(ctx, ctx->data_offset + offset, len, buf);
+	res = cfs_read_data(ctx, ctx->vdata_offset + offset, len, buf);
 	if (IS_ERR(res)) {
 		return ERR_CAST(res);
 	}
@@ -166,6 +198,7 @@ static void *cfs_read_vdata(struct cfs_context *ctx, u64 offset, u32 len, char *
 	return buf;
 }
 
+/* Allocate, read and null-terminate paths from the variable data section */
 static char *cfs_read_vdata_path(struct cfs_context *ctx, u64 offset, u32 len)
 {
 	char *path;
@@ -231,19 +264,26 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	ctx.descriptor = descriptor;
 	ctx.descriptor_len = i_size;
 
-	superblock = cfs_read_data(&ctx, 0, sizeof(struct cfs_superblock),
+	superblock = cfs_read_data(&ctx, CFS_SUPERBLOCK_OFFSET, sizeof(struct cfs_superblock),
 				   (u8 *)&superblock_buf);
 	if (IS_ERR(superblock)) {
 		res = PTR_ERR(superblock);
 		goto fail;
 	}
-	ctx.data_offset = le64_to_cpu(superblock->data_offset);
 
+	ctx.vdata_offset = le64_to_cpu(superblock->vdata_offset);
+
+	/* Some basic validation of the format */
 	if (le32_to_cpu(superblock->version) != CFS_VERSION ||
 	    le32_to_cpu(superblock->magic) != CFS_MAGIC ||
-	    ctx.data_offset > ctx.descriptor_len ||
+	    /* vdata is in file */
+	    ctx.vdata_offset > ctx.descriptor_len ||
+	    ctx.vdata_offset <= CFS_INODE_TABLE_OFFSET ||
+	    /* vdata is aligned */
+	    ctx.vdata_offset % 4 != 0 ||
+	    /* Fits at least the root inode */
 	    sizeof(struct cfs_superblock) + sizeof(struct cfs_inode_data) > ctx.descriptor_len) {
-		res = -EINVAL;
+		res = -EFSCORRUPTED;
 		goto fail;
 	}
 
@@ -261,30 +301,6 @@ void cfs_ctx_put(struct cfs_context *ctx)
 		fput(ctx->descriptor);
 		ctx->descriptor = NULL;
 	}
-}
-
-static void *cfs_get_inode_buf(struct cfs_context *ctx, u64 offset, u32 len,
-			       struct cfs_buf *buf)
-{
-	if (offset > ctx->descriptor_len - sizeof(struct cfs_superblock))
-		return ERR_PTR(-EINVAL);
-
-	if (len > ctx->descriptor_len - sizeof(struct cfs_superblock) - offset)
-		return ERR_PTR(-EINVAL);
-
-	return cfs_get_buf(ctx, sizeof(struct cfs_superblock) + offset, len, buf);
-}
-
-static void *cfs_get_vdata_buf(struct cfs_context *ctx, u64 offset, u32 len,
-			       struct cfs_buf *buf)
-{
-	if (offset > ctx->descriptor_len - ctx->data_offset)
-		return ERR_PTR(-EINVAL);
-
-	if (len > ctx->descriptor_len - ctx->data_offset - offset)
-		return ERR_PTR(-EINVAL);
-
-	return cfs_get_buf(ctx, ctx->data_offset + offset, len, buf);
 }
 
 static bool cfs_validate_filename(const char *name, size_t name_len)
@@ -490,7 +506,7 @@ int cfs_get_xattr(struct cfs_context *ctx, struct cfs_inode_extra_data *inode_da
 	if (inode_data->xattrs_len == 0)
 		return -ENODATA;
 
-	/* xattrs_len basic size req was verified in cfs_init_inode_data */
+	/* xattrs_len minimal size req was verified in cfs_init_inode_data */
 
 	xattrs = cfs_get_vdata_buf(ctx, inode_data->xattrs_offset,
 				   inode_data->xattrs_len, &vdata_buf);
@@ -546,6 +562,7 @@ exit:
 	return res;
 }
 
+/* This is essentially strmcp() for non-null-terminated strings */
 static inline int memcmp2(const void *a, const size_t a_size, const void *b,
 			  size_t b_size)
 {
@@ -580,7 +597,7 @@ int cfs_dir_iterate(struct cfs_context *ctx, u64 index,
 
 	n_dirents = le32_to_cpu(dir->n_dirents);
 
-	// This should not happen in a valid fs, it should have had dirents_len ==  0
+	/* Should not happen in a valid fs, empty dirs should have had dirents_len ==  0 */
 	if (n_dirents == 0) {
 		res = -EFSCORRUPTED;
 		goto exit;
@@ -646,7 +663,7 @@ int cfs_dir_lookup(struct cfs_context *ctx, u64 index,
 
 	n_dirents = le32_to_cpu(dir->n_dirents);
 
-	// This should not happen in a valid fs, it should have had dirents_len ==  0
+	/* This should not happen in a valid fs, it should have had dirents_len ==  0 */
 	if (n_dirents == 0) {
 		res = -EFSCORRUPTED;
 		goto exit;

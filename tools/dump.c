@@ -306,12 +306,11 @@ int main(int argc, char *argv[])
 
 	superblock = (struct lcfs_superblock_s *)data;
 
-	if (lcfs_u64_from_file(superblock->data_offset) > size)
+	data_offset = lcfs_u64_from_file(superblock->vdata_offset);
+	if (data_offset > size || data_offset % 4 != 0)
 		error(EXIT_FAILURE, EINVAL, "Invalid data offset");
 
 	inode_data = data + sizeof(struct lcfs_superblock_s);
-	data_offset = lcfs_u64_from_file(superblock->data_offset);
-	assert(data_offset % 4 == 0);
 	vdata = data + data_offset;
 	if (mode == DUMP) {
 		dump_inode(inode_data, vdata, "", 0, 0, 0, false,

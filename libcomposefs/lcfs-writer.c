@@ -95,14 +95,11 @@ struct lcfs_ctx_s {
 	FsVerityContext *fsverity_ctx;
 };
 
+#define APPEND_FLAGS_DEDUP (1 << 0)
+#define APPEND_FLAGS_ALIGN (1 << 1)
+
 int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-		      const void *data, size_t len);
-
-int lcfs_append_vdata_no_dedup(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-			       const void *data, size_t len);
-
-int lcfs_append_vdata_opts(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-			   const void *data, size_t len, bool dedup);
+			   const void *data, size_t len, uint32_t flags);
 
 static int lcfs_close(struct lcfs_ctx_s *ctx);
 
@@ -177,12 +174,14 @@ static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root)
 
 #define max(a, b) ((a > b) ? (a) : (b))
 
-int lcfs_append_vdata_opts(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-			   const void *data, size_t len, bool dedup)
+int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
+		      const void *data, size_t len, uint32_t flags)
 {
 	struct hasher_vdata_s *key;
 	char *new_vdata;
 	size_t pad_length;
+	bool dedup = (flags & APPEND_FLAGS_DEDUP) != 0;
+	bool align = (flags & APPEND_FLAGS_ALIGN) != 0;
 
 	if (dedup) {
 		struct hasher_vdata_s *ent;
@@ -203,7 +202,7 @@ int lcfs_append_vdata_opts(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 
 	/* We ensure that all vdata are aligned to start at 4 bytes  */
 	pad_length = 0;
-	if (ctx->vdata_len % 4 != 0)
+	if (align && ctx->vdata_len % 4 != 0)
 		pad_length = 4 - ctx->vdata_len % 4;
 
 	if (ctx->vdata_len + pad_length + len > ctx->vdata_allocated) {
@@ -427,7 +426,7 @@ static int compute_dirents(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node, str
 		name_offset += dirent->name_len;
 	}
 
-	r = lcfs_append_vdata_no_dedup(ctx, vdata, buffer, dirents_size);
+	r = lcfs_append_vdata(ctx, vdata, buffer, dirents_size, APPEND_FLAGS_ALIGN);
 	free(buffer);
 	return r;
 }
@@ -447,7 +446,7 @@ static int compute_variable_data(struct lcfs_ctx_s *ctx)
 			/* Ensure we never use a payload for empty files, for canonicalization purposes */
 			if (node->inode.st_size != 0 && node->payload && strlen(node->payload) != 0) {
 				r = lcfs_append_vdata(ctx, &node->inode.variable_data,
-						      node->payload, strlen(node->payload));
+						      node->payload, strlen(node->payload), APPEND_FLAGS_DEDUP);
 				if (r < 0)
 					return r;
 			}
@@ -455,7 +454,7 @@ static int compute_variable_data(struct lcfs_ctx_s *ctx)
 		if ((node->inode.st_mode & S_IFMT) == S_IFLNK) {
 			if (node->payload && strlen(node->payload) != 0) {
 				r = lcfs_append_vdata(ctx, &node->inode.variable_data,
-						      node->payload, strlen(node->payload));
+						      node->payload, strlen(node->payload), APPEND_FLAGS_DEDUP);
 				if (r < 0)
 					return r;
 			}
@@ -463,7 +462,7 @@ static int compute_variable_data(struct lcfs_ctx_s *ctx)
 
 		if (node->digest_set) {
 			r = lcfs_append_vdata(ctx, &node->inode.digest,
-					      node->digest, LCFS_DIGEST_SIZE);
+					      node->digest, LCFS_DIGEST_SIZE, APPEND_FLAGS_DEDUP);
 			if (r < 0)
 				return r;
 		}
@@ -524,7 +523,7 @@ static int compute_xattrs(struct lcfs_ctx_s *ctx)
 			data += xattr->value_len;
 		}
 
-		r = lcfs_append_vdata(ctx, &out, buffer, buffer_len);
+		r = lcfs_append_vdata(ctx, &out, buffer, buffer_len, APPEND_FLAGS_DEDUP | APPEND_FLAGS_ALIGN);
 		if (r < 0) {
 			free(buffer);
 			return r;
@@ -656,7 +655,7 @@ int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 
 	data_offset = ALIGN_TO(sizeof(struct lcfs_superblock_s) + ctx->inode_table_size, 4);
 
-	superblock.data_offset = lcfs_u64_to_file(data_offset);
+	superblock.vdata_offset = lcfs_u64_to_file(data_offset);
 
 	ret = compute_variable_data(ctx);
 	if (ret < 0) {
@@ -721,18 +720,6 @@ static int lcfs_close(struct lcfs_ctx_s *ctx)
 	free(ctx);
 
 	return 0;
-}
-
-int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-		      const void *data, size_t len)
-{
-	return lcfs_append_vdata_opts(ctx, out, data, len, true);
-}
-
-int lcfs_append_vdata_no_dedup(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-			       const void *data, size_t len)
-{
-	return lcfs_append_vdata_opts(ctx, out, data, len, false);
 }
 
 static int read_xattrs(struct lcfs_node_s *ret, int dirfd, const char *fname)

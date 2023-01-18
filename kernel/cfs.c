@@ -26,6 +26,14 @@ MODULE_AUTHOR("Giuseppe Scrivano <gscrivan@redhat.com>");
 
 #define CFS_MAX_STACK 500
 
+/* Backing file fs-verity check policy, ordered in strictness */
+enum cfs_verity_policy {
+	CFS_VERITY_CHECK_NONE = 0,         /* Never verify digest */
+	CFS_VERITY_CHECK_IF_SPECIFIED = 1, /* Verify if specified in image */
+	CFS_VERITY_CHECK_REQUIRED = 2,     /* Always verify, fail if not if specified in image */
+};
+#define CFS_VERITY_CHECK_MAX_POLICY 2
+
 struct cfs_info {
 	struct cfs_context cfs_ctx;
 
@@ -34,7 +42,7 @@ struct cfs_info {
 	size_t n_bases;
 	struct vfsmount **bases;
 
-	u32 verity_check; /* 0 == none, 1 == if specified in image, 2 == require in image */
+	enum cfs_verity_policy verity_check;
 	bool has_digest;
 	u8 digest[SHA256_DIGEST_SIZE]; /* fs-verity digest */
 };
@@ -68,7 +76,7 @@ static const struct address_space_operations cfs_aops = {
 
 static ssize_t cfs_listxattr(struct dentry *dentry, char *names, size_t size);
 
-/* copied from overlayfs.  */
+/* split array of basedirs at ':', copied from overlayfs.  */
 static unsigned int cfs_split_basedirs(char *str)
 {
 	unsigned int ctr = 1;
@@ -356,10 +364,10 @@ static int cfs_parse_param(struct fs_context *fc, struct fs_parameter *param)
 		if (r < 0)
 			return r;
 		fsi->has_digest = true;
-		fsi->verity_check = 2; /* Default to full verity check */
+		fsi->verity_check = CFS_VERITY_CHECK_REQUIRED; /* Default to full verity check */
 		break;
 	case Opt_verity_check:
-		if (result.uint_32 > 2)
+		if (result.uint_32 > CFS_VERITY_CHECK_MAX_POLICY)
 			return invalfc(fc, "Invalid verity_check mode");
 		fsi->verity_check = result.uint_32;
 		break;
@@ -546,7 +554,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 		return 0;
 	}
 
-	if (fsi->verity_check >= 2 && !cino->inode_data.has_digest) {
+	if (fsi->verity_check >= CFS_VERITY_CHECK_REQUIRED && !cino->inode_data.has_digest) {
 		pr_warn("WARNING: composefs image file '%pd' specified no fs-verity digest\n",
 			file->f_path.dentry);
 		return -EIO;
@@ -560,7 +568,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	/* If metadata records a digest for the file, ensure it is there
 	 * and correct before using the contents.
 	 */
-	if (cino->inode_data.has_digest && fsi->verity_check >= 1) {
+	if (cino->inode_data.has_digest && fsi->verity_check >= CFS_VERITY_CHECK_IF_SPECIFIED) {
 		u8 verity_digest[FS_VERITY_MAX_DIGEST_SIZE];
 		enum hash_algo verity_algo;
 		int res;
