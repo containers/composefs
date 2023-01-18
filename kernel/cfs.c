@@ -262,17 +262,11 @@ static struct inode *cfs_alloc_inode(struct super_block *sb)
 	return &cino->vfs_inode;
 }
 
-static void cfs_destroy_inode(struct inode *inode)
-{
-	struct cfs_inode *cino = CFS_I(inode);
-
-	cfs_inode_extra_data_put(&cino->inode_data);
-}
-
 static void cfs_free_inode(struct inode *inode)
 {
 	struct cfs_inode *cino = CFS_I(inode);
 
+	cfs_inode_extra_data_put(&cino->inode_data);
 	kmem_cache_free(cfs_inode_cachep, cino);
 }
 
@@ -315,7 +309,6 @@ static const struct super_operations cfs_ops = {
 	.drop_inode = generic_delete_inode,
 	.show_options = cfs_show_options,
 	.put_super = cfs_put_super,
-	.destroy_inode = cfs_destroy_inode,
 	.alloc_inode = cfs_alloc_inode,
 	.free_inode = cfs_free_inode,
 };
