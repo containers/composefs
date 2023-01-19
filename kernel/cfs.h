@@ -77,13 +77,16 @@ struct cfs_superblock {
 	/* Offset of the variable data section from start of file */
 	__le64 vdata_offset;
 
-	__le64 unused[2]; /* For future use */
-};
+	/* For future use, and makes superblock 128 bytes to align
+	 * inode table on cacheline boundary on most arches.
+	 */
+	__le32 unused[28];
+} __packed;
 
 struct cfs_vdata {
 	__le64 off; /* Offset into variable data section */
 	__le32 len;
-};
+} __packed;
 
 struct cfs_inode_data {
 	__le32 st_mode; /* File type and mode.  */
@@ -108,7 +111,12 @@ struct cfs_inode_data {
 
 	struct cfs_vdata xattrs;
 	struct cfs_vdata digest; /* Expected fs-verity digest of backing file */
-};
+
+	/* For future use, and makes inode_data 96 bytes which
+	 * is semi-aligned with cacheline sizes.
+	 */
+	__le32 unused[2];
+} __packed;
 
 struct cfs_dirent {
 	__le32 inode_num; /* Index in inode table */
@@ -116,7 +124,7 @@ struct cfs_dirent {
 	u8 name_len;
 	u8 d_type;
 	u16 _padding;
-};
+} __packed;
 
 /* Directory entries, stored in variable data section, 32bit aligned,
  * followed by name string table
@@ -124,7 +132,7 @@ struct cfs_dirent {
 struct cfs_dir_header {
 	__le32 n_dirents;
 	struct cfs_dirent dirents[];
-};
+} __packed;
 
 static inline size_t cfs_dir_header_size(size_t n_dirents)
 {
@@ -134,7 +142,7 @@ static inline size_t cfs_dir_header_size(size_t n_dirents)
 struct cfs_xattr_element {
 	__le16 key_length;
 	__le16 value_length;
-};
+} __packed;
 
 /* Xattrs, stored in variable data section , 32bit aligned, followed
  * by key/value table
@@ -142,7 +150,7 @@ struct cfs_xattr_element {
 struct cfs_xattr_header {
 	__le16 n_attr;
 	struct cfs_xattr_element attr[0];
-};
+} __packed;
 
 static inline size_t cfs_xattr_header_size(size_t n_element)
 {
