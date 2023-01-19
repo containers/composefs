@@ -7,8 +7,6 @@
 
 #define EFSCORRUPTED EUCLEAN /* Filesystem is corrupted */
 
-#define CFS_N_PRELOAD_DIR_CHUNKS 4
-
 struct cfs_inode_extra_data {
 	char *path_payload; /* Real pathname for files, target for symlinks */
 
