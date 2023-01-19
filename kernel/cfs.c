@@ -461,8 +461,6 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	sb->s_blocksize = PAGE_SIZE;
 	sb->s_blocksize_bits = PAGE_SHIFT;
 
-	sb->s_time_gran = 1;
-
 	fsi->bases = bases;
 	fsi->n_bases = numbasedirs;
 	return 0;
