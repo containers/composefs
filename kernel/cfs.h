@@ -68,6 +68,7 @@
 
 #define CFS_SUPERBLOCK_OFFSET 0
 #define CFS_INODE_TABLE_OFFSET sizeof(struct cfs_superblock)
+#define CFS_INODE_SIZE sizeof(struct cfs_inode_data)
 #define CFS_ROOT_INO 0
 
 /* Fits at least the root inode */

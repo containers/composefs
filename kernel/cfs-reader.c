@@ -233,6 +233,7 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	enum hash_algo verity_algo;
 	struct cfs_context ctx;
 	struct file *descriptor;
+	u64 num_inodes;
 	loff_t i_size;
 	int res;
 
@@ -287,6 +288,13 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 		goto fail;
 	}
 
+	num_inodes = (ctx.vdata_offset - CFS_INODE_TABLE_OFFSET) / CFS_INODE_SIZE;
+	if (num_inodes > U32_MAX) {
+		res = -EFSCORRUPTED;
+		goto fail;
+	}
+	ctx.num_inodes = num_inodes;
+
 	*ctx_out = ctx;
 	return 0;
 
@@ -335,8 +343,11 @@ int cfs_init_inode(struct cfs_context *ctx, u32 inode_num, struct inode *inode,
 	u32 st_type;
 	u64 size;
 
-	disk_data = cfs_get_inode_buf(ctx, inode_num * sizeof(struct cfs_inode_data),
-				      sizeof(struct cfs_inode_data), &vdata_buf);
+	if (inode_num >= ctx->num_inodes)
+		return -EFSCORRUPTED;
+
+	disk_data = cfs_get_inode_buf(ctx, inode_num * CFS_INODE_SIZE,
+				      CFS_INODE_SIZE, &vdata_buf);
 	if (IS_ERR(disk_data))
 		return PTR_ERR(disk_data);
 
