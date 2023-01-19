@@ -389,7 +389,7 @@ int cfs_init_inode(struct cfs_context *ctx, u32 inode_num, struct inode *inode,
 
 	if (st_type == S_IFLNK) {
 		/* Symbolic link must have a non-empty target */
-		if (!inode_data->path_payload) {
+		if (!inode_data->path_payload || *inode_data->path_payload == 0) {
 			ret = -EFSCORRUPTED;
 			goto fail;
 		}
