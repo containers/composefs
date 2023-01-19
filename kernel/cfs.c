@@ -593,7 +593,7 @@ static int cfs_release_file(struct inode *inode, struct file *file)
 	if (realfile == &empty_file)
 		return 0;
 
-	fput(file->private_data);
+	fput(realfile);
 
 	return 0;
 }
