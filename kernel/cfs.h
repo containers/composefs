@@ -69,11 +69,18 @@
 #define CFS_SUPERBLOCK_OFFSET 0
 #define CFS_INODE_TABLE_OFFSET sizeof(struct cfs_superblock)
 #define CFS_INODE_SIZE sizeof(struct cfs_inode_data)
+#define CFS_DIRENT_SIZE sizeof(struct cfs_dirent)
+#define CFS_XATTR_ELEM_SIZE sizeof(struct cfs_xattr_element)
 #define CFS_ROOT_INO 0
 
 /* Fits at least the root inode */
 #define CFS_DESCRIPTOR_MIN_SIZE                                                \
 	(sizeof(struct cfs_superblock) + sizeof(struct cfs_inode_data))
+
+/* More that this would overflow header size computation */
+#define CFS_MAX_DIRENTS (U32_MAX / CFS_DIRENT_SIZE - 1)
+
+#define CFS_MAX_XATTRS U16_MAX
 
 struct cfs_superblock {
 	__le32 version; /* CFS_VERSION */
@@ -141,7 +148,7 @@ struct cfs_dir_header {
 
 static inline size_t cfs_dir_header_size(size_t n_dirents)
 {
-	return sizeof(struct cfs_dir_header) + n_dirents * sizeof(struct cfs_dirent);
+	return sizeof(struct cfs_dir_header) + n_dirents * CFS_DIRENT_SIZE;
 }
 
 struct cfs_xattr_element {
@@ -159,8 +166,7 @@ struct cfs_xattr_header {
 
 static inline size_t cfs_xattr_header_size(size_t n_element)
 {
-	return sizeof(struct cfs_xattr_header) +
-	       n_element * sizeof(struct cfs_xattr_element);
+	return sizeof(struct cfs_xattr_header) + n_element * CFS_XATTR_ELEM_SIZE;
 }
 
 #endif

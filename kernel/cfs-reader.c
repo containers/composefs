@@ -465,9 +465,8 @@ ssize_t cfs_list_xattrs(struct cfs_context *ctx,
 		return PTR_ERR(xattrs);
 
 	n_xattrs = le16_to_cpu(xattrs->n_attr);
-
-	/* Verify that array fits */
-	if (inode_data->xattrs_len < cfs_xattr_header_size(n_xattrs)) {
+	if (n_xattrs == 0 || n_xattrs > CFS_MAX_XATTRS ||
+	    inode_data->xattrs_len < cfs_xattr_header_size(n_xattrs)) {
 		copied = -EFSCORRUPTED;
 		goto exit;
 	}
@@ -531,9 +530,8 @@ int cfs_get_xattr(struct cfs_context *ctx, struct cfs_inode_extra_data *inode_da
 		return PTR_ERR(xattrs);
 
 	n_xattrs = le16_to_cpu(xattrs->n_attr);
-
-	/* Verify that array fits */
-	if (inode_data->xattrs_len < cfs_xattr_header_size(n_xattrs)) {
+	if (n_xattrs == 0 || n_xattrs > CFS_MAX_XATTRS ||
+	    inode_data->xattrs_len < cfs_xattr_header_size(n_xattrs)) {
 		res = -EFSCORRUPTED;
 		goto exit;
 	}
@@ -614,9 +612,8 @@ int cfs_dir_iterate(struct cfs_context *ctx, u64 index,
 		return PTR_ERR(dir);
 
 	n_dirents = le32_to_cpu(dir->n_dirents);
-
-	/* Should not happen in a valid fs, empty dirs should have had dirents_len ==  0 */
-	if (n_dirents == 0) {
+	if (n_dirents == 0 || n_dirents > CFS_MAX_DIRENTS ||
+	    inode_data->dirents_len < cfs_dir_header_size(n_dirents)) {
 		res = -EFSCORRUPTED;
 		goto exit;
 	}
@@ -681,9 +678,8 @@ int cfs_dir_lookup(struct cfs_context *ctx, u64 index,
 		return PTR_ERR(dir);
 
 	n_dirents = le32_to_cpu(dir->n_dirents);
-
-	/* This should not happen in a valid fs, it should have had dirents_len ==  0 */
-	if (n_dirents == 0) {
+	if (n_dirents == 0 || n_dirents > CFS_MAX_DIRENTS ||
+	    inode_data->dirents_len < cfs_dir_header_size(n_dirents)) {
 		res = -EFSCORRUPTED;
 		goto exit;
 	}
