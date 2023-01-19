@@ -157,7 +157,7 @@ static void *cfs_get_vdata_buf(struct cfs_context *ctx, u64 offset, u32 len,
 }
 
 /* Read data from anywhere in the descriptor */
-static void *cfs_read_data(struct cfs_context *ctx, u64 offset, u64 size, u8 *dest)
+static void *cfs_read_data(struct cfs_context *ctx, u64 offset, u32 size, u8 *dest)
 {
 	loff_t pos = offset;
 	size_t copied;
