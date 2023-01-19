@@ -67,13 +67,15 @@ struct lcfs_superblock_s {
 	uint32_t magic;
 	uint64_t vdata_offset;
 
-	uint64_t unused3[2];
-};
+	/* For future use, and makes superblock 128 bytes to align
+	 * inode table on cacheline boundary on most arches. */
+	uint32_t unused[28];
+} __attribute__((__packed__));
 
 struct lcfs_vdata_s {
 	uint64_t off;
 	uint32_t len;
-};
+} __attribute__((__packed__));
 
 struct lcfs_inode_s {
 	uint32_t st_mode; /* File type and mode.  */
@@ -91,7 +93,12 @@ struct lcfs_inode_s {
 	struct lcfs_vdata_s variable_data; /* dirent, backing file or symlink target */
 	struct lcfs_vdata_s xattrs;
 	struct lcfs_vdata_s digest;
-};
+
+	/* For future use, and makes inode_data 96 bytes which
+	 * is semi-aligned with cacheline sizes. */
+	uint32_t unused[2];
+} __attribute__((__packed__));
+;
 
 struct lcfs_dirent_s {
 	uint32_t inode_num;
@@ -99,12 +106,14 @@ struct lcfs_dirent_s {
 	uint8_t name_len;
 	uint8_t d_type;
 	uint16_t _padding;
-};
+} __attribute__((__packed__));
+;
 
 struct lcfs_dir_header_s {
 	uint32_t n_dirents;
 	struct lcfs_dirent_s dirents[0];
-};
+} __attribute__((__packed__));
+;
 
 static inline size_t lcfs_dir_header_size(size_t n_dirents)
 {
@@ -116,12 +125,14 @@ static inline size_t lcfs_dir_header_size(size_t n_dirents)
 struct lcfs_xattr_element_s {
 	uint16_t key_length;
 	uint16_t value_length;
-};
+} __attribute__((__packed__));
+;
 
 struct lcfs_xattr_header_s {
 	uint16_t n_attr;
 	struct lcfs_xattr_element_s attr[0];
-};
+} __attribute__((__packed__));
+;
 
 static inline size_t lcfs_xattr_header_size(size_t n_element)
 {
