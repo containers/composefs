@@ -25,6 +25,7 @@ struct cfs_inode_extra_data {
 struct cfs_context {
 	struct file *descriptor;
 	u64 vdata_offset;
+	u32 num_inodes;
 
 	u64 descriptor_len;
 };

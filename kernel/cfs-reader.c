@@ -157,7 +157,7 @@ static void *cfs_get_vdata_buf(struct cfs_context *ctx, u64 offset, u32 len,
 }
 
 /* Read data from anywhere in the descriptor */
-static void *cfs_read_data(struct cfs_context *ctx, u64 offset, u64 size, u8 *dest)
+static void *cfs_read_data(struct cfs_context *ctx, u64 offset, u32 size, u8 *dest)
 {
 	loff_t pos = offset;
 	size_t copied;
@@ -233,6 +233,7 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	enum hash_algo verity_algo;
 	struct cfs_context ctx;
 	struct file *descriptor;
+	u64 num_inodes;
 	loff_t i_size;
 	int res;
 
@@ -256,8 +257,7 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	}
 
 	i_size = i_size_read(file_inode(descriptor));
-	if (i_size <=
-	    (sizeof(struct cfs_superblock) + sizeof(struct cfs_inode_data))) {
+	if (i_size <= CFS_DESCRIPTOR_MIN_SIZE) {
 		res = -EINVAL;
 		goto fail;
 	}
@@ -283,13 +283,17 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	    ctx.vdata_offset > ctx.descriptor_len ||
 	    ctx.vdata_offset <= CFS_INODE_TABLE_OFFSET ||
 	    /* vdata is aligned */
-	    ctx.vdata_offset % 4 != 0 ||
-	    /* Fits at least the root inode */
-	    sizeof(struct cfs_superblock) + sizeof(struct cfs_inode_data) >
-		    ctx.descriptor_len) {
+	    ctx.vdata_offset % 4 != 0) {
 		res = -EFSCORRUPTED;
 		goto fail;
 	}
+
+	num_inodes = (ctx.vdata_offset - CFS_INODE_TABLE_OFFSET) / CFS_INODE_SIZE;
+	if (num_inodes > U32_MAX) {
+		res = -EFSCORRUPTED;
+		goto fail;
+	}
+	ctx.num_inodes = num_inodes;
 
 	*ctx_out = ctx;
 	return 0;
@@ -339,8 +343,11 @@ int cfs_init_inode(struct cfs_context *ctx, u32 inode_num, struct inode *inode,
 	u32 st_type;
 	u64 size;
 
-	disk_data = cfs_get_inode_buf(ctx, inode_num * sizeof(struct cfs_inode_data),
-				      sizeof(struct cfs_inode_data), &vdata_buf);
+	if (inode_num >= ctx->num_inodes)
+		return -EFSCORRUPTED;
+
+	disk_data = cfs_get_inode_buf(ctx, inode_num * CFS_INODE_SIZE,
+				      CFS_INODE_SIZE, &vdata_buf);
 	if (IS_ERR(disk_data))
 		return PTR_ERR(disk_data);
 
@@ -382,7 +389,7 @@ int cfs_init_inode(struct cfs_context *ctx, u32 inode_num, struct inode *inode,
 
 	if (st_type == S_IFLNK) {
 		/* Symbolic link must have a non-empty target */
-		if (!inode_data->path_payload) {
+		if (!inode_data->path_payload || *inode_data->path_payload == 0) {
 			ret = -EFSCORRUPTED;
 			goto fail;
 		}
@@ -458,9 +465,8 @@ ssize_t cfs_list_xattrs(struct cfs_context *ctx,
 		return PTR_ERR(xattrs);
 
 	n_xattrs = le16_to_cpu(xattrs->n_attr);
-
-	/* Verify that array fits */
-	if (inode_data->xattrs_len < cfs_xattr_header_size(n_xattrs)) {
+	if (n_xattrs == 0 || n_xattrs > CFS_MAX_XATTRS ||
+	    inode_data->xattrs_len < cfs_xattr_header_size(n_xattrs)) {
 		copied = -EFSCORRUPTED;
 		goto exit;
 	}
@@ -524,9 +530,8 @@ int cfs_get_xattr(struct cfs_context *ctx, struct cfs_inode_extra_data *inode_da
 		return PTR_ERR(xattrs);
 
 	n_xattrs = le16_to_cpu(xattrs->n_attr);
-
-	/* Verify that array fits */
-	if (inode_data->xattrs_len < cfs_xattr_header_size(n_xattrs)) {
+	if (n_xattrs == 0 || n_xattrs > CFS_MAX_XATTRS ||
+	    inode_data->xattrs_len < cfs_xattr_header_size(n_xattrs)) {
 		res = -EFSCORRUPTED;
 		goto exit;
 	}
@@ -569,6 +574,7 @@ int cfs_get_xattr(struct cfs_context *ctx, struct cfs_inode_extra_data *inode_da
 	res = -ENODATA;
 
 exit:
+	cfs_buf_put(&vdata_buf);
 	return res;
 }
 
@@ -606,9 +612,8 @@ int cfs_dir_iterate(struct cfs_context *ctx, u64 index,
 		return PTR_ERR(dir);
 
 	n_dirents = le32_to_cpu(dir->n_dirents);
-
-	/* Should not happen in a valid fs, empty dirs should have had dirents_len ==  0 */
-	if (n_dirents == 0) {
+	if (n_dirents == 0 || n_dirents > CFS_MAX_DIRENTS ||
+	    inode_data->dirents_len < cfs_dir_header_size(n_dirents)) {
 		res = -EFSCORRUPTED;
 		goto exit;
 	}
@@ -673,9 +678,8 @@ int cfs_dir_lookup(struct cfs_context *ctx, u64 index,
 		return PTR_ERR(dir);
 
 	n_dirents = le32_to_cpu(dir->n_dirents);
-
-	/* This should not happen in a valid fs, it should have had dirents_len ==  0 */
-	if (n_dirents == 0) {
+	if (n_dirents == 0 || n_dirents > CFS_MAX_DIRENTS ||
+	    inode_data->dirents_len < cfs_dir_header_size(n_dirents)) {
 		res = -EFSCORRUPTED;
 		goto exit;
 	}
