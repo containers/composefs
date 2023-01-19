@@ -264,7 +264,7 @@ static void cfs_free_inode(struct inode *inode)
 {
 	struct cfs_inode *cino = CFS_I(inode);
 
-	cfs_inode_extra_data_put(&cino->inode_data);
+	kfree(cino->inode_data.path_payload);
 	kmem_cache_free(cfs_inode_cachep, cino);
 }
 
