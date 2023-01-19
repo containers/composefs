@@ -256,8 +256,7 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	}
 
 	i_size = i_size_read(file_inode(descriptor));
-	if (i_size <=
-	    (sizeof(struct cfs_superblock) + sizeof(struct cfs_inode_data))) {
+	if (i_size <= CFS_DESCRIPTOR_MIN_SIZE) {
 		res = -EINVAL;
 		goto fail;
 	}
@@ -283,10 +282,7 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	    ctx.vdata_offset > ctx.descriptor_len ||
 	    ctx.vdata_offset <= CFS_INODE_TABLE_OFFSET ||
 	    /* vdata is aligned */
-	    ctx.vdata_offset % 4 != 0 ||
-	    /* Fits at least the root inode */
-	    sizeof(struct cfs_superblock) + sizeof(struct cfs_inode_data) >
-		    ctx.descriptor_len) {
+	    ctx.vdata_offset % 4 != 0) {
 		res = -EFSCORRUPTED;
 		goto fail;
 	}

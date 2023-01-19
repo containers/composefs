@@ -70,6 +70,10 @@
 #define CFS_INODE_TABLE_OFFSET sizeof(struct cfs_superblock)
 #define CFS_ROOT_INO 0
 
+/* Fits at least the root inode */
+#define CFS_DESCRIPTOR_MIN_SIZE                                                \
+	(sizeof(struct cfs_superblock) + sizeof(struct cfs_inode_data))
+
 struct cfs_superblock {
 	__le32 version; /* CFS_VERSION */
 	__le32 magic; /* CFS_MAGIC */
