@@ -69,7 +69,6 @@ static const struct inode_operations cfs_file_inode_operations;
 static const struct inode_operations cfs_link_inode_operations;
 
 static const struct xattr_handler *cfs_xattr_handlers[];
-static const struct export_operations cfs_export_operations;
 
 static const struct address_space_operations cfs_aops = {
 	.direct_IO = noop_direct_IO,
@@ -401,7 +400,6 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	sb->s_flags |= SB_RDONLY;
 	sb->s_magic = CFS_MAGIC;
 	sb->s_xattr = cfs_xattr_handlers;
-	sb->s_export_op = &cfs_export_operations;
 
 	if (fsi->base_path) {
 		char *lower, *splitlower = NULL;
