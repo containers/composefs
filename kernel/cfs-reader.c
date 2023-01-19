@@ -576,6 +576,7 @@ int cfs_get_xattr(struct cfs_context *ctx, struct cfs_inode_extra_data *inode_da
 	res = -ENODATA;
 
 exit:
+	cfs_buf_put(&vdata_buf);
 	return res;
 }
 
