@@ -317,7 +317,7 @@ enum cfs_param {
 	Opt_verity_check,
 };
 
-const struct fs_parameter_spec cfs_parameters[] = {
+static const struct fs_parameter_spec cfs_parameters[] = {
 	fsparam_string("basedir", Opt_base_path),
 	fsparam_string("digest", Opt_digest),
 	fsparam_u32("verity_check", Opt_verity_check),
