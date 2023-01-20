@@ -7,8 +7,6 @@
 
 #define EFSCORRUPTED EUCLEAN /* Filesystem is corrupted */
 
-#define CFS_N_PRELOAD_DIR_CHUNKS 4
-
 struct cfs_inode_extra_data {
 	char *path_payload; /* Real pathname for files, target for symlinks */
 
@@ -34,8 +32,6 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 		 struct cfs_context *ctx);
 
 void cfs_ctx_put(struct cfs_context *ctx);
-
-void cfs_inode_extra_data_put(struct cfs_inode_extra_data *inode_data);
 
 int cfs_init_inode(struct cfs_context *ctx, u32 inode_num, struct inode *inode,
 		   struct cfs_inode_extra_data *data);

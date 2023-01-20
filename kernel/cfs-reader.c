@@ -438,12 +438,6 @@ fail:
 	return ret;
 }
 
-void cfs_inode_extra_data_put(struct cfs_inode_extra_data *inode_data)
-{
-	kfree(inode_data->path_payload);
-	inode_data->path_payload = NULL;
-}
-
 ssize_t cfs_list_xattrs(struct cfs_context *ctx,
 			struct cfs_inode_extra_data *inode_data, char *names,
 			size_t size)
