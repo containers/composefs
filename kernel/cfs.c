@@ -401,7 +401,9 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	sb->s_magic = CFS_MAGIC;
 	sb->s_xattr = cfs_xattr_handlers;
 
-	if (fsi->base_path) {
+	if (fsi->base_path == NULL) {
+		pr_warn("WARNING: composefs mount without a basedir, all lookups will fail\n");
+	} else {
 		char *lower, *splitlower = NULL;
 
 		ret = -ENOMEM;
