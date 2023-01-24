@@ -706,8 +706,10 @@ int cfs_dir_lookup(struct cfs_context *ctx, u64 index,
 
 		if (cmp > 0)
 			start_dirent = mid_dirent + 1;
-		else
+		else if (mid_dirent > 0)
 			end_dirent = mid_dirent - 1;
+		else
+			break;
 	}
 
 	/* not found */
