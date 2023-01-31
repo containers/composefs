@@ -625,19 +625,11 @@ static ssize_t cfs_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 {
 	struct file *file = iocb->ki_filp;
 	struct file *realfile = file->private_data;
-	int ret;
 
 	if (realfile == &empty_file)
 		return 0;
 
-	if (!realfile->f_op->read_iter)
-		return -ENODEV;
-
-	iocb->ki_filp = realfile;
-	ret = call_read_iter(realfile, iocb, iter);
-	iocb->ki_filp = file;
-
-	return ret;
+	return vfs_iter_read(realfile, iter, &iocb->ki_pos, 0);
 }
 
 static int cfs_fadvise(struct file *file, loff_t offset, loff_t len, int advice)
