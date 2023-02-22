@@ -394,6 +394,7 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	struct inode *inode;
 	struct vfsmount *mnt;
 	int ret;
+	int stack_depth;
 
 	/* Set up the inode allocator early */
 	sb->s_op = &cfs_ops;
@@ -427,9 +428,12 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 			goto fail;
 		}
 
+		stack_depth = 0;
+
 		lower = splitlower;
 		for (size_t i = 0; i < numbasedirs; i++) {
 			mnt = resolve_basedir(lower);
+			stack_depth = max(stack_depth, mnt->mnt_sb->s_stack_depth);
 			if (IS_ERR(mnt)) {
 				ret = PTR_ERR(mnt);
 				kfree(splitlower);
@@ -440,6 +444,13 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 			lower = strchr(lower, '\0') + 1;
 		}
 		kfree(splitlower);
+
+		ret = -EINVAL;
+		sb->s_stack_depth = stack_depth + 1;
+		if (sb->s_stack_depth > FILESYSTEM_MAX_STACK_DEPTH) {
+			pr_err("maximum fs stacking depth exceeded\n");
+			goto fail;
+		}
 	}
 
 	/* Must be inited before calling cfs_get_inode.  */
