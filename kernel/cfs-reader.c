@@ -236,6 +236,8 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	enum hash_algo verity_algo;
 	struct cfs_context ctx;
 	struct file *descriptor;
+	struct inode *real_inode;
+	struct file *tmp_file;
 	u64 num_inodes;
 	loff_t i_size;
 	int res;
@@ -244,11 +246,24 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	if (IS_ERR(descriptor))
 		return PTR_ERR(descriptor);
 
+	real_inode = d_real_inode(descriptor->f_path.dentry);
+	if (real_inode != descriptor->f_inode) {
+		/* If stacked fs, reopen with real file to ensure fs-verity works, etc */
+		tmp_file = open_with_fake_path(&descriptor->f_path, O_RDONLY,
+					       real_inode, current_cred());
+		if (IS_ERR(tmp_file)) {
+			res = PTR_ERR(tmp_file);
+			goto fail;
+		}
+		fput(descriptor);
+		descriptor = tmp_file;
+	}
+
 	*stack_depth = max(*stack_depth, descriptor->f_inode->i_sb->s_stack_depth);
 
 	if (required_digest) {
-		res = fsverity_get_digest(d_inode(descriptor->f_path.dentry),
-					  verity_digest, &verity_algo);
+		res = fsverity_get_digest(file_inode(descriptor), verity_digest,
+					  &verity_algo);
 		if (res < 0) {
 			pr_err("ERROR: composefs descriptor has no fs-verity digest\n");
 			goto fail;
