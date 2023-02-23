@@ -51,6 +51,9 @@ struct cfs_info {
 struct cfs_inode {
 	struct inode vfs_inode;
 	struct cfs_inode_extra_data inode_data;
+
+	/* This is lazily loaded when first needed, under inode lock */
+	struct dentry *backing_dentry;
 };
 
 static inline struct cfs_inode *CFS_I(struct inode *inode)
@@ -67,6 +70,7 @@ static const struct file_operations cfs_dir_operations;
 static const struct inode_operations cfs_dir_inode_operations;
 static const struct inode_operations cfs_file_inode_operations;
 static const struct inode_operations cfs_link_inode_operations;
+static const struct dentry_operations cfs_dentry_operations;
 
 static const struct xattr_handler *cfs_xattr_handlers[];
 
@@ -256,8 +260,17 @@ static struct inode *cfs_alloc_inode(struct super_block *sb)
 		return NULL;
 
 	memset(&cino->inode_data, 0, sizeof(cino->inode_data));
+	cino->backing_dentry = NULL;
 
 	return &cino->vfs_inode;
+}
+
+static void cfs_destroy_inode(struct inode *inode)
+{
+	struct cfs_inode *cino = CFS_I(inode);
+
+	if (cino->backing_dentry)
+		dput(cino->backing_dentry);
 }
 
 static void cfs_free_inode(struct inode *inode)
@@ -309,6 +322,7 @@ static const struct super_operations cfs_ops = {
 	.put_super = cfs_put_super,
 	.alloc_inode = cfs_alloc_inode,
 	.free_inode = cfs_free_inode,
+	.destroy_inode = cfs_destroy_inode,
 };
 
 enum cfs_param {
@@ -398,9 +412,12 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 
 	/* Set up the inode allocator early */
 	sb->s_op = &cfs_ops;
+	sb->s_d_op = &cfs_dentry_operations;
 	sb->s_flags |= SB_RDONLY;
 	sb->s_magic = CFS_MAGIC;
 	sb->s_xattr = cfs_xattr_handlers;
+
+	stack_depth = 0;
 
 	if (fsi->base_path == NULL) {
 		pr_warn("WARNING: composefs mount without a basedir, all lookups will fail\n");
@@ -428,8 +445,6 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 			goto fail;
 		}
 
-		stack_depth = 0;
-
 		lower = splitlower;
 		for (size_t i = 0; i < numbasedirs; i++) {
 			mnt = resolve_basedir(lower);
@@ -444,20 +459,20 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 			lower = strchr(lower, '\0') + 1;
 		}
 		kfree(splitlower);
-
-		ret = -EINVAL;
-		sb->s_stack_depth = stack_depth + 1;
-		if (sb->s_stack_depth > FILESYSTEM_MAX_STACK_DEPTH) {
-			pr_err("maximum fs stacking depth exceeded\n");
-			goto fail;
-		}
 	}
 
 	/* Must be inited before calling cfs_get_inode.  */
 	ret = cfs_init_ctx(fc->source, fsi->has_digest ? fsi->digest : NULL,
-			   &fsi->cfs_ctx);
+			   &fsi->cfs_ctx, &stack_depth);
 	if (ret < 0)
 		goto fail;
+
+	ret = -EINVAL;
+	sb->s_stack_depth = stack_depth + 1;
+	if (sb->s_stack_depth > FILESYSTEM_MAX_STACK_DEPTH) {
+		pr_err("maximum fs stacking depth exceeded\n");
+		goto fail;
+	}
 
 	inode = cfs_make_inode(&fsi->cfs_ctx, sb, CFS_ROOT_INO, NULL);
 	if (IS_ERR(inode)) {
@@ -499,22 +514,83 @@ static const struct fs_context_operations cfs_context_ops = {
 	.get_tree = cfs_get_tree,
 };
 
-static struct file *open_base_file(struct cfs_info *fsi, struct inode *inode,
-				   struct file *file)
+static struct dentry *cfs_ensure_backing_dentry(struct inode *inode)
 {
+	struct cfs_info *fsi = inode->i_sb->s_fs_info;
 	struct cfs_inode *cino = CFS_I(inode);
-	struct file *real_file;
-	char *real_path = cino->inode_data.path_payload;
+	struct file *backing_file;
+	char *backing_path = cino->inode_data.path_payload;
+	struct dentry *backing_dentry;
+
+	inode_lock(inode);
+	if (cino->backing_dentry != NULL) {
+		backing_dentry = cino->backing_dentry;
+		inode_unlock(inode);
+		return backing_dentry;
+	}
+	inode_unlock(inode);
 
 	for (size_t i = 0; i < fsi->n_bases; i++) {
-		real_file = file_open_root_mnt(fsi->bases[i], real_path,
-					       file->f_flags, 0);
-		if (real_file != ERR_PTR(-ENOENT))
-			return real_file;
+		backing_file = file_open_root_mnt(fsi->bases[i], backing_path,
+						  O_RDONLY, 0);
+		if (IS_ERR(backing_file)) {
+			if (backing_file == ERR_PTR(-ENOENT))
+				continue;
+			return ERR_CAST(backing_file);
+		}
+
+		/* Check digest, read, etc from the real file, not any stacked fs */
+		backing_dentry = d_real(backing_file->f_path.dentry, NULL);
+
+		inode_lock(inode);
+		if (cino->backing_dentry == NULL)
+			cino->backing_dentry = dget(backing_dentry);
+		backing_dentry = cino->backing_dentry;
+		inode_unlock(inode);
+
+		fput(backing_file);
+
+		return backing_dentry;
 	}
 
 	return ERR_PTR(-ENOENT);
 }
+
+static struct dentry *cfs_d_real(struct dentry *dentry, const struct inode *inode)
+{
+	struct inode *cfs_inode = d_inode(dentry);
+	struct dentry *backing_dentry;
+
+	if (inode && cfs_inode == inode)
+		return dentry;
+
+	if (!d_is_reg(dentry)) {
+		if (!inode)
+			return dentry;
+		goto bug;
+	}
+
+	backing_dentry = cfs_ensure_backing_dentry(cfs_inode);
+	if (IS_ERR(backing_dentry)) {
+		goto bug;
+	}
+
+	if (!inode || inode == d_inode(backing_dentry))
+		return backing_dentry;
+
+bug:
+	WARN(1, "%s(%pd4, %s:%lu): real dentry (%p/%lu) not found\n", __func__,
+	     dentry, inode ? inode->i_sb->s_id : "NULL",
+	     inode ? inode->i_ino : 0, backing_dentry,
+	     backing_dentry && d_inode(backing_dentry) ?
+		     d_inode(backing_dentry)->i_ino :
+		     0);
+	return dentry;
+}
+
+static const struct dentry_operations cfs_dentry_operations = {
+	.d_real = cfs_d_real,
+};
 
 static int cfs_open_file(struct inode *inode, struct file *file)
 {
@@ -522,7 +598,7 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 	struct cfs_inode *cino = CFS_I(inode);
 	char *real_path = cino->inode_data.path_payload;
 	struct file *faked_file;
-	struct file *real_file;
+	struct dentry *backing_dentry;
 
 	if (file->f_flags & (O_WRONLY | O_RDWR | O_CREAT | O_EXCL | O_TRUNC))
 		return -EROFS;
@@ -539,10 +615,9 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 		return -EIO;
 	}
 
-	real_file = open_base_file(fsi, inode, file);
-
-	if (IS_ERR(real_file))
-		return PTR_ERR(real_file);
+	backing_dentry = cfs_ensure_backing_dentry(inode);
+	if (IS_ERR(backing_dentry))
+		return PTR_ERR(backing_dentry);
 
 	/* If metadata records a digest for the file, ensure it is there
 	 * and correct before using the contents.
@@ -553,28 +628,24 @@ static int cfs_open_file(struct inode *inode, struct file *file)
 		enum hash_algo verity_algo;
 		int res;
 
-		res = fsverity_get_digest(d_inode(real_file->f_path.dentry),
+		res = fsverity_get_digest(d_inode(backing_dentry),
 					  verity_digest, &verity_algo);
 		if (res < 0) {
-			pr_warn("WARNING: composefs backing file '%pD' has no fs-verity digest\n",
-				real_file);
-			fput(real_file);
+			pr_warn("WARNING: composefs backing file '%pd' has no fs-verity digest\n",
+				backing_dentry);
 			return -EIO;
 		}
 		if (verity_algo != HASH_ALGO_SHA256 ||
 		    memcmp(cino->inode_data.digest, verity_digest,
 			   SHA256_DIGEST_SIZE) != 0) {
-			pr_warn("WARNING: composefs backing file '%pD' has the wrong fs-verity digest\n",
-				real_file);
-			fput(real_file);
+			pr_warn("WARNING: composefs backing file '%pd' has the wrong fs-verity digest\n",
+				backing_dentry);
 			return -EIO;
 		}
 	}
 
 	faked_file = open_with_fake_path(&file->f_path, file->f_flags,
-					 real_file->f_inode, current_cred());
-	fput(real_file);
-
+					 d_inode(backing_dentry), current_cred());
 	if (IS_ERR(faked_file))
 		return PTR_ERR(faked_file);
 
