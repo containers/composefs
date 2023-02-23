@@ -86,6 +86,9 @@ static void *cfs_get_buf(struct cfs_context *ctx, u64 offset, u32 size,
 	if (buf->pages)
 		return ERR_PTR(-EINVAL);
 
+	if (mapping->a_ops->read_folio == NULL)
+		return ERR_PTR(-EINVAL);
+
 	if (!cfs_is_in_section(0, ctx->descriptor_len, offset, size) || size == 0)
 		return ERR_PTR(-EFSCORRUPTED);
 
