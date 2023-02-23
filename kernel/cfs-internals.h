@@ -29,7 +29,7 @@ struct cfs_context {
 };
 
 int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
-		 struct cfs_context *ctx);
+		 struct cfs_context *ctx, int *stack_depth);
 
 void cfs_ctx_put(struct cfs_context *ctx);
 

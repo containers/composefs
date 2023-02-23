@@ -402,6 +402,8 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	sb->s_magic = CFS_MAGIC;
 	sb->s_xattr = cfs_xattr_handlers;
 
+	stack_depth = 0;
+
 	if (fsi->base_path == NULL) {
 		pr_warn("WARNING: composefs mount without a basedir, all lookups will fail\n");
 	} else {
@@ -428,8 +430,6 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 			goto fail;
 		}
 
-		stack_depth = 0;
-
 		lower = splitlower;
 		for (size_t i = 0; i < numbasedirs; i++) {
 			mnt = resolve_basedir(lower);
@@ -444,20 +444,20 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 			lower = strchr(lower, '\0') + 1;
 		}
 		kfree(splitlower);
-
-		ret = -EINVAL;
-		sb->s_stack_depth = stack_depth + 1;
-		if (sb->s_stack_depth > FILESYSTEM_MAX_STACK_DEPTH) {
-			pr_err("maximum fs stacking depth exceeded\n");
-			goto fail;
-		}
 	}
 
 	/* Must be inited before calling cfs_get_inode.  */
 	ret = cfs_init_ctx(fc->source, fsi->has_digest ? fsi->digest : NULL,
-			   &fsi->cfs_ctx);
+			   &fsi->cfs_ctx, &stack_depth);
 	if (ret < 0)
 		goto fail;
+
+	ret = -EINVAL;
+	sb->s_stack_depth = stack_depth + 1;
+	if (sb->s_stack_depth > FILESYSTEM_MAX_STACK_DEPTH) {
+		pr_err("maximum fs stacking depth exceeded\n");
+		goto fail;
+	}
 
 	inode = cfs_make_inode(&fsi->cfs_ctx, sb, CFS_ROOT_INO, NULL);
 	if (IS_ERR(inode)) {

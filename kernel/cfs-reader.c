@@ -228,7 +228,7 @@ static char *cfs_read_vdata_path(struct cfs_context *ctx, u64 offset, u32 len)
 }
 
 int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
-		 struct cfs_context *ctx_out)
+		 struct cfs_context *ctx_out, int *stack_depth)
 {
 	u8 verity_digest[FS_VERITY_MAX_DIGEST_SIZE];
 	struct cfs_superblock superblock_buf;
@@ -243,6 +243,8 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	descriptor = filp_open(descriptor_path, O_RDONLY, 0);
 	if (IS_ERR(descriptor))
 		return PTR_ERR(descriptor);
+
+	*stack_depth = max(*stack_depth, descriptor->f_inode->i_sb->s_stack_depth);
 
 	if (required_digest) {
 		res = fsverity_get_digest(d_inode(descriptor->f_path.dentry),
