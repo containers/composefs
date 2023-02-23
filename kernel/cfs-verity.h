@@ -13,14 +13,10 @@
 #include <linux/fsverity.h>
 #include <linux/mempool.h>
 
-/* Copy of fsverity_get_digest(), supporting only sha256 from linux 5.19-rc1 for older kernels. */
-
-/* FS_VERITY_MAX_DIGEST_SIZE was made public at the same time as fsverity_get_digest() */
-#ifndef FS_VERITY_MAX_DIGEST_SIZE
+/* Copy of fsverity_get_digest(), supporting only sha256, because fsverity_get_digest is not yet exported gpl. */
 
 /* Copied from fsverity_private.h */
 #define FS_VERITY_MAX_LEVELS 8
-#define FS_VERITY_MAX_DIGEST_SIZE SHA512_DIGEST_SIZE
 
 struct fsverity_hash_alg {
 	struct crypto_ahash *tfm; /* hash tfm, allocated on demand */
@@ -55,9 +51,9 @@ struct fsverity_info {
 	const struct inode *inode;
 };
 
-static inline int fsverity_get_digest(struct inode *inode,
-				      u8 digest[FS_VERITY_MAX_DIGEST_SIZE],
-				      enum hash_algo *alg)
+static inline int cfs_fsverity_get_digest(struct inode *inode,
+					  u8 digest[FS_VERITY_MAX_DIGEST_SIZE],
+					  enum hash_algo *alg)
 {
 	const struct fsverity_info *vi;
 	const struct fsverity_hash_alg *hash_alg;
@@ -86,4 +82,4 @@ static inline int fsverity_get_digest(struct inode *inode,
 	return 0;
 }
 
-#endif
+#define fsverity_get_digest cfs_fsverity_get_digest
