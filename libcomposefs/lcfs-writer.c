@@ -157,7 +157,8 @@ static void vdata_ht_freer(void *data)
 	free(data);
 }
 
-static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root)
+static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
+			uint8_t *digest_out)
 {
 	struct lcfs_ctx_s *ret;
 
@@ -168,6 +169,16 @@ static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root)
 	ret->root = lcfs_node_ref(root);
 	ret->ht = hash_initialize(0, NULL, vdata_ht_hasher, vdata_ht_comparator,
 				  vdata_ht_freer);
+
+	ret->file = file;
+	ret->write_cb = write_cb;
+	if (digest_out) {
+		ret->fsverity_ctx = lcfs_fsverity_context_new();
+		if (ret->fsverity_ctx == NULL) {
+			lcfs_close(ret);
+			return NULL;
+		}
+	}
 
 	return ret;
 }
@@ -641,21 +652,10 @@ int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 	struct lcfs_ctx_s *ctx;
 	off_t data_offset;
 
-	ctx = lcfs_new_ctx(root);
+	ctx = lcfs_new_ctx(root, file, write_cb, digest_out);
 	if (ctx == NULL) {
 		errno = ENOMEM;
 		return -1;
-	}
-
-	ctx->file = file;
-	ctx->write_cb = write_cb;
-	if (digest_out) {
-		ctx->fsverity_ctx = lcfs_fsverity_context_new();
-		if (ctx->fsverity_ctx == NULL) {
-			lcfs_close(ctx);
-			errno = ENOMEM;
-			return -1;
-		}
 	}
 
 	ret = compute_tree(ctx, root);
