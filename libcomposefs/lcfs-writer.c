@@ -350,6 +350,11 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		}
 	}
 
+	/* Reset in_tree back to false for multiple uses */
+	for (node = ctx->root; node != NULL; node = node->next) {
+		node->in_tree = false;
+	}
+
 	return 0;
 }
 
