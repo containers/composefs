@@ -38,6 +38,10 @@
 #define ALIGN_TO(_offset, _align_size)                                         \
 	(((_offset) + _align_size - 1) & ~(_align_size - 1))
 
+#define __round_mask(x, y) ((__typeof__(x))((y)-1))
+#define round_up(x, y) ((((x)-1) | __round_mask(x, y)) + 1)
+#define round_down(x, y) ((x) & ~__round_mask(x, y))
+
 /* In memory representation used to build the file.  */
 
 struct lcfs_xattr_s {
@@ -634,6 +638,15 @@ static int lcfs_write_pad(struct lcfs_ctx_s *ctx, size_t data_len)
 		}
 	}
 
+	return 0;
+}
+
+static int lcfs_write_align(struct lcfs_ctx_s *ctx, size_t align_size)
+{
+	off_t end = round_up(ctx->bytes_written, align_size);
+	if (end > ctx->bytes_written) {
+		return lcfs_write_pad(ctx, end - ctx->bytes_written);
+	}
 	return 0;
 }
 
