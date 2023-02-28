@@ -88,6 +88,9 @@ struct lcfs_ctx_s {
 	/* Used by compute_tree.  */
 	struct lcfs_node_s *queue_end;
 	loff_t inode_table_size;
+	uint32_t num_inodes;
+	int64_t min_mtim_sec;
+	uint32_t min_mtim_nsec;
 
 	void *file;
 	lcfs_write_cb write_cb;
@@ -324,6 +327,9 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 	ctx->queue_end = root;
 	root->in_tree = true;
 
+	ctx->min_mtim_sec = root->inode.st_mtim_sec;
+	ctx->min_mtim_nsec = root->inode.st_mtim_nsec;
+
 	node = root;
 
 	for (node = root, index = 0; node != NULL; node = node->next, index++) {
@@ -352,6 +358,13 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		qsort(node->xattrs, node->n_xattrs, sizeof(node->xattrs[0]),
 		      cmp_xattr);
 
+		if (node->inode.st_mtim_sec < ctx->min_mtim_sec ||
+		    (node->inode.st_mtim_sec == ctx->min_mtim_sec &&
+		     node->inode.st_mtim_nsec < ctx->min_mtim_nsec)) {
+			ctx->min_mtim_sec = node->inode.st_mtim_sec;
+			ctx->min_mtim_nsec = node->inode.st_mtim_nsec;
+		}
+
 		/* Assign inode index */
 		node->inode_num = index;
 		ctx->inode_table_size += sizeof(struct lcfs_inode_s);
@@ -378,6 +391,8 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 	for (node = ctx->root; node != NULL; node = node->next) {
 		node->in_tree = false;
 	}
+
+	ctx->num_inodes = index;
 
 	return 0;
 }
