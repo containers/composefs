@@ -80,6 +80,7 @@ struct lcfs_ctx_s {
 	size_t vdata_allocated;
 	size_t curr_off;
 	struct lcfs_node_s *root;
+	bool destroy_root;
 
 	/* User for dedup.  */
 	Hash_table *ht;
@@ -96,6 +97,8 @@ struct lcfs_ctx_s {
 
 #define APPEND_FLAGS_DEDUP (1 << 0)
 #define APPEND_FLAGS_ALIGN (1 << 1)
+
+static void lcfs_node_destroy(struct lcfs_node_s *node);
 
 int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 		      const void *data, size_t len, uint32_t flags);
@@ -156,16 +159,27 @@ static void vdata_ht_freer(void *data)
 	free(data);
 }
 
-static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
-			uint8_t *digest_out)
+static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root, bool clone_root,
+				       void *file, lcfs_write_cb write_cb,
+				       uint8_t *digest_out)
 {
 	struct lcfs_ctx_s *ret;
 
 	ret = calloc(1, sizeof *ret);
-	if (ret == NULL)
+	if (ret == NULL) {
 		return ret;
+	}
 
-	ret->root = lcfs_node_ref(root);
+	if (clone_root) {
+		ret->destroy_root = true;
+		ret->root = lcfs_node_clone_deep(root);
+		if (root == NULL) {
+			lcfs_close(ret);
+			return NULL;
+		}
+	} else {
+		ret->root = lcfs_node_ref(root);
+	}
 	ret->ht = hash_initialize(0, NULL, vdata_ht_hasher, vdata_ht_comparator,
 				  vdata_ht_freer);
 
@@ -651,7 +665,7 @@ int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 	struct lcfs_ctx_s *ctx;
 	off_t data_offset;
 
-	ctx = lcfs_new_ctx(root, file, write_cb, digest_out);
+	ctx = lcfs_new_ctx(root, false, file, write_cb, digest_out);
 	if (ctx == NULL) {
 		errno = ENOMEM;
 		return -1;
@@ -727,7 +741,13 @@ static int lcfs_close(struct lcfs_ctx_s *ctx)
 		lcfs_fsverity_context_free(ctx->fsverity_ctx);
 	hash_free(ctx->ht);
 	free(ctx->vdata);
-	lcfs_node_unref(ctx->root);
+	if (ctx->root) {
+		if (ctx->destroy_root) {
+			lcfs_node_destroy(ctx->root);
+		} else {
+			lcfs_node_unref(ctx->root);
+		}
+	}
 	free(ctx);
 
 	return 0;
@@ -1219,6 +1239,17 @@ void lcfs_node_unref(struct lcfs_node_s *node)
 
 	free(node);
 }
+
+/* Unlink all children (recursively) and then unref. Useful to handle refcount loops like dot and dotdot. */
+static void lcfs_node_destroy(struct lcfs_node_s *node)
+{
+	while (node->children_size > 0) {
+		struct lcfs_node_s *child = lcfs_node_ref(node->children[0]);
+		lcfs_node_remove_child_node(node, 0, child);
+		lcfs_node_destroy(child);
+	}
+	lcfs_node_unref(node);
+};
 
 struct lcfs_node_s *lcfs_node_clone(struct lcfs_node_s *node)
 {
