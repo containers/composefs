@@ -98,4 +98,7 @@ struct lcfs_node_s *lcfs_build(int dirfd, const char *fname, const char *name,
 int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 		  uint8_t *digest_out);
 
+int lcfs_write_erofs_to(struct lcfs_node_s *root, void *file,
+			lcfs_write_cb write_cb, uint8_t *digest_out);
+
 #endif
