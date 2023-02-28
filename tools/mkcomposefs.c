@@ -366,6 +366,7 @@ static void usage(const char *argv0)
 #define OPT_BY_DIGEST 107
 #define OPT_DIGEST_STORE 108
 #define OPT_PRINT_DIGEST 109
+#define OPT_FORMAT 110
 
 static ssize_t write_cb(void *_file, void *buf, size_t count)
 {
@@ -425,6 +426,12 @@ int main(int argc, char **argv)
 			flag: NULL,
 			val: OPT_PRINT_DIGEST
 		},
+		{
+			name: "format",
+			has_arg: required_argument,
+			flag: NULL,
+			val: OPT_FORMAT
+		},
 		{},
 	};
 	const char *bin = argv[0];
@@ -432,6 +439,7 @@ int main(int argc, char **argv)
 	bool absolute_path = false;
 	bool by_digest = false;
 	bool print_digest = false;
+	const char *format = "composefs";
 	struct lcfs_node_s *root;
 	const char *out = NULL;
 	const char *dir_path = NULL;
@@ -465,6 +473,9 @@ int main(int argc, char **argv)
 			break;
 		case OPT_DIGEST_STORE:
 			digest_store_path = optarg;
+			break;
+		case OPT_FORMAT:
+			format = optarg;
 			break;
 		case OPT_PRINT_DIGEST:
 			print_digest = true;
@@ -557,8 +568,17 @@ int main(int argc, char **argv)
 			 by_digest, digest_store_path) < 0)
 		error(EXIT_FAILURE, errno, "cannot fill payload");
 
-	if (lcfs_write_to(root, out_file, write_cb, print_digest ? digest : NULL) < 0)
-		error(EXIT_FAILURE, errno, "cannot write to stdout");
+	if (strcmp(format, "erofs") == 0) {
+		if (lcfs_write_erofs_to(root, out_file, write_cb,
+					print_digest ? digest : NULL) < 0)
+			error(EXIT_FAILURE, errno, "cannot write file");
+	} else if (strcmp(format, "composefs") == 0) {
+		if (lcfs_write_to(root, out_file, write_cb,
+				  print_digest ? digest : NULL) < 0)
+			error(EXIT_FAILURE, errno, "cannot write file");
+	} else {
+		error(EXIT_FAILURE, errno, "Unknown format %s", format);
+	}
 
 	if (print_digest) {
 		char digest_str[LCFS_DIGEST_SIZE * 2 + 1] = { 0 };
