@@ -1220,6 +1220,138 @@ void lcfs_node_unref(struct lcfs_node_s *node)
 	free(node);
 }
 
+struct lcfs_node_s *lcfs_node_clone(struct lcfs_node_s *node)
+{
+	struct lcfs_node_s *new = lcfs_node_new();
+
+	/* Note: This copies only data, not structure like name or children */
+
+	/* We copy the link_to, but clone_deep may rewrite this */
+	if (node->link_to) {
+		new->link_to = lcfs_node_ref(node->link_to);
+	}
+
+	if (node->payload) {
+		new->payload = strdup(node->payload);
+		if (new->payload == NULL)
+			goto fail;
+	}
+
+	if (node->n_xattrs > 0) {
+		new->xattrs = malloc(sizeof(struct lcfs_xattr_s) * node->n_xattrs);
+		if (new->xattrs == NULL)
+			goto fail;
+		for (size_t i = 0; i < node->n_xattrs; i++) {
+			char *key = strdup(node->xattrs[i].key);
+			char *value = memdup(node->xattrs[i].value,
+					     node->xattrs[i].value_len);
+			if (key == NULL || value == NULL) {
+				free(key);
+				free(value);
+				goto fail;
+			}
+			new->xattrs[i].key = key;
+			new->xattrs[i].value = value;
+			new->xattrs[i].value_len = node->xattrs[i].value_len;
+			new->n_xattrs++;
+		}
+	}
+
+	new->digest_set = node->digest_set;
+	memcpy(new->digest, node->digest, LCFS_DIGEST_SIZE);
+	new->inode = node->inode;
+
+	return new;
+
+fail:
+	lcfs_node_unref(new);
+	return NULL;
+}
+
+struct lcfs_node_mapping_s {
+	struct lcfs_node_s *old;
+	struct lcfs_node_s *new;
+};
+
+struct lcfs_clone_data {
+	struct lcfs_node_mapping_s *mapping;
+	size_t n_mappings;
+	size_t allocated_mappings;
+};
+
+static struct lcfs_node_s *_lcfs_node_clone_deep(struct lcfs_node_s *node,
+						 struct lcfs_clone_data *data)
+{
+	struct lcfs_node_s *new = lcfs_node_clone(node);
+
+	if (data->n_mappings >= data->allocated_mappings) {
+		struct lcfs_node_mapping_s *new_mapping;
+		data->allocated_mappings = (data->allocated_mappings == 0) ?
+						   32 :
+						   data->allocated_mappings * 2;
+		new_mapping = reallocarray(data->mapping,
+					   sizeof(struct lcfs_node_mapping_s),
+					   data->allocated_mappings);
+		if (new_mapping == NULL)
+			goto fail;
+		data->mapping = new_mapping;
+	}
+
+	data->mapping[data->n_mappings].old = node;
+	data->mapping[data->n_mappings].new = new;
+	data->n_mappings++;
+
+	for (size_t i = 0; i < node->children_size; ++i) {
+		struct lcfs_node_s *child = node->children[i];
+		struct lcfs_node_s *new_child = _lcfs_node_clone_deep(child, data);
+		if (new_child == NULL)
+			goto fail;
+
+		if (lcfs_node_add_child(new, new_child, child->name) < 0)
+			goto fail;
+	}
+
+	return new;
+
+fail:
+	lcfs_node_unref(new);
+	return NULL;
+}
+
+/* Rewrite all hardlinks according to mapping */
+static void _lcfs_node_clone_rewrite_links(struct lcfs_node_s *new,
+					   struct lcfs_clone_data *data)
+{
+	for (size_t i = 0; i < new->children_size; ++i) {
+		struct lcfs_node_s *new_child = new->children[i];
+		_lcfs_node_clone_rewrite_links(new_child, data);
+	}
+
+	if (new->link_to != NULL) {
+		for (size_t i = 0; i < data->n_mappings; ++i) {
+			if (data->mapping[i].old == new->link_to) {
+				lcfs_node_unref(new->link_to);
+				new->link_to = lcfs_node_ref(data->mapping[i].new);
+				break;
+			}
+		}
+	}
+}
+
+struct lcfs_node_s *lcfs_node_clone_deep(struct lcfs_node_s *node)
+{
+	struct lcfs_clone_data data = { NULL };
+	struct lcfs_node_s *new;
+
+	new = _lcfs_node_clone_deep(node, &data);
+	if (new)
+		_lcfs_node_clone_rewrite_links(node, &data);
+
+	free(data.mapping);
+
+	return new;
+}
+
 bool lcfs_node_dirp(struct lcfs_node_s *node)
 {
 	return (node->inode.st_mode & S_IFMT) == S_IFDIR;

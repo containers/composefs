@@ -39,6 +39,8 @@ typedef ssize_t (*lcfs_write_cb)(void *file, void *buf, size_t count);
 struct lcfs_node_s *lcfs_node_new(void);
 struct lcfs_node_s *lcfs_node_ref(struct lcfs_node_s *node);
 void lcfs_node_unref(struct lcfs_node_s *node);
+struct lcfs_node_s *lcfs_node_clone(struct lcfs_node_s *node);
+struct lcfs_node_s *lcfs_node_clone_deep(struct lcfs_node_s *node);
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 					     int buildflags);
 
