@@ -1085,6 +1085,24 @@ void lcfs_node_make_hardlink(struct lcfs_node_s *node, struct lcfs_node_s *targe
 	target->inode.st_nlink++;
 }
 
+static void lcfs_node_remove_child_node(struct lcfs_node_s *parent, int offset,
+					struct lcfs_node_s *child)
+{
+	assert(child->parent == parent);
+	assert(parent->children[offset] == child);
+
+	memcpy(&parent->children[offset], &parent->children[offset + 1],
+	       sizeof(struct lcfs_node_s *) * (parent->children_size - (offset + 1)));
+	parent->children_size -= 1;
+
+	/* Unlink correctly as it may live on outside the tree and be reinserted */
+	free(child->name);
+	child->name = NULL;
+	child->parent = NULL;
+
+	lcfs_node_unref(child);
+}
+
 int lcfs_node_remove_child(struct lcfs_node_s *parent, const char *name)
 {
 	size_t i;
@@ -1098,18 +1116,7 @@ int lcfs_node_remove_child(struct lcfs_node_s *parent, const char *name)
 		struct lcfs_node_s *child = parent->children[i];
 
 		if (child->name && strcmp(child->name, name) == 0) {
-			memcpy(&parent->children[i], &parent->children[i + 1],
-			       sizeof(struct lcfs_node_s *) *
-				       (parent->children_size - (i + 1)));
-			parent->children_size -= 1;
-
-			/* Unlink correctly as it may live on outside the tree and be reinserted */
-			free(child->name);
-			child->name = NULL;
-			child->parent = NULL;
-
-			lcfs_node_unref(child);
-
+			lcfs_node_remove_child_node(parent, i, child);
 			return 0;
 		}
 	}
@@ -1187,12 +1194,14 @@ void lcfs_node_unref(struct lcfs_node_s *node)
 	if (node->ref_count > 0)
 		return;
 
+	/* finalizing */
+
+	/* if we have a parent, that should have a real ref to us */
 	assert(node->parent == NULL);
 
-	for (i = 0; i < node->children_size; i++) {
-		struct lcfs_node_s *child = node->children[i];
-		child->parent = NULL;
-		lcfs_node_unref(child);
+	while (node->children_size > 0) {
+		struct lcfs_node_s *child = node->children[0];
+		lcfs_node_remove_child_node(node, 0, child);
 	}
 	free(node->children);
 
