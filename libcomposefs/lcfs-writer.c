@@ -349,7 +349,7 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 			struct lcfs_node_s *child = node->children[i];
 
 			/* Skip hardlinks, they will not be serialized separately */
-			if (node->link_to != NULL) {
+			if (child->link_to != NULL) {
 				continue;
 			}
 
