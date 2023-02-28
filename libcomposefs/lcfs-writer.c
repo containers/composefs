@@ -59,7 +59,6 @@ struct lcfs_node_s {
 
 	char *name;
 	char *payload; /* backing file or symlink target */
-	struct lcfs_dirent_s data;
 	uint32_t inode_num;
 
 	struct lcfs_xattr_s *xattrs;
