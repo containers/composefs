@@ -233,6 +233,16 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 	}
 	close(sfd);
 
+	/* Make sure file is readable by all */
+	res = fchmod(dfd, 0644);
+	if (res < 0) {
+		errsv = errno;
+		unlink(tmppath);
+		close(dfd);
+		errno = errsv;
+		return res;
+	}
+
 	res = fsync(dfd);
 	if (res < 0) {
 		errsv = errno;
