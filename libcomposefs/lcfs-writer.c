@@ -112,6 +112,27 @@ int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 
 static int lcfs_close(struct lcfs_ctx_s *ctx);
 
+static char *maybe_join_path(const char *a, const char *b)
+{
+	size_t a_len = strlen(a);
+	size_t b_len = 0;
+
+	if (b != NULL)
+		b_len = 1 + strlen(b);
+
+	char *res = malloc(a_len + b_len + 1);
+	if (res) {
+		strcpy(res, a);
+		if (b != NULL) {
+			if (a_len > 0 && res[a_len - 1] != '/') {
+				strcat(res, "/");
+			}
+			strcat(res, b);
+		}
+	}
+	return res;
+}
+
 static char *memdup(const char *s, size_t len)
 {
 	char *s2 = malloc(len);
@@ -1426,25 +1447,6 @@ struct lcfs_node_s *lcfs_node_clone_deep(struct lcfs_node_s *node)
 bool lcfs_node_dirp(struct lcfs_node_s *node)
 {
 	return (node->inode.st_mode & S_IFMT) == S_IFDIR;
-}
-
-static char *maybe_join_path(const char *a, const char *b)
-{
-	size_t a_len = strlen(a);
-	size_t b_len = 0;
-
-	if (b != NULL)
-		b_len = 1 + strlen(b);
-
-	char *res = malloc(a_len + b_len + 1);
-	if (res) {
-		strcpy(res, a);
-		if (b != NULL) {
-			strcat(res, "/");
-			strcat(res, b);
-		}
-	}
-	return res;
 }
 
 struct lcfs_node_s *lcfs_build(int dirfd, const char *fname, const char *name,
