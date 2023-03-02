@@ -448,13 +448,13 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 		lower = splitlower;
 		for (size_t i = 0; i < numbasedirs; i++) {
 			mnt = resolve_basedir(lower);
-			stack_depth = max(stack_depth, mnt->mnt_sb->s_stack_depth);
 			if (IS_ERR(mnt)) {
 				ret = PTR_ERR(mnt);
 				kfree(splitlower);
 				goto fail;
 			}
 			bases[i] = mnt;
+			stack_depth = max(stack_depth, mnt->mnt_sb->s_stack_depth);
 
 			lower = strchr(lower, '\0') + 1;
 		}
