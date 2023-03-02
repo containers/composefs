@@ -1630,6 +1630,14 @@ static int add_overlayfs_xattrs(struct lcfs_node_s *node)
 			if (ret < 0)
 				return ret;
 		}
+
+		if (node->digest_set) {
+			ret = lcfs_node_set_xattr(node, "trusted.overlay.fs-verity",
+						  (char *)node->digest,
+						  LCFS_DIGEST_SIZE);
+			if (ret < 0)
+				return ret;
+		}
 	}
 
 	return 0;
