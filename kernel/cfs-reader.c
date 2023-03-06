@@ -160,46 +160,35 @@ static void *cfs_get_vdata_buf(struct cfs_context *ctx, u64 offset, u32 len,
 }
 
 /* Read data from anywhere in the descriptor */
-static void *cfs_read_data(struct cfs_context *ctx, u64 offset, u32 size, u8 *dest)
+static void *cfs_copy_data(struct cfs_context *ctx, u64 offset, u32 size, u8 *dest)
 {
-	loff_t pos = offset;
-	size_t copied;
+	struct cfs_buf buf = { NULL };
+	void *mapped;
 
-	if (!cfs_is_in_section(0, ctx->descriptor_len, offset, size))
-		return ERR_PTR(-EFSCORRUPTED);
+	mapped = cfs_get_buf(ctx, offset, size, &buf);
+	if (IS_ERR(mapped))
+		return mapped;
 
-	copied = 0;
-	while (copied < size) {
-		ssize_t bytes;
+	memcpy(dest, mapped, size);
 
-		bytes = kernel_read(ctx->descriptor, dest + copied,
-				    size - copied, &pos);
-		if (bytes < 0)
-			return ERR_PTR(bytes);
-		if (bytes == 0)
-			return ERR_PTR(-EINVAL);
-
-		copied += bytes;
-	}
-
-	if (copied != size)
-		return ERR_PTR(-EFSCORRUPTED);
+	cfs_buf_put(&buf);
 	return dest;
 }
 
-/* Read data from the variable data section */
-static void *cfs_read_vdata(struct cfs_context *ctx, u64 offset, u32 len, char *buf)
+/* Copy data from the variable data section */
+static void *cfs_copy_vdata(struct cfs_context *ctx, u64 offset, u32 size, u8 *dest)
 {
-	void *res;
+	struct cfs_buf buf = { NULL };
+	void *mapped;
 
-	if (!cfs_is_in_section(ctx->vdata_offset, ctx->descriptor_len, offset, len))
-		return ERR_PTR(-EINVAL);
+	mapped = cfs_get_vdata_buf(ctx, offset, size, &buf);
+	if (IS_ERR(mapped))
+		return mapped;
 
-	res = cfs_read_data(ctx, ctx->vdata_offset + offset, len, buf);
-	if (IS_ERR(res))
-		return ERR_CAST(res);
+	memcpy(dest, mapped, size);
 
-	return buf;
+	cfs_buf_put(&buf);
+	return dest;
 }
 
 /* Allocate, read and null-terminate paths from the variable data section */
@@ -215,7 +204,7 @@ static char *cfs_read_vdata_path(struct cfs_context *ctx, u64 offset, u32 len)
 	if (!path)
 		return ERR_PTR(-ENOMEM);
 
-	res = cfs_read_vdata(ctx, offset, len, path);
+	res = cfs_copy_vdata(ctx, offset, len, path);
 	if (IS_ERR(res)) {
 		kfree(path);
 		return ERR_CAST(res);
@@ -286,7 +275,7 @@ int cfs_init_ctx(const char *descriptor_path, const u8 *required_digest,
 	ctx.descriptor = descriptor;
 	ctx.descriptor_len = i_size;
 
-	superblock = cfs_read_data(&ctx, CFS_SUPERBLOCK_OFFSET,
+	superblock = cfs_copy_data(&ctx, CFS_SUPERBLOCK_OFFSET,
 				   sizeof(struct cfs_superblock),
 				   (u8 *)&superblock_buf);
 	if (IS_ERR(superblock)) {
@@ -442,7 +431,7 @@ int cfs_init_inode(struct cfs_context *ctx, u32 inode_num, struct inode *inode,
 			goto fail;
 		}
 
-		res = cfs_read_vdata(ctx, digest_off, digest_len, inode_data->digest);
+		res = cfs_copy_vdata(ctx, digest_off, digest_len, inode_data->digest);
 		if (IS_ERR(res)) {
 			ret = PTR_ERR(res);
 			goto fail;
