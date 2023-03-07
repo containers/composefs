@@ -962,6 +962,20 @@ static size_t xattr_erofs_inode_size(size_t n_shared_xattrs, size_t unshared_xat
 			sizeof(uint32_t));
 }
 
+static bool erofs_xattr_should_be_shared(struct hasher_xattr_s *ent)
+{
+	/* Share multi-use xattrs */
+	if (ent->count > 1)
+		return true;
+
+	/* Also share verity overlay xattrs, as they are kind
+	   of large to have inline, and not always accessed. */
+	if (strcmp(ent->xattr->key, "trusted.overlay.verity") == 0)
+		return true;
+
+	return false;
+}
+
 static int compute_erofs_shared_xattrs(struct lcfs_ctx_s *ctx)
 {
 	struct lcfs_node_s *node;
@@ -1018,7 +1032,7 @@ static int compute_erofs_shared_xattrs(struct lcfs_ctx_s *ctx)
 	xattr_offset = 0;
 	for (size_t i = 0; i < n_xattrs; i++) {
 		struct hasher_xattr_s *ent = sorted[i];
-		if (ent->count > 1) {
+		if (erofs_xattr_should_be_shared(ent)) {
 			ent->shared = true;
 			ent->shared_offset = xattr_offset;
 
@@ -1632,7 +1646,7 @@ static int add_overlayfs_xattrs(struct lcfs_node_s *node)
 		}
 
 		if (node->digest_set) {
-			ret = lcfs_node_set_xattr(node, "trusted.overlay.fs-verity",
+			ret = lcfs_node_set_xattr(node, "trusted.overlay.verity",
 						  (char *)node->digest,
 						  LCFS_DIGEST_SIZE);
 			if (ret < 0)
