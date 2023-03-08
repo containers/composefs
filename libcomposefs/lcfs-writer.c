@@ -22,6 +22,7 @@
 #include "lcfs.h"
 #include "lcfs-writer.h"
 #include "lcfs-fsverity.h"
+#include "lcfs-erofs.h"
 #include "hash.h"
 
 #include <errno.h>
@@ -107,6 +108,7 @@ struct lcfs_ctx_s {
 	uint32_t num_inodes;
 	int64_t min_mtim_sec;
 	uint32_t min_mtim_nsec;
+	bool has_acl;
 
 	void *file;
 	lcfs_write_cb write_cb;
@@ -373,6 +375,7 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 
 	ctx->min_mtim_sec = root->inode.st_mtim_sec;
 	ctx->min_mtim_nsec = root->inode.st_mtim_nsec;
+	ctx->has_acl = false;
 
 	node = root;
 
@@ -412,6 +415,11 @@ static int compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		/* Assign inode index */
 		node->inode_num = index;
 		ctx->inode_table_size += sizeof(struct lcfs_inode_s);
+
+		/* Compute has_acl */
+		if (lcfs_node_get_xattr(node, "system.posix_acl_access", NULL) != NULL ||
+		    lcfs_node_get_xattr(node, "system.posix_acl_default", NULL) != NULL)
+			ctx->has_acl = true;
 
 		node->in_tree = true;
 		/* Append to queue for more work */
@@ -1788,6 +1796,11 @@ static int rewrite_tree_for_erofs(struct lcfs_node_s *root)
 int lcfs_write_erofs_to(struct lcfs_node_s *root, void *file,
 			lcfs_write_cb write_cb, uint8_t *digest_out)
 {
+	struct lcfs_erofs_header_s header = {
+		.magic = lcfs_u32_to_file(LCFS_EROFS_MAGIC),
+		.version = lcfs_u32_to_file(LCFS_EROFS_VERSION),
+	};
+	uint32_t header_flags;
 	struct erofs_super_block superblock = {
 		.magic = lcfs_u32_to_file(EROFS_SUPER_MAGIC_V1),
 		.blkszbits = EROFS_BLKSIZ_BITS,
@@ -1822,7 +1835,16 @@ int lcfs_write_erofs_to(struct lcfs_node_s *root, void *file,
 	if (ret < 0)
 		goto fail;
 
-	ret = lcfs_write_pad(ctx, EROFS_SUPER_OFFSET);
+	header_flags = 0;
+	if (ctx->has_acl)
+		header_flags |= LCFS_EROFS_FLAGS_HAS_ACL;
+	header.flags = lcfs_u32_to_file(header_flags);
+
+	ret = lcfs_write(ctx, &header, sizeof(header));
+	if (ret < 0)
+		goto fail;
+
+	ret = lcfs_write_pad(ctx, EROFS_SUPER_OFFSET - sizeof(header));
 	if (ret < 0)
 		goto fail;
 
@@ -2677,7 +2699,8 @@ const char *lcfs_node_get_xattr(struct lcfs_node_s *node, const char *name,
 
 	if (index >= 0) {
 		struct lcfs_xattr_s *xattr = &node->xattrs[index];
-		*length = xattr->value_len;
+		if (length)
+			*length = xattr->value_len;
 		return xattr->value;
 	}
 
