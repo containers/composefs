@@ -1778,11 +1778,26 @@ static int rewrite_tree_node_for_erofs(struct lcfs_node_s *node,
 	return 0;
 }
 
+static int set_overlay_opaque(struct lcfs_node_s *node)
+{
+	int ret;
+
+	ret = lcfs_node_set_xattr(node, "trusted.overlay.opaque", "y", 1);
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
 static int rewrite_tree_for_erofs(struct lcfs_node_s *root)
 {
 	int res;
 
 	res = rewrite_tree_node_for_erofs(root, root);
+	if (res < 0)
+		return res;
+
+	res = set_overlay_opaque(root);
 	if (res < 0)
 		return res;
 
