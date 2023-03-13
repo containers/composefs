@@ -444,6 +444,7 @@ int main(int argc, char **argv)
 		},
 		{},
 	};
+	struct lcfs_write_options_s options = { 0 };
 	const char *bin = argv[0];
 	int buildflags = 0;
 	bool absolute_path = false;
@@ -579,16 +580,20 @@ int main(int argc, char **argv)
 		error(EXIT_FAILURE, errno, "cannot fill payload");
 
 	if (strcmp(format, "erofs") == 0) {
-		if (lcfs_write_erofs_to(root, out_file, write_cb,
-					print_digest ? digest : NULL) < 0)
-			error(EXIT_FAILURE, errno, "cannot write file");
+		options.format = LCFS_FORMAT_EROFS;
 	} else if (strcmp(format, "composefs") == 0) {
-		if (lcfs_write_to(root, out_file, write_cb,
-				  print_digest ? digest : NULL) < 0)
-			error(EXIT_FAILURE, errno, "cannot write file");
+		options.format = LCFS_FORMAT_COMPOSEFS;
 	} else {
 		error(EXIT_FAILURE, errno, "Unknown format %s", format);
 	}
+
+	options.file = out_file;
+	options.file_write_cb = write_cb;
+	if (print_digest)
+		options.digest_out = digest;
+
+	if (lcfs_write_to(root, &options) < 0)
+		error(EXIT_FAILURE, errno, "cannot write file");
 
 	if (print_digest) {
 		char digest_str[LCFS_DIGEST_SIZE * 2 + 1] = { 0 };

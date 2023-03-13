@@ -436,6 +436,7 @@ int main(int argc, char **argv)
 		{},
 	};
 	struct lcfs_node_s *root;
+	struct lcfs_write_options_s options = { 0 };
 	char cwd[PATH_MAX];
 	size_t i;
 	int opt;
@@ -493,7 +494,11 @@ int main(int argc, char **argv)
 	if (getcwd(cwd, sizeof(cwd)) == NULL)
 		error(EXIT_FAILURE, errno, "get current working directory");
 
-	if (lcfs_write_to(root, out_file, write_cb, NULL) < 0)
+	options.format = LCFS_FORMAT_COMPOSEFS;
+	options.file = out_file;
+	options.file_write_cb = write_cb;
+
+	if (lcfs_write_to(root, &options) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
 
 	lcfs_node_unref(root);

@@ -92,6 +92,7 @@ struct lcfs_node_s {
 };
 
 struct lcfs_ctx_s {
+	struct lcfs_write_options_s *options;
 	char *vdata;
 	size_t vdata_len;
 	size_t vdata_allocated;
@@ -208,9 +209,8 @@ static void vdata_ht_freer(void *data)
 	free(data);
 }
 
-static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root, bool clone_root,
-				       void *file, lcfs_write_cb write_cb,
-				       uint8_t *digest_out)
+static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root,
+				       struct lcfs_write_options_s *options)
 {
 	struct lcfs_ctx_s *ret;
 
@@ -219,22 +219,15 @@ static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root, bool clone_root
 		return ret;
 	}
 
-	if (clone_root) {
-		ret->destroy_root = true;
-		ret->root = lcfs_node_clone_deep(root);
-		if (root == NULL) {
-			lcfs_close(ret);
-			return NULL;
-		}
-	} else {
-		ret->root = lcfs_node_ref(root);
-	}
+	ret->options = options;
+	ret->root = lcfs_node_ref(root);
+
 	ret->ht = hash_initialize(0, NULL, vdata_ht_hasher, vdata_ht_comparator,
 				  vdata_ht_freer);
 
-	ret->file = file;
-	ret->write_cb = write_cb;
-	if (digest_out) {
+	ret->file = options->file;
+	ret->write_cb = options->file_write_cb;
+	if (options->digest_out) {
 		ret->fsverity_ctx = lcfs_fsverity_context_new();
 		if (ret->fsverity_ctx == NULL) {
 			lcfs_close(ret);
@@ -246,6 +239,23 @@ static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root, bool clone_root
 }
 
 #define max(a, b) ((a > b) ? (a) : (b))
+
+static int lcfs_clone_root(struct lcfs_ctx_s *ctx)
+{
+	struct lcfs_node_s *clone;
+
+	clone = lcfs_node_clone_deep(ctx->root);
+	if (clone == NULL) {
+		errno = -EINVAL;
+		return -1;
+	}
+
+	lcfs_node_unref(ctx->root);
+	ctx->root = clone;
+	ctx->destroy_root = true;
+
+	return 0;
+}
 
 int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 		      const void *data, size_t len, uint32_t flags)
@@ -742,28 +752,25 @@ static int write_inodes(struct lcfs_ctx_s *ctx)
 	return 0;
 }
 
-int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
-		  uint8_t *digest_out)
+static int lcfs_write_cfs_to(struct lcfs_ctx_s *ctx)
 {
+	struct lcfs_node_s *root = ctx->root;
 	struct lcfs_superblock_s superblock = {
 		.version = lcfs_u32_to_file(LCFS_VERSION),
 		.magic = lcfs_u32_to_file(LCFS_MAGIC),
 	};
 	int ret = 0;
-	struct lcfs_ctx_s *ctx;
+	;
 	off_t data_offset;
 
-	ctx = lcfs_new_ctx(root, false, file, write_cb, digest_out);
-	if (ctx == NULL) {
-		errno = ENOMEM;
+	if (ctx->options->version != 0) {
+		errno = -EINVAL;
 		return -1;
 	}
 
 	ret = compute_tree(ctx, root);
-	if (ret < 0) {
-		lcfs_close(ctx);
+	if (ret < 0)
 		return ret;
-	}
 
 	data_offset = ALIGN_TO(
 		sizeof(struct lcfs_superblock_s) + ctx->inode_table_size, 4);
@@ -771,28 +778,20 @@ int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 	superblock.vdata_offset = lcfs_u64_to_file(data_offset);
 
 	ret = compute_variable_data(ctx);
-	if (ret < 0) {
-		lcfs_close(ctx);
+	if (ret < 0)
 		return ret;
-	}
 
 	ret = compute_xattrs(ctx);
-	if (ret < 0) {
-		lcfs_close(ctx);
+	if (ret < 0)
 		return ret;
-	}
 
 	ret = lcfs_write(ctx, &superblock, sizeof(superblock));
-	if (ret < 0) {
-		lcfs_close(ctx);
+	if (ret < 0)
 		return ret;
-	}
 
 	ret = write_inodes(ctx);
-	if (ret < 0) {
-		lcfs_close(ctx);
+	if (ret < 0)
 		return ret;
-	}
 
 	assert(ctx->bytes_written ==
 	       sizeof(struct lcfs_superblock_s) + ctx->inode_table_size);
@@ -800,23 +799,14 @@ int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
 	if (ctx->vdata) {
 		/* Pad vdata to 4k alignment */
 		ret = lcfs_write_pad(ctx, data_offset - ctx->bytes_written);
-		if (ret < 0) {
-			lcfs_close(ctx);
+		if (ret < 0)
 			return ret;
-		}
 
 		ret = lcfs_write(ctx, ctx->vdata, ctx->vdata_len);
-		if (ret < 0) {
-			lcfs_close(ctx);
+		if (ret < 0)
 			return ret;
-		}
 	}
 
-	if (digest_out) {
-		lcfs_fsverity_context_get_digest(ctx->fsverity_ctx, digest_out);
-	}
-
-	lcfs_close(ctx);
 	return 0;
 }
 
@@ -1808,9 +1798,9 @@ static int rewrite_tree_for_erofs(struct lcfs_node_s *root)
 	return 0;
 }
 
-int lcfs_write_erofs_to(struct lcfs_node_s *root, void *file,
-			lcfs_write_cb write_cb, uint8_t *digest_out)
+static int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 {
+	struct lcfs_node_s *root;
 	struct lcfs_erofs_header_s header = {
 		.magic = lcfs_u32_to_file(LCFS_EROFS_MAGIC),
 		.version = lcfs_u32_to_file(LCFS_EROFS_VERSION),
@@ -1821,34 +1811,36 @@ int lcfs_write_erofs_to(struct lcfs_node_s *root, void *file,
 		.blkszbits = EROFS_BLKSIZ_BITS,
 	};
 	int ret = 0;
-	struct lcfs_ctx_s *ctx;
 	uint64_t data_block_start;
 
-	/* Clone root so we can make required modifications to it */
-	ctx = lcfs_new_ctx(root, true, file, write_cb, digest_out);
-	if (ctx == NULL) {
-		errno = ENOMEM;
+	if (ctx->options->version != 0) {
+		errno = -EINVAL;
 		return -1;
 	}
 
-	root = ctx->root; /* We cloned it */
+	/* Clone root so we can make required modifications to it */
+	ret = lcfs_clone_root(ctx);
+	if (ret < 0)
+		return ret;
+
+	root = ctx->root; /* After we cloned it */
 
 	/* Rewrite cloned tree as needed for erofs */
 	ret = rewrite_tree_for_erofs(root);
 	if (ret < 0)
-		goto fail;
+		return ret;
 
 	ret = compute_tree(ctx, root);
 	if (ret < 0)
-		goto fail;
+		return ret;
 
 	ret = compute_erofs_shared_xattrs(ctx);
 	if (ret < 0)
-		goto fail;
+		return ret;
 
 	ret = compute_erofs_inodes(ctx);
 	if (ret < 0)
-		goto fail;
+		return ret;
 
 	header_flags = 0;
 	if (ctx->has_acl)
@@ -1857,11 +1849,11 @@ int lcfs_write_erofs_to(struct lcfs_node_s *root, void *file,
 
 	ret = lcfs_write(ctx, &header, sizeof(header));
 	if (ret < 0)
-		goto fail;
+		return ret;
 
 	ret = lcfs_write_pad(ctx, EROFS_SUPER_OFFSET - sizeof(header));
 	if (ret < 0)
-		goto fail;
+		return ret;
 
 	superblock.feature_compat = lcfs_u32_to_file(EROFS_FEATURE_COMPAT_MTIME);
 	superblock.inos = lcfs_u64_to_file(ctx->num_inodes);
@@ -1893,19 +1885,19 @@ int lcfs_write_erofs_to(struct lcfs_node_s *root, void *file,
 
 	ret = lcfs_write(ctx, &superblock, sizeof(superblock));
 	if (ret < 0)
-		goto fail;
+		return ret;
 
 	ctx->erofs_current_end = data_block_start;
 
 	ret = write_erofs_inodes(ctx);
 	if (ret < 0)
-		goto fail;
+		return ret;
 
 	assert(ctx->erofs_inodes_end == ctx->bytes_written);
 
 	ret = write_erofs_shared_xattrs(ctx);
 	if (ret < 0)
-		goto fail;
+		return ret;
 
 	assert(ctx->erofs_inodes_end + ctx->erofs_shared_xattr_size ==
 	       ctx->bytes_written);
@@ -1913,28 +1905,60 @@ int lcfs_write_erofs_to(struct lcfs_node_s *root, void *file,
 	/* Following are full blocks and must be block-aligned */
 	ret = lcfs_write_align(ctx, EROFS_BLKSIZ);
 	if (ret < 0)
-		goto fail;
+		return ret;
 
 	assert(data_block_start == ctx->bytes_written);
 
 	ret = write_erofs_dirent_blocks(ctx);
 	if (ret < 0)
-		goto fail;
+		return ret;
 
 	assert(ctx->erofs_current_end == ctx->bytes_written);
 	assert(data_block_start + ctx->erofs_n_data_blocks * EROFS_BLKSIZ ==
 	       ctx->bytes_written);
 
-	if (digest_out) {
-		lcfs_fsverity_context_get_digest(ctx->fsverity_ctx, digest_out);
+	return 0;
+}
+
+int lcfs_write_to(struct lcfs_node_s *root, struct lcfs_write_options_s *options)
+{
+	enum lcfs_format_t format = options->format;
+	struct lcfs_ctx_s *ctx;
+	int res;
+
+	/* Check for unknown flags */
+	if ((options->flags & LCFS_FLAGS_MASK) != 0) {
+		errno = -EINVAL;
+		return -1;
+	}
+
+	ctx = lcfs_new_ctx(root, options);
+	if (ctx == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	if (format == LCFS_FORMAT_COMPOSEFS)
+		res = lcfs_write_cfs_to(ctx);
+	else if (format == LCFS_FORMAT_EROFS)
+		res = lcfs_write_erofs_to(ctx);
+	else {
+		errno = -EINVAL;
+		res = -1;
+	}
+
+	if (res < 0) {
+		lcfs_close(ctx);
+		return res;
+	}
+
+	if (options->digest_out) {
+		lcfs_fsverity_context_get_digest(ctx->fsverity_ctx,
+						 options->digest_out);
 	}
 
 	lcfs_close(ctx);
 	return 0;
-
-fail:
-	lcfs_close(ctx);
-	return -1;
 }
 
 static int read_xattrs(struct lcfs_node_s *ret, int dirfd, const char *fname)

@@ -33,8 +33,29 @@ enum {
 	LCFS_BUILD_COMPUTE_DIGEST = (1 << 3),
 };
 
+enum lcfs_format_t {
+	LCFS_FORMAT_EROFS,
+	LCFS_FORMAT_COMPOSEFS,
+};
+
+enum lcfs_flags_t {
+	LCFS_FLAGS_NONE = 0,
+	LCFS_FLAGS_MASK = 0,
+};
+
 typedef ssize_t (*lcfs_read_cb)(void *file, void *buf, size_t count);
 typedef ssize_t (*lcfs_write_cb)(void *file, void *buf, size_t count);
+
+struct lcfs_write_options_s {
+	uint32_t format;
+	uint32_t version;
+	uint32_t flags;
+	uint8_t *digest_out;
+	void *file;
+	lcfs_write_cb file_write_cb;
+	uint32_t reserved[4];
+	void *reserved2[4];
+};
 
 struct lcfs_node_s *lcfs_node_new(void);
 struct lcfs_node_s *lcfs_node_ref(struct lcfs_node_s *node);
@@ -95,10 +116,6 @@ int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node, int fd);
 struct lcfs_node_s *lcfs_build(int dirfd, const char *fname, const char *name,
 			       int buildflags, char **failed_path_out);
 
-int lcfs_write_to(struct lcfs_node_s *root, void *file, lcfs_write_cb write_cb,
-		  uint8_t *digest_out);
-
-int lcfs_write_erofs_to(struct lcfs_node_s *root, void *file,
-			lcfs_write_cb write_cb, uint8_t *digest_out);
+int lcfs_write_to(struct lcfs_node_s *root, struct lcfs_write_options_s *options);
 
 #endif
