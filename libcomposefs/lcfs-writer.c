@@ -700,7 +700,7 @@ static int lcfs_write_align(struct lcfs_ctx_s *ctx, size_t align_size)
 
 static int write_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_inode_s *ino)
 {
-	struct lcfs_inode_s copy;
+	struct lcfs_inode_s copy = { 0 };
 
 	/* Convert endianness */
 	copy.st_mode = lcfs_u32_to_file(ino->st_mode);
