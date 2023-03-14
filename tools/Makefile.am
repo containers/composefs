@@ -1,4 +1,5 @@
-bin_PROGRAMS = mkcomposefs mountcomposefs
+bin_PROGRAMS = mkcomposefs
+sbin_PROGRAMS = mount.composefs
 noinst_PROGRAMS = dump
 
 if USE_YAJL
@@ -13,8 +14,8 @@ dump_LDADD = ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)
 mkcomposefs_SOURCES = mkcomposefs.c
 mkcomposefs_LDADD =  ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS) $(FSVERITY_LIBS)
 
-mountcomposefs_SOURCES = mountcomposefs.c
-mountcomposefs_LDADD = ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)
+mount_composefs_SOURCES = mountcomposefs.c
+mount_composefs_LDADD = ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)
 
 writer_json_SOURCES = writer-json.c read-file.c read-file.h
 writer_json_LDADD = ../libcomposefs/libcomposefs.la $(LIBS_YAJL) $(LIBCRYPTO_LIBS)

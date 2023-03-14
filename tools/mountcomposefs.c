@@ -37,8 +37,6 @@
 
 #include "libcomposefs/lcfs-mount.h"
 
-#define MAX_OBJDIR 10
-
 static void printexit(const char *format, ...)
 {
 	va_list args;
@@ -52,81 +50,79 @@ static void printexit(const char *format, ...)
 
 static void usage(const char *argv0)
 {
-	fprintf(stderr,
-		"usage: %s [--verity] [--digest IMAGEDIGEST] [--objdir DIR] [--upperdir DIR] [--lowerdir DIR] IMAGE MOUNTPOINT\n",
+	fprintf(stderr, "usage: %s [-t type] [-o opt[,opts..]] IMAGE MOUNTPOINT\n",
 		argv0);
 }
 
-#define OPT_OBJDIR 100
-#define OPT_UPPERDIR 101
-#define OPT_WORKDIR 102
-#define OPT_DIGEST 103
-#define OPT_REQUIRE_VERITY 104
+static void unescape_option(char *s)
+{
+	char *d = s;
+
+	for (;; s++, d++) {
+		if (*s == '\\')
+			s++;
+		*d = *s;
+		if (!*s)
+			break;
+	}
+}
+
+static char *parse_option(char *options, char **key, char **value)
+{
+	char *p, *equal, *next;
+	;
+
+	equal = NULL;
+	for (p = options; *p; p++) {
+		if (*p == '=' && equal == NULL)
+			equal = p;
+		else if (*p == '\\' && p[1] != 0)
+			p++;
+		else if (*p == ',')
+			break;
+	}
+
+	if (*p)
+		next = p + 1;
+	else
+		next = NULL;
+	*p = 0;
+
+	*key = options;
+	if (equal) {
+		*equal = 0;
+		*value = equal + 1;
+		unescape_option(*value);
+	} else {
+		*value = NULL;
+	}
+
+	return next;
+}
 
 int main(int argc, char **argv)
 {
-	const struct option longopts[] = {
-		{
-			name: "objdir",
-			has_arg: required_argument,
-			flag: NULL,
-			val: OPT_OBJDIR
-		},
-		{
-			name: "upperdirdir",
-			has_arg: required_argument,
-			flag: NULL,
-			val: OPT_UPPERDIR
-		},
-		{
-			name: "workdir",
-			has_arg: required_argument,
-			flag: NULL,
-			val: OPT_WORKDIR
-		},
-		{
-			name: "digest",
-			has_arg: required_argument,
-			flag: NULL,
-			val: OPT_DIGEST
-		},
-		{
-			name: "require-verity",
-			has_arg: no_argument,
-			flag: NULL,
-			val: OPT_REQUIRE_VERITY
-		},
-		{},
-	};
-	const char *objdirs[MAX_OBJDIR] = { NULL };
-	struct lcfs_mount_options_s options = { .objdirs = objdirs };
+	struct lcfs_mount_options_s options = { 0 };
 	const char *bin = argv[0];
+	char *mount_options = NULL;
 	const char *image_path = NULL;
 	const char *mount_path = NULL;
+	const char *opt_basedir = NULL;
+	const char *opt_digest = NULL;
+	const char *opt_upperdir = NULL;
+	const char *opt_workdir = NULL;
+	bool opt_verity = false;
+	bool opt_ro = false;
 	int opt, fd, res;
 
-	while ((opt = getopt_long(argc, argv, "", longopts, NULL)) != -1) {
+	while ((opt = getopt(argc, argv, "t:o:")) != -1) {
 		switch (opt) {
-		case OPT_OBJDIR:
-			if (options.n_objdirs == MAX_OBJDIR) {
-				fprintf(stderr, "Too many object dirs\n");
-				exit(EXIT_FAILURE);
-			}
-			options.objdirs[options.n_objdirs++] = optarg;
+		case 't':
+			if (strcmp(optarg, "composefs") != 0)
+				printexit("Unsupported fs type '%s'\n", optarg);
 			break;
-		case OPT_UPPERDIR:
-			options.upperdir = optarg;
-			break;
-		case OPT_WORKDIR:
-			options.workdir = optarg;
-			break;
-		case OPT_DIGEST:
-			options.expected_digest = optarg;
-			options.flags |= LCFS_MOUNT_FLAGS_REQUIRE_VERITY;
-			break;
-		case OPT_REQUIRE_VERITY:
-			options.expected_digest = optarg;
-			options.flags |= LCFS_MOUNT_FLAGS_REQUIRE_VERITY;
+		case 'o':
+			mount_options = optarg;
 			break;
 		default:
 			usage(bin);
@@ -138,7 +134,7 @@ int main(int argc, char **argv)
 	argc -= optind;
 
 	if (argc < 1) {
-		fprintf(stderr, "No source image path specified\n");
+		fprintf(stderr, "No source path specified\n");
 		usage(bin);
 		exit(1);
 	}
@@ -151,16 +147,77 @@ int main(int argc, char **argv)
 	}
 	mount_path = argv[1];
 
+	while (mount_options) {
+		char *key, *value;
+		mount_options = parse_option(mount_options, &key, &value);
+
+		if (strcmp("basedir", key) == 0) {
+			if (value == NULL)
+				printexit("No value specified for basedir option\n");
+			opt_basedir = value;
+		} else if (strcmp("digest", key) == 0) {
+			if (value == NULL)
+				printexit("No value specified for digest option\n");
+			opt_digest = value;
+		} else if (strcmp("verity", key) == 0) {
+			opt_verity = true;
+		} else if (strcmp("upperdir", key) == 0) {
+			if (value == NULL)
+				printexit("No value specified for upperdir option\n");
+			opt_upperdir = value;
+		} else if (strcmp("workdir", key) == 0) {
+			if (value == NULL)
+				printexit("No value specified for workdir option\n");
+			opt_workdir = value;
+		} else if (strcmp("rw", key) == 0) {
+			opt_ro = false;
+		} else if (strcmp("ro", key) == 0) {
+			opt_ro = true;
+		} else {
+			printexit("Unsupported option %s\n", key);
+		}
+	}
+
+	if (opt_basedir != NULL) {
+		int i;
+		char *str, *token, *saveptr;
+
+		options.n_objdirs = 1;
+		for (str = (char *)opt_basedir; *str; str++) {
+			if (*str == ':')
+				options.n_objdirs++;
+		}
+
+		options.objdirs = calloc(options.n_objdirs, sizeof(char *));
+		if (options.objdirs == NULL)
+			printexit("Out of memory\n");
+
+		for (i = 0, str = (char *)opt_basedir;; i++, str = NULL) {
+			token = strtok_r(str, ":", &saveptr);
+			if (token == NULL)
+				break;
+			options.objdirs[i] = token;
+		}
+	}
+
 	if (options.n_objdirs == 0) {
 		fprintf(stderr, "No object dirs specified\n");
 		usage(bin);
 		exit(1);
 	}
 
-	if ((options.upperdir && !options.workdir) ||
-	    (!options.upperdir && options.workdir)) {
+	if ((opt_upperdir && !opt_workdir) || (!opt_upperdir && opt_workdir)) {
 		printexit("Both workdir and upperdir must be specified if used\n");
 	}
+	options.upperdir = opt_upperdir;
+	options.workdir = opt_workdir;
+
+	options.expected_digest = opt_digest;
+
+	if (opt_verity)
+		options.flags |= LCFS_MOUNT_FLAGS_REQUIRE_VERITY;
+	if (opt_ro)
+		options.flags |= LCFS_MOUNT_FLAGS_READONLY;
 
 	fd = open(image_path, O_RDONLY);
 	if (fd < 0)
