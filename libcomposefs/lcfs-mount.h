@@ -26,13 +26,15 @@
 
 #define ENOVERITY ENOTTY
 #define EWRONGVERITY EILSEQ
+#define ENOSIGNATURE EBADMSG
 
 enum lcfs_mount_flags_t {
 	LCFS_MOUNT_FLAGS_NONE = 0,
 	LCFS_MOUNT_FLAGS_REQUIRE_VERITY = (1 << 0),
 	LCFS_MOUNT_FLAGS_READONLY = (1 << 1),
+	LCFS_MOUNT_FLAGS_REQUIRE_SIGNATURE = (1 << 2),
 
-	LCFS_MOUNT_FLAGS_MASK = (1 << 2) - 1,
+	LCFS_MOUNT_FLAGS_MASK = (1 << 3) - 1,
 };
 
 struct lcfs_mount_options_s {
