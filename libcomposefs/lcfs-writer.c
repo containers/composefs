@@ -1927,7 +1927,7 @@ int lcfs_write_to(struct lcfs_node_s *root, struct lcfs_write_options_s *options
 	int res;
 
 	/* Check for unknown flags */
-	if ((options->flags & LCFS_FLAGS_MASK) != 0) {
+	if ((options->flags & ~LCFS_FLAGS_MASK) != 0) {
 		errno = -EINVAL;
 		return -1;
 	}
