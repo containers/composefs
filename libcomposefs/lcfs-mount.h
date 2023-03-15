@@ -33,8 +33,9 @@ enum lcfs_mount_flags_t {
 	LCFS_MOUNT_FLAGS_REQUIRE_VERITY = (1 << 0),
 	LCFS_MOUNT_FLAGS_READONLY = (1 << 1),
 	LCFS_MOUNT_FLAGS_REQUIRE_SIGNATURE = (1 << 2),
+	LCFS_MOUNT_FLAGS_IDMAP = (1 << 3),
 
-	LCFS_MOUNT_FLAGS_MASK = (1 << 3) - 1,
+	LCFS_MOUNT_FLAGS_MASK = (1 << 4) - 1,
 };
 
 struct lcfs_mount_options_s {
@@ -44,6 +45,7 @@ struct lcfs_mount_options_s {
 	const char *upperdir;
 	const char *expected_digest;
 	uint32_t flags;
+	int idmap_fd; /* userns fd */
 
 	uint32_t reserved[4];
 	void *reserved2[4];

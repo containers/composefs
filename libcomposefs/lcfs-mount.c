@@ -149,6 +149,10 @@ static int lcfs_validate_mount_options(struct lcfs_mount_state_s *state)
 		state->expected_digest_len = raw_len;
 	}
 
+	if ((options->flags & LCFS_MOUNT_FLAGS_IDMAP) != 0 && options->idmap_fd < 0) {
+		return -EINVAL;
+	}
+
 	return 0;
 }
 
@@ -312,6 +316,18 @@ static int lcfs_mount_erofs(const char *source, const char *target,
 	fd_mnt = fsmount(fd_fs, FSMOUNT_CLOEXEC, MS_RDONLY);
 	if (fd_mnt < 0)
 		return -errno;
+
+	if (state->options->flags & LCFS_MOUNT_FLAGS_IDMAP) {
+		struct mount_attr attr = {
+			.attr_set = MOUNT_ATTR_IDMAP,
+			.userns_fd = state->options->idmap_fd,
+		};
+
+		res = mount_setattr(fd_mnt, "", AT_EMPTY_PATH, &attr,
+				    sizeof(struct mount_attr));
+		if (res < 0)
+			return -errno;
+	}
 
 	res = move_mount(fd_mnt, "", AT_FDCWD, target, MOVE_MOUNT_F_EMPTY_PATH);
 	if (res < 0)
