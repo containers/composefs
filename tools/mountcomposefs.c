@@ -112,6 +112,7 @@ int main(int argc, char **argv)
 	const char *opt_upperdir = NULL;
 	const char *opt_workdir = NULL;
 	bool opt_verity = false;
+	bool opt_signed = false;
 	bool opt_ro = false;
 	int opt, fd, res;
 
@@ -161,6 +162,8 @@ int main(int argc, char **argv)
 			opt_digest = value;
 		} else if (strcmp("verity", key) == 0) {
 			opt_verity = true;
+		} else if (strcmp("signed", key) == 0) {
+			opt_signed = true;
 		} else if (strcmp("upperdir", key) == 0) {
 			if (value == NULL)
 				printexit("No value specified for upperdir option\n");
@@ -216,6 +219,8 @@ int main(int argc, char **argv)
 
 	if (opt_verity)
 		options.flags |= LCFS_MOUNT_FLAGS_REQUIRE_VERITY;
+	if (opt_signed)
+		options.flags |= LCFS_MOUNT_FLAGS_REQUIRE_SIGNATURE;
 	if (opt_ro)
 		options.flags |= LCFS_MOUNT_FLAGS_READONLY;
 
@@ -232,6 +237,9 @@ int main(int argc, char **argv)
 				  image_path);
 		else if (errsv == EWRONGVERITY)
 			printexit("Failed to mount composefs %s: Image has wrong fs-verity\n",
+				  image_path);
+		else if (errsv == ENOSIGNATURE)
+			printexit("Failed to mount composefs %s: Image was not signed\n",
 				  image_path);
 
 		printexit("Failed to mount composefs %s: %s\n", image_path,
