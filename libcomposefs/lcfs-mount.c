@@ -372,6 +372,10 @@ static int lcfs_mount(struct lcfs_mount_state_s *state)
 		return res;
 	}
 
+	/* We use the legacy API to mount overlayfs, because the new API doesn't allow use
+         * to pass in escaped directory names
+         */
+
 	lowerdir = compute_lower(imagemount, state);
 	if (lowerdir == NULL) {
 		res = -ENOMEM;
