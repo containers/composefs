@@ -31,14 +31,97 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
-#include <sys/mount.h>
 #include <sys/types.h>
 #include <linux/limits.h>
 #include <linux/loop.h>
-#include <linux/mount.h>
 #include <linux/fsverity.h>
 
+#include <sys/syscall.h>
+#include <sys/mount.h>
+#ifdef HAVE_FSCONFIG_CMD_CREATE_LINUX_MOUNT_H
+#include <linux/mount.h>
+#endif
+#if defined HAVE_FSCONFIG_CMD_CREATE_LINUX_MOUNT_H ||                          \
+	defined HAVE_FSCONFIG_CMD_CREATE_SYS_MOUNT_H
+#define HAVE_NEW_MOUNT_API
+#endif
+
 #include "lcfs-erofs.h"
+#include "lcfs-utils.h"
+
+static int syscall_fsopen(const char *fs_name, unsigned int flags)
+{
+#if defined __NR_fsopen
+	return (int)syscall(__NR_fsopen, fs_name, flags);
+#else
+	(void)fs_name;
+	(void)flags;
+	errno = ENOSYS;
+	return -1;
+#endif
+}
+
+static int syscall_fsmount(int fsfd, unsigned int flags, unsigned int attr_flags)
+{
+#if defined __NR_fsmount
+	return (int)syscall(__NR_fsmount, fsfd, flags, attr_flags);
+#else
+	(void)fsfd;
+	(void)flags;
+	(void)attr_flags;
+	errno = ENOSYS;
+	return -1;
+#endif
+}
+
+static int syscall_fsconfig(int fsfd, unsigned int cmd, const char *key,
+			    const void *val, int aux)
+{
+#if defined __NR_fsconfig
+	return (int)syscall(__NR_fsconfig, fsfd, cmd, key, val, aux);
+#else
+	(void)fsfd;
+	(void)cmd;
+	(void)key;
+	(void)val;
+	(void)aux;
+	errno = ENOSYS;
+	return -1;
+#endif
+}
+
+static int syscall_move_mount(int from_dfd, const char *from_pathname, int to_dfd,
+			      const char *to_pathname, unsigned int flags)
+
+{
+#if defined __NR_move_mount
+	return (int)syscall(__NR_move_mount, from_dfd, from_pathname, to_dfd,
+			    to_pathname, flags);
+#else
+	(void)from_dfd;
+	(void)from_pathname;
+	(void)to_dfd;
+	(void)to_pathname;
+	(void)flags;
+	errno = ENOSYS;
+	return -1;
+#endif
+}
+
+static int syscall_mount_setattr(int dfd, const char *path, unsigned int flags,
+				 struct mount_attr *attr, size_t usize)
+{
+#ifdef __NR_mount_setattr
+	return (int)syscall(__NR_mount_setattr, dfd, path, flags, attr, usize);
+#else
+	(void)dfd;
+	(void)path;
+	(void)flags;
+	(void)attr;
+	errno = ENOSYS;
+	return -1;
+#endif
+}
 
 #define MAX_DIGEST_SIZE 64
 
@@ -146,6 +229,10 @@ static int lcfs_validate_mount_options(struct lcfs_mount_state_s *state)
 		if (raw_len < 0)
 			return -EINVAL;
 		state->expected_digest_len = raw_len;
+	}
+
+	if ((options->flags & LCFS_MOUNT_FLAGS_IDMAP) != 0 && options->idmap_fd < 0) {
+		return -EINVAL;
 	}
 
 	return 0;
@@ -278,12 +365,86 @@ static char *compute_lower(const char *imagemount, struct lcfs_mount_state_s *st
 	return lower;
 }
 
+static int lcfs_mount_erofs(const char *source, const char *target,
+			    uint32_t image_flags, struct lcfs_mount_state_s *state)
+{
+	bool image_has_acls = (image_flags & LCFS_EROFS_FLAGS_HAS_ACL) != 0;
+	bool use_idmap = (state->options->flags & LCFS_MOUNT_FLAGS_IDMAP) != 0;
+	int res;
+
+#ifdef HAVE_NEW_MOUNT_API
+	/* We have new mount API is in header */
+	cleanup_fd int fd_fs = -1;
+	cleanup_fd int fd_mnt = -1;
+
+	fd_fs = syscall_fsopen("erofs", FSOPEN_CLOEXEC);
+	if (fd_fs < 0) {
+		if (errno == ENOSYS)
+			goto fallback;
+		return -errno;
+	}
+
+	res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "source", source, 0);
+	if (res < 0)
+		return -errno;
+
+	res = syscall_fsconfig(fd_fs, FSCONFIG_SET_FLAG, "ro", NULL, 0);
+	if (res < 0)
+		return -errno;
+
+	if (!image_has_acls) {
+		res = syscall_fsconfig(fd_fs, FSCONFIG_SET_FLAG, "noacl", NULL, 0);
+		if (res < 0)
+			return -errno;
+	}
+
+	res = syscall_fsconfig(fd_fs, FSCONFIG_CMD_CREATE, NULL, NULL, 0);
+	if (res < 0)
+		return -errno;
+
+	fd_mnt = syscall_fsmount(fd_fs, FSMOUNT_CLOEXEC, MS_RDONLY);
+	if (fd_mnt < 0)
+		return -errno;
+
+	if (use_idmap) {
+		struct mount_attr attr = {
+			.attr_set = MOUNT_ATTR_IDMAP,
+			.userns_fd = state->options->idmap_fd,
+		};
+
+		res = syscall_mount_setattr(fd_mnt, "", AT_EMPTY_PATH, &attr,
+					    sizeof(struct mount_attr));
+		if (res < 0)
+			return -errno;
+	}
+
+	res = syscall_move_mount(fd_mnt, "", AT_FDCWD, target,
+				 MOVE_MOUNT_F_EMPTY_PATH);
+	if (res < 0)
+		return -errno;
+
+	return 0;
+
+fallback:
+#endif
+
+	/* We need new mount api for idmapped mounts */
+	if (use_idmap)
+		return -ENOTSUP;
+
+	res = mount(source, target, "erofs", MS_RDONLY,
+		    image_has_acls ? "ro" : "ro,noacl");
+	if (res < 0)
+		return -errno;
+
+	return 0;
+}
+
 static int lcfs_mount(struct lcfs_mount_state_s *state)
 {
 	struct lcfs_mount_options_s *options = state->options;
 	struct lcfs_erofs_header_s header;
 	uint32_t image_flags;
-	bool image_has_acls;
 	char imagemountbuf[] = "/tmp/.composefs.XXXXXX";
 	char *imagemount;
 	char loopname[PATH_MAX];
@@ -309,7 +470,6 @@ static int lcfs_mount(struct lcfs_mount_state_s *state)
 		return -EINVAL;
 
 	image_flags = lcfs_u32_from_file(header.flags);
-	image_has_acls = (image_flags & LCFS_EROFS_FLAGS_HAS_ACL) != 0;
 
 	require_verity = (options->flags & LCFS_MOUNT_FLAGS_REQUIRE_VERITY) != 0;
 	readonly = (options->flags & LCFS_MOUNT_FLAGS_READONLY) != 0;
@@ -325,14 +485,16 @@ static int lcfs_mount(struct lcfs_mount_state_s *state)
 		return -errsv;
 	}
 
-	res = mount(loopname, imagemount, "erofs", MS_RDONLY,
-		    image_has_acls ? "" : "noacl");
-	errsv = errno;
+	res = lcfs_mount_erofs(loopname, imagemount, image_flags, state);
 	close(loopfd);
 	if (res < 0) {
 		rmdir(imagemount);
-		return -errsv;
+		return res;
 	}
+
+	/* We use the legacy API to mount overlayfs, because the new API doesn't allow use
+         * to pass in escaped directory names
+         */
 
 	lowerdir = compute_lower(imagemount, state);
 	if (lowerdir == NULL) {

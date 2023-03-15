@@ -109,12 +109,13 @@ int main(int argc, char **argv)
 	const char *mount_path = NULL;
 	const char *opt_basedir = NULL;
 	const char *opt_digest = NULL;
+	const char *opt_idmap = NULL;
 	const char *opt_upperdir = NULL;
 	const char *opt_workdir = NULL;
 	bool opt_verity = false;
 	bool opt_signed = false;
 	bool opt_ro = false;
-	int opt, fd, res;
+	int opt, fd, res, userns_fd;
 
 	while ((opt = getopt(argc, argv, "t:o:")) != -1) {
 		switch (opt) {
@@ -172,6 +173,10 @@ int main(int argc, char **argv)
 			if (value == NULL)
 				printexit("No value specified for workdir option\n");
 			opt_workdir = value;
+		} else if (strcmp("idmap", key) == 0) {
+			if (value == NULL)
+				printexit("No value specified for workdir option\n");
+			opt_idmap = value;
 		} else if (strcmp("rw", key) == 0) {
 			opt_ro = false;
 		} else if (strcmp("ro", key) == 0) {
@@ -223,6 +228,15 @@ int main(int argc, char **argv)
 		options.flags |= LCFS_MOUNT_FLAGS_REQUIRE_SIGNATURE;
 	if (opt_ro)
 		options.flags |= LCFS_MOUNT_FLAGS_READONLY;
+
+	if (opt_idmap != NULL) {
+		userns_fd = open(opt_idmap, O_RDONLY | O_CLOEXEC | O_NOCTTY);
+		if (userns_fd < 0)
+			printexit("Failed to open userns %s: %s\n", opt_idmap,
+				  strerror(errno));
+		options.flags |= LCFS_MOUNT_FLAGS_IDMAP;
+		options.idmap_fd = userns_fd;
+	}
 
 	fd = open(image_path, O_RDONLY);
 	if (fd < 0)
