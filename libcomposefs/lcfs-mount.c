@@ -39,6 +39,7 @@
 #include <linux/fsverity.h>
 
 #include "lcfs-erofs.h"
+#include "lcfs-utils.h"
 
 #define MAX_DIGEST_SIZE 64
 
@@ -278,12 +279,52 @@ static char *compute_lower(const char *imagemount, struct lcfs_mount_state_s *st
 	return lower;
 }
 
+static int lcfs_mount_erofs(const char *source, const char *target,
+			    uint32_t image_flags, struct lcfs_mount_state_s *state)
+{
+	bool image_has_acls = (image_flags & LCFS_EROFS_FLAGS_HAS_ACL) != 0;
+	int res;
+	cleanup_fd int fd_fs = -1;
+	cleanup_fd int fd_mnt = -1;
+
+	fd_fs = fsopen("erofs", FSOPEN_CLOEXEC);
+	if (fd_fs < 0)
+		return -errno;
+
+	res = fsconfig(fd_fs, FSCONFIG_SET_STRING, "source", source, 0);
+	if (res < 0)
+		return -errno;
+
+	res = fsconfig(fd_fs, FSCONFIG_SET_FLAG, "ro", NULL, 0);
+	if (res < 0)
+		return -errno;
+
+	if (!image_has_acls) {
+		res = fsconfig(fd_fs, FSCONFIG_SET_FLAG, "noacl", NULL, 0);
+		if (res < 0)
+			return -errno;
+	}
+
+	res = fsconfig(fd_fs, FSCONFIG_CMD_CREATE, NULL, NULL, 0);
+	if (res < 0)
+		return -errno;
+
+	fd_mnt = fsmount(fd_fs, FSMOUNT_CLOEXEC, MS_RDONLY);
+	if (fd_mnt < 0)
+		return -errno;
+
+	res = move_mount(fd_mnt, "", AT_FDCWD, target, MOVE_MOUNT_F_EMPTY_PATH);
+	if (res < 0)
+		return -errno;
+
+	return 0;
+}
+
 static int lcfs_mount(struct lcfs_mount_state_s *state)
 {
 	struct lcfs_mount_options_s *options = state->options;
 	struct lcfs_erofs_header_s header;
 	uint32_t image_flags;
-	bool image_has_acls;
 	char imagemountbuf[] = "/tmp/.composefs.XXXXXX";
 	char *imagemount;
 	char loopname[PATH_MAX];
@@ -309,7 +350,6 @@ static int lcfs_mount(struct lcfs_mount_state_s *state)
 		return -EINVAL;
 
 	image_flags = lcfs_u32_from_file(header.flags);
-	image_has_acls = (image_flags & LCFS_EROFS_FLAGS_HAS_ACL) != 0;
 
 	require_verity = (options->flags & LCFS_MOUNT_FLAGS_REQUIRE_VERITY) != 0;
 	readonly = (options->flags & LCFS_MOUNT_FLAGS_READONLY) != 0;
@@ -325,13 +365,11 @@ static int lcfs_mount(struct lcfs_mount_state_s *state)
 		return -errsv;
 	}
 
-	res = mount(loopname, imagemount, "erofs", MS_RDONLY,
-		    image_has_acls ? "" : "noacl");
-	errsv = errno;
+	res = lcfs_mount_erofs(loopname, imagemount, image_flags, state);
 	close(loopfd);
 	if (res < 0) {
 		rmdir(imagemount);
-		return -errsv;
+		return res;
 	}
 
 	lowerdir = compute_lower(imagemount, state);
