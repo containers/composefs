@@ -11,6 +11,26 @@ AM_INIT_AUTOMAKE([1.11.2 -Wno-portability foreign tar-ustar no-dist-gzip dist-xz
 
 AC_PROG_CC
 
+AC_MSG_CHECKING([for new mount API (fsconfig)])
+AC_COMPILE_IFELSE(
+	[AC_LANG_SOURCE([[
+			#include <sys/mount.h>
+			int cmd = FSCONFIG_CMD_CREATE;
+	]])],
+	[AC_MSG_RESULT(yes)
+		 AC_DEFINE([HAVE_FSCONFIG_CMD_CREATE_SYS_MOUNT_H], 1, [Define if FSCONFIG_CMD_CREATE is available in sys/mount.h])],
+	[AC_MSG_RESULT(no)])
+AC_COMPILE_IFELSE(
+	[AC_LANG_SOURCE([[
+			/* also make sure it doesn't conflict with <sys/mount.h> since it is always used.  */
+			#include <sys/mount.h>
+			#include <linux/mount.h>
+			int cmd = FSCONFIG_CMD_CREATE;
+	]])],
+	[AC_MSG_RESULT(yes)
+		 AC_DEFINE([HAVE_FSCONFIG_CMD_CREATE_LINUX_MOUNT_H], 1, [Define if FSCONFIG_CMD_CREATE is available in linux/mount.h])],
+	[AC_MSG_RESULT(no)])
+
 PKG_CHECK_MODULES(FSVERITY, libfsverity)
 PKG_CHECK_MODULES(LCFS_DEP_CRYPTO, libcrypto,[
       AC_DEFINE([HAVE_OPENSSL], 1, [Define if we have openssl])
