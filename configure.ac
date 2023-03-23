@@ -176,6 +176,21 @@ else
 fi
 AM_CONDITIONAL([USE_YAJL],[test "$have_libyajl" = "yes"])
 
+AC_ARG_WITH(fuse,
+        AS_HELP_STRING([--with-fuse], [Build fuse support [default=auto]]),
+        , with_fuse=auto)
+if test "x$with_fuse" != "xno"; then
+  PKG_CHECK_MODULES(FUSE3, [fuse3 >= 3.10.0], [have_fuse3=yes], [have_fuse3=no])
+  if test $have_fuse3 = yes; then
+    AC_DEFINE(HAVE_FUSE3, 1, [Define if fuse3 is available])
+  elif test "x$with_fuse" == "xyes"; then
+    AC_MSG_ERROR([fuse was requested but fuse3 it could not be found])
+  fi
+else
+   have_fuse3=no
+fi
+AM_CONDITIONAL([USE_FUSE3],[test "$have_fuse3" = "yes"])
+
 AC_FUNC_ERROR_AT_LINE
 AC_FUNC_FSEEKO
 AC_HEADER_MAJOR
