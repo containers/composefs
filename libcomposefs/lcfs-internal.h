@@ -29,6 +29,8 @@
 #define round_up(x, y) ((((x)-1) | __round_mask(x, y)) + 1)
 #define round_down(x, y) ((x) & ~__round_mask(x, y))
 
+#define max(a, b) ((a > b) ? (a) : (b))
+
 /* In memory representation used to build the file.  */
 
 struct lcfs_xattr_s {
@@ -122,5 +124,9 @@ int node_get_dtype(struct lcfs_node_s *node);
 /* lcfs-writer-erofs.c */
 
 int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx);
+
+/* lcfs-writer-cfs.c */
+
+int lcfs_write_cfs_to(struct lcfs_ctx_s *ctx);
 
 #endif
