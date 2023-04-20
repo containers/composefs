@@ -19,7 +19,7 @@
 
 #include "config.h"
 
-#include "libcomposefs/lcfs.h"
+#include "libcomposefs/lcfs-cfs.h"
 
 #include <assert.h>
 #include <stdio.h>

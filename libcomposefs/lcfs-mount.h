@@ -24,6 +24,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifndef LCFS_EXTERN
+#define LCFS_EXTERN extern
+#endif
+
 #define ENOVERITY ENOTTY
 #define EWRONGVERITY EILSEQ
 #define ENOSIGNATURE EBADMSG
@@ -51,9 +55,9 @@ struct lcfs_mount_options_s {
 	void *reserved2[4];
 };
 
-int lcfs_mount_image(const char *path, const char *mountpoint,
-		     struct lcfs_mount_options_s *options);
-int lcfs_mount_fd(int fd, const char *mountpoint,
-		  struct lcfs_mount_options_s *options);
+LCFS_EXTERN int lcfs_mount_image(const char *path, const char *mountpoint,
+				 struct lcfs_mount_options_s *options);
+LCFS_EXTERN int lcfs_mount_fd(int fd, const char *mountpoint,
+			      struct lcfs_mount_options_s *options);
 
 #endif

@@ -14,8 +14,8 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#ifndef _LCFS_H
-#define _LCFS_H
+#ifndef _LCFS_CFS_H
+#define _LCFS_CFS_H
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <stdio.h>

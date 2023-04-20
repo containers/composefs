@@ -43,6 +43,7 @@ jobs:
             ./autogen.sh
             ./configure CFLAGS='-Wall -Werror'
             make -j $(nproc)
+            make check
 
   clang-formatter:
     runs-on: ubuntu-latest

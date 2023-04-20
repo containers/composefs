@@ -19,3 +19,17 @@ mount_composefs_LDADD = ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)
 
 writer_json_SOURCES = writer-json.c read-file.c read-file.h
 writer_json_LDADD = ../libcomposefs/libcomposefs.la $(LIBS_YAJL) $(LIBCRYPTO_LIBS)
+
+TEST_ASSETS = \
+	config.json config-with-hard-link.json \
+	cs9-x86_64-developer.json.gz cs9-x86_64-minimal.json.gz	\
+	f36-x86_64-silverblue.json.gz
+
+if ENABLE_VALGRIND
+WRITER_JSON_PREFIX=libtool --mode=execute ${VALGRIND} --quiet --leak-check=yes --error-exitcode=42
+endif
+
+check-checksums:
+	$(srcdir)/test-checksums.sh "${WRITER_JSON_PREFIX} $(builddir)/writer-json" "$(srcdir)/test-assets" "${TEST_ASSETS}"
+
+check: check-checksums
