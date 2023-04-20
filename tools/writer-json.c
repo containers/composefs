@@ -411,6 +411,7 @@ static void do_file(struct lcfs_node_s *root, FILE *file)
 }
 
 #define OPT_OUT 100
+#define OPT_FORMAT 101
 
 static void usage(const char *argv0)
 {
@@ -433,10 +434,17 @@ int main(int argc, char **argv)
 			flag: NULL,
 			val: OPT_OUT
 		},
+		{
+			name: "format",
+			has_arg: required_argument,
+			flag: NULL,
+			val: OPT_FORMAT
+		},
 		{},
 	};
 	struct lcfs_node_s *root;
 	struct lcfs_write_options_s options = { 0 };
+	const char *format = "composefs";
 	char cwd[PATH_MAX];
 	size_t i;
 	int opt;
@@ -447,6 +455,9 @@ int main(int argc, char **argv)
 		switch (opt) {
 		case OPT_OUT:
 			out = optarg;
+			break;
+		case OPT_FORMAT:
+			format = optarg;
 			break;
 		case ':':
 			fprintf(stderr, "option needs a value\n");
@@ -497,6 +508,14 @@ int main(int argc, char **argv)
 	options.format = LCFS_FORMAT_COMPOSEFS;
 	options.file = out_file;
 	options.file_write_cb = write_cb;
+
+	if (strcmp(format, "erofs") == 0) {
+		options.format = LCFS_FORMAT_EROFS;
+	} else if (strcmp(format, "composefs") == 0) {
+		options.format = LCFS_FORMAT_COMPOSEFS;
+	} else {
+		error(EXIT_FAILURE, errno, "Unknown format %s", format);
+	}
 
 	if (lcfs_write_to(root, &options) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
