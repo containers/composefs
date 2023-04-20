@@ -19,7 +19,7 @@
 
 #include "config.h"
 
-#include "lcfs.h"
+#include "lcfs-cfs.h"
 #include "lcfs-writer.h"
 #include "lcfs-fsverity.h"
 #include "lcfs-erofs.h"

@@ -4,7 +4,7 @@ libcomposefs_la_SOURCES = \
                         $(COMPOSEFSDIR)/bitrotate.h \
                         $(COMPOSEFSDIR)/hash.c \
                         $(COMPOSEFSDIR)hash.h \
-                        $(COMPOSEFSDIR)/lcfs.h \
+                        $(COMPOSEFSDIR)/lcfs-cfs.h \
                         $(COMPOSEFSDIR)/lcfs-fsverity.c \
                         $(COMPOSEFSDIR)/lcfs-fsvertiy.h \
                         $(COMPOSEFSDIR)/lcfs-writer.c \
