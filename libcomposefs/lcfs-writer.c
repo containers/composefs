@@ -253,7 +253,7 @@ int lcfs_compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 	}
 
 	/* Ensure all hardlinks are in tree */
-	for (node = ctx->root; node != NULL; node = node->next) {
+	for (node = root; node != NULL; node = node->next) {
 		for (size_t i = 0; i < node->children_size; i++) {
 			struct lcfs_node_s *child = node->children[i];
 			if (child->link_to != NULL && !child->link_to->in_tree) {
