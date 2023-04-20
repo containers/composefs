@@ -86,7 +86,19 @@ static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root,
 {
 	struct lcfs_ctx_s *ret;
 
-	ret = calloc(1, sizeof *ret);
+	switch (options->format) {
+	case LCFS_FORMAT_EROFS:
+		ret = lcfs_ctx_erofs_new();
+		break;
+
+	case LCFS_FORMAT_COMPOSEFS:
+		ret = lcfs_ctx_cfs_new();
+		break;
+
+	default:
+		ret = NULL;
+	}
+
 	if (ret == NULL) {
 		return ret;
 	}
@@ -123,7 +135,6 @@ int lcfs_clone_root(struct lcfs_ctx_s *ctx)
 
 	return 0;
 }
-
 
 int node_get_dtype(struct lcfs_node_s *node)
 {
@@ -217,7 +228,6 @@ int lcfs_compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 
 		/* Assign inode index */
 		node->inode_num = index;
-		ctx->inode_table_size += sizeof(struct lcfs_inode_s);
 
 		/* Compute has_acl */
 		if (lcfs_node_get_xattr(node, "system.posix_acl_access", NULL) != NULL ||
@@ -323,11 +333,11 @@ static int lcfs_close(struct lcfs_ctx_s *ctx)
 	if (ctx == NULL)
 		return 0;
 
+	if (ctx->finalize)
+		ctx->finalize(ctx);
+
 	if (ctx->fsverity_ctx)
 		lcfs_fsverity_context_free(ctx->fsverity_ctx);
-	if (ctx->ht)
-		hash_free(ctx->ht);
-	free(ctx->vdata);
 	if (ctx->root) {
 		if (ctx->destroy_root) {
 			lcfs_node_destroy(ctx->root);
@@ -335,7 +345,6 @@ static int lcfs_close(struct lcfs_ctx_s *ctx)
 			lcfs_node_unref(ctx->root);
 		}
 	}
-	free(ctx->erofs_shared_xattrs);
 	free(ctx);
 
 	return 0;

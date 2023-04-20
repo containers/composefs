@@ -36,6 +36,37 @@
 #include <sys/param.h>
 #include <assert.h>
 
+struct lcfs_ctx_cfs_s {
+	struct lcfs_ctx_s base;
+
+	/* Used for dedup.  */
+	Hash_table *ht;
+
+	char *vdata;
+	size_t vdata_len;
+	size_t vdata_allocated;
+};
+
+static void lcfs_ctx_cfs_finalize(struct lcfs_ctx_s *ctx)
+{
+	struct lcfs_ctx_cfs_s *ctx_cfs = (struct lcfs_ctx_cfs_s *)ctx;
+	free(ctx_cfs->vdata);
+	if (ctx_cfs->ht)
+		hash_free(ctx_cfs->ht);
+}
+
+struct lcfs_ctx_s *lcfs_ctx_cfs_new(void)
+{
+	struct lcfs_ctx_cfs_s *ret = calloc(1, sizeof(struct lcfs_ctx_cfs_s));
+	if (ret == NULL) {
+		return NULL;
+	}
+
+	ret->base.finalize = lcfs_ctx_cfs_finalize;
+
+	return &ret->base;
+}
+
 #define APPEND_FLAGS_DEDUP (1 << 0)
 #define APPEND_FLAGS_ALIGN (1 << 1)
 
@@ -73,8 +104,9 @@ static void vdata_ht_freer(void *data)
 }
 
 static int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
-                             const void *data, size_t len, uint32_t flags)
+			     const void *data, size_t len, uint32_t flags)
 {
+	struct lcfs_ctx_cfs_s *ctx_cfs = (struct lcfs_ctx_cfs_s *)ctx;
 	struct hasher_vdata_s *key;
 	char *new_vdata;
 	size_t pad_length;
@@ -90,7 +122,7 @@ static int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 			.len = len,
 		};
 
-		ent = hash_lookup(ctx->ht, &hkey);
+		ent = hash_lookup(ctx_cfs->ht, &hkey);
 		if (ent) {
 			out->off = ent->off;
 			out->len = ent->len;
@@ -100,45 +132,45 @@ static int lcfs_append_vdata(struct lcfs_ctx_s *ctx, struct lcfs_vdata_s *out,
 
 	/* We ensure that all vdata are aligned to start at 4 bytes  */
 	pad_length = 0;
-	if (align && ctx->vdata_len % 4 != 0)
-		pad_length = 4 - ctx->vdata_len % 4;
+	if (align && ctx_cfs->vdata_len % 4 != 0)
+		pad_length = 4 - ctx_cfs->vdata_len % 4;
 
-	if (ctx->vdata_len + pad_length + len > ctx->vdata_allocated) {
+	if (ctx_cfs->vdata_len + pad_length + len > ctx_cfs->vdata_allocated) {
 		size_t new_size, increment;
 
 		increment = max(1 << 20, pad_length + len);
 
-		new_size = ctx->vdata_allocated + increment;
-		new_vdata = realloc(ctx->vdata, new_size);
+		new_size = ctx_cfs->vdata_allocated + increment;
+		new_vdata = realloc(ctx_cfs->vdata, new_size);
 		if (new_vdata == NULL)
 			return -1;
 
-		ctx->vdata_allocated = new_size;
-		ctx->vdata = new_vdata;
+		ctx_cfs->vdata_allocated = new_size;
+		ctx_cfs->vdata = new_vdata;
 	}
 
 	if (pad_length > 0) {
-		memset(ctx->vdata + ctx->vdata_len, 0, pad_length);
-		ctx->vdata_len += pad_length;
+		memset(ctx_cfs->vdata + ctx_cfs->vdata_len, 0, pad_length);
+		ctx_cfs->vdata_len += pad_length;
 	}
 
-	memcpy(ctx->vdata + ctx->vdata_len, data, len);
+	memcpy(ctx_cfs->vdata + ctx_cfs->vdata_len, data, len);
 
-	out->off = ctx->vdata_len;
+	out->off = ctx_cfs->vdata_len;
 	out->len = len;
 
 	/* Update to the new length.  */
-	ctx->vdata_len += len;
+	ctx_cfs->vdata_len += len;
 
 	key = malloc(sizeof(struct hasher_vdata_s));
 	if (key) {
 		void *ent;
 
-		key->vdata = (const char *const *)&ctx->vdata;
+		key->vdata = (const char *const *)&ctx_cfs->vdata;
 		key->off = out->off;
 		key->len = out->len;
 
-		ent = hash_insert(ctx->ht, key);
+		ent = hash_insert(ctx_cfs->ht, key);
 		/* Should not really happen.  */
 		if (ent != key)
 			free(key);
@@ -376,6 +408,7 @@ static int write_inodes(struct lcfs_ctx_s *ctx)
 
 int lcfs_write_cfs_to(struct lcfs_ctx_s *ctx)
 {
+	struct lcfs_ctx_cfs_s *ctx_cfs = (struct lcfs_ctx_cfs_s *)ctx;
 	struct lcfs_node_s *root = ctx->root;
 	struct lcfs_superblock_s superblock = {
 		.version = lcfs_u32_to_file(LCFS_VERSION),
@@ -385,8 +418,8 @@ int lcfs_write_cfs_to(struct lcfs_ctx_s *ctx)
 	;
 	off_t data_offset;
 
-	ctx->ht = hash_initialize(0, NULL, vdata_ht_hasher, vdata_ht_comparator,
-				  vdata_ht_freer);
+	ctx_cfs->ht = hash_initialize(0, NULL, vdata_ht_hasher,
+				      vdata_ht_comparator, vdata_ht_freer);
 
 	if (ctx->options->version != 0) {
 		errno = -EINVAL;
@@ -397,8 +430,9 @@ int lcfs_write_cfs_to(struct lcfs_ctx_s *ctx)
 	if (ret < 0)
 		return ret;
 
-	data_offset = ALIGN_TO(
-		sizeof(struct lcfs_superblock_s) + ctx->inode_table_size, 4);
+	data_offset = ALIGN_TO(sizeof(struct lcfs_superblock_s) +
+				       ctx->num_inodes * sizeof(struct lcfs_inode_s),
+			       4);
 
 	superblock.vdata_offset = lcfs_u64_to_file(data_offset);
 
@@ -419,15 +453,16 @@ int lcfs_write_cfs_to(struct lcfs_ctx_s *ctx)
 		return ret;
 
 	assert(ctx->bytes_written ==
-	       sizeof(struct lcfs_superblock_s) + ctx->inode_table_size);
+	       sizeof(struct lcfs_superblock_s) +
+		       ctx->num_inodes * sizeof(struct lcfs_inode_s));
 
-	if (ctx->vdata) {
+	if (ctx_cfs->vdata) {
 		/* Pad vdata to 4k alignment */
 		ret = lcfs_write_pad(ctx, data_offset - ctx->bytes_written);
 		if (ret < 0)
 			return ret;
 
-		ret = lcfs_write(ctx, ctx->vdata, ctx->vdata_len);
+		ret = lcfs_write(ctx, ctx_cfs->vdata, ctx_cfs->vdata_len);
 		if (ret < 0)
 			return ret;
 	}

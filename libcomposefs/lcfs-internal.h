@@ -22,7 +22,7 @@
 #include "lcfs-fsverity.h"
 #include "hash.h"
 
-#define ALIGN_TO(_offset, _align_size)                          \
+#define ALIGN_TO(_offset, _align_size)                                         \
 	(((_offset) + _align_size - 1) & ~(_align_size - 1))
 
 #define __round_mask(x, y) ((__typeof__(x))((y)-1))
@@ -79,19 +79,11 @@ struct lcfs_node_s {
 
 struct lcfs_ctx_s {
 	struct lcfs_write_options_s *options;
-	char *vdata;
-	size_t vdata_len;
-	size_t vdata_allocated;
-	size_t curr_off;
 	struct lcfs_node_s *root;
 	bool destroy_root;
 
-	/* User for dedup.  */
-	Hash_table *ht;
-
 	/* Used by compute_tree.  */
 	struct lcfs_node_s *queue_end;
-	loff_t inode_table_size;
 	uint32_t num_inodes;
 	int64_t min_mtim_sec;
 	uint32_t min_mtim_nsec;
@@ -102,12 +94,7 @@ struct lcfs_ctx_s {
 	off_t bytes_written;
 	FsVerityContext *fsverity_ctx;
 
-	uint64_t erofs_inodes_end; /* start of xattrs */
-	uint64_t erofs_shared_xattr_size;
-	uint64_t erofs_n_data_blocks;
-	uint64_t erofs_current_end;
-	struct lcfs_xattr_s **erofs_shared_xattrs;
-	size_t erofs_n_shared_xattrs;
+	void (*finalize)(struct lcfs_ctx_s *ctx);
 };
 
 /* lcfs-writer.c */
@@ -124,9 +111,11 @@ int node_get_dtype(struct lcfs_node_s *node);
 /* lcfs-writer-erofs.c */
 
 int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx);
+struct lcfs_ctx_s *lcfs_ctx_erofs_new(void);
 
 /* lcfs-writer-cfs.c */
 
 int lcfs_write_cfs_to(struct lcfs_ctx_s *ctx);
+struct lcfs_ctx_s *lcfs_ctx_cfs_new(void);
 
 #endif

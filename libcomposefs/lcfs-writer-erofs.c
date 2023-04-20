@@ -36,6 +36,36 @@
 #include <sys/param.h>
 #include <assert.h>
 
+struct lcfs_ctx_erofs_s {
+	struct lcfs_ctx_s base;
+
+	uint64_t inodes_end; /* start of xattrs */
+	uint64_t shared_xattr_size;
+	uint64_t n_data_blocks;
+	uint64_t current_end;
+	struct lcfs_xattr_s **shared_xattrs;
+	size_t n_shared_xattrs;
+};
+
+static void lcfs_ctx_erofs_finalize(struct lcfs_ctx_s *ctx)
+{
+	struct lcfs_ctx_erofs_s *ctx_erofs = (struct lcfs_ctx_erofs_s *)ctx;
+
+	free(ctx_erofs->shared_xattrs);
+}
+
+struct lcfs_ctx_s *lcfs_ctx_erofs_new(void)
+{
+	struct lcfs_ctx_erofs_s *ret = calloc(1, sizeof(struct lcfs_ctx_erofs_s));
+	if (ret == NULL) {
+		return NULL;
+	}
+
+	ret->base.finalize = lcfs_ctx_erofs_finalize;
+
+	return &ret->base;
+}
+
 #include "erofs_fs_wrapper.h"
 
 static int erofs_make_file_type(int regular)
@@ -182,6 +212,7 @@ static bool erofs_xattr_should_be_shared(struct hasher_xattr_s *ent)
 
 static int compute_erofs_shared_xattrs(struct lcfs_ctx_s *ctx)
 {
+	struct lcfs_ctx_erofs_s *ctx_erofs = (struct lcfs_ctx_erofs_s *)ctx;
 	struct lcfs_node_s *node;
 	Hash_table *xattr_hash;
 	struct hasher_xattr_s **sorted = NULL;
@@ -228,10 +259,10 @@ static int compute_erofs_shared_xattrs(struct lcfs_ctx_s *ctx)
 	qsort(sorted, n_xattrs, sizeof(struct hasher_xattr_s *), xattrs_ht_sort);
 
 	/* Compute the list of shared (multi-use) xattrs and their offsets */
-	ctx->erofs_shared_xattrs = calloc(n_xattrs, sizeof(struct lcfs_xattr_s *));
-	if (ctx->erofs_shared_xattrs == NULL)
+	ctx_erofs->shared_xattrs = calloc(n_xattrs, sizeof(struct lcfs_xattr_s *));
+	if (ctx_erofs->shared_xattrs == NULL)
 		goto fail;
-	ctx->erofs_n_shared_xattrs = 0;
+	ctx_erofs->n_shared_xattrs = 0;
 
 	xattr_offset = 0;
 	for (size_t i = 0; i < n_xattrs; i++) {
@@ -240,15 +271,15 @@ static int compute_erofs_shared_xattrs(struct lcfs_ctx_s *ctx)
 			ent->shared = true;
 			ent->shared_offset = xattr_offset;
 
-			ctx->erofs_shared_xattrs[ctx->erofs_n_shared_xattrs] =
+			ctx_erofs->shared_xattrs[ctx_erofs->n_shared_xattrs] =
 				ent->xattr;
-			ctx->erofs_n_shared_xattrs++;
+			ctx_erofs->n_shared_xattrs++;
 
 			xattr_offset += xattr_erofs_entry_size(ent->xattr);
 		}
 	}
 
-	ctx->erofs_shared_xattr_size = xattr_offset;
+	ctx_erofs->shared_xattr_size = xattr_offset;
 
 	/* Assign shared xattr offsets for all inodes */
 
@@ -445,6 +476,7 @@ static uint64_t compute_erofs_inode_padding_for_tail(struct lcfs_node_s *node,
 
 static int compute_erofs_inodes(struct lcfs_ctx_s *ctx)
 {
+	struct lcfs_ctx_erofs_s *ctx_erofs = (struct lcfs_ctx_erofs_s *)ctx;
 	struct lcfs_node_s *node;
 	uint64_t pos, ppos;
 	uint64_t meta_start, extra_pad;
@@ -482,7 +514,7 @@ static int compute_erofs_inodes(struct lcfs_ctx_s *ctx)
 		pos += extra_pad;
 
 		node->erofs_isize = inode_size + xattr_size + node->erofs_tailsize;
-		ctx->erofs_n_data_blocks += node->erofs_n_blocks;
+		ctx_erofs->n_data_blocks += node->erofs_n_blocks;
 		node->erofs_nid = (pos - meta_start) / EROFS_SLOTSIZE;
 
 		/* Assert that tails never span multiple blocks */
@@ -493,7 +525,7 @@ static int compute_erofs_inodes(struct lcfs_ctx_s *ctx)
 		pos += node->erofs_isize;
 	}
 
-	ctx->erofs_inodes_end = round_up(pos, EROFS_SLOTSIZE);
+	ctx_erofs->inodes_end = round_up(pos, EROFS_SLOTSIZE);
 
 	return 0;
 }
@@ -613,6 +645,7 @@ static int write_erofs_dentries(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node
 
 static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 {
+	struct lcfs_ctx_erofs_s *ctx_erofs = (struct lcfs_ctx_erofs_s *)ctx;
 	int type = node->inode.st_mode & S_IFMT;
 	size_t xattr_icount;
 	uint64_t size;
@@ -677,8 +710,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 		if (type == S_IFDIR) {
 			if (node->erofs_n_blocks > 0) {
 				i.i_u.raw_blkaddr =
-					ctx->erofs_current_end / EROFS_BLKSIZ;
-				ctx->erofs_current_end +=
+					ctx_erofs->current_end / EROFS_BLKSIZ;
+				ctx_erofs->current_end +=
 					EROFS_BLKSIZ * node->erofs_n_blocks;
 			}
 		} else if (type == S_IFCHR || type == S_IFBLK) {
@@ -707,8 +740,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 		if (type == S_IFDIR) {
 			if (node->erofs_n_blocks > 0) {
 				i.i_u.raw_blkaddr =
-					ctx->erofs_current_end / EROFS_BLKSIZ;
-				ctx->erofs_current_end +=
+					ctx_erofs->current_end / EROFS_BLKSIZ;
+				ctx_erofs->current_end +=
 					EROFS_BLKSIZ * node->erofs_n_blocks;
 			}
 		} else if (type == S_IFCHR || type == S_IFBLK) {
@@ -738,7 +771,7 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 			struct lcfs_xattr_s *xattr = &node->xattrs[i];
 			if (xattr->erofs_shared_xattr_offset >= 0) {
 				uint64_t offset =
-					ctx->erofs_inodes_end % EROFS_BLKSIZ +
+					ctx_erofs->inodes_end % EROFS_BLKSIZ +
 					xattr->erofs_shared_xattr_offset;
 				uint32_t v =
 					lcfs_u32_to_file(offset / sizeof(uint32_t));
@@ -815,10 +848,11 @@ static int write_erofs_dirent_blocks(struct lcfs_ctx_s *ctx)
 
 static int write_erofs_shared_xattrs(struct lcfs_ctx_s *ctx)
 {
+	struct lcfs_ctx_erofs_s *ctx_erofs = (struct lcfs_ctx_erofs_s *)ctx;
 	int ret;
 
-	for (size_t i = 0; i < ctx->erofs_n_shared_xattrs; i++) {
-		struct lcfs_xattr_s *xattr = ctx->erofs_shared_xattrs[i];
+	for (size_t i = 0; i < ctx_erofs->n_shared_xattrs; i++) {
+		struct lcfs_xattr_s *xattr = ctx_erofs->shared_xattrs[i];
 		ret = write_erofs_xattr(ctx, xattr);
 		if (ret < 0)
 			return ret;
@@ -1006,6 +1040,7 @@ static int rewrite_tree_for_erofs(struct lcfs_node_s *root)
 
 int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 {
+	struct lcfs_ctx_erofs_s *ctx_erofs = (struct lcfs_ctx_erofs_s *)ctx;
 	struct lcfs_node_s *root;
 	struct lcfs_erofs_header_s header = {
 		.magic = lcfs_u32_to_file(LCFS_EROFS_MAGIC),
@@ -1075,14 +1110,14 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 
 	/* shared xattrs is directly after metadata */
 	superblock.xattr_blkaddr =
-		lcfs_u32_to_file(ctx->erofs_inodes_end / EROFS_BLKSIZ);
+		lcfs_u32_to_file(ctx_erofs->inodes_end / EROFS_BLKSIZ);
 
 	data_block_start =
-		round_up(ctx->erofs_inodes_end + ctx->erofs_shared_xattr_size,
+		round_up(ctx_erofs->inodes_end + ctx_erofs->shared_xattr_size,
 			 EROFS_BLKSIZ);
 
 	superblock.blocks = lcfs_u32_to_file(data_block_start / EROFS_BLKSIZ +
-					     ctx->erofs_n_data_blocks);
+					     ctx_erofs->n_data_blocks);
 
 	/* TODO: More superblock fields:
 	 *  uuid?
@@ -1093,19 +1128,19 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 	if (ret < 0)
 		return ret;
 
-	ctx->erofs_current_end = data_block_start;
+	ctx_erofs->current_end = data_block_start;
 
 	ret = write_erofs_inodes(ctx);
 	if (ret < 0)
 		return ret;
 
-	assert(ctx->erofs_inodes_end == ctx->bytes_written);
+	assert(ctx_erofs->inodes_end == ctx->bytes_written);
 
 	ret = write_erofs_shared_xattrs(ctx);
 	if (ret < 0)
 		return ret;
 
-	assert(ctx->erofs_inodes_end + ctx->erofs_shared_xattr_size ==
+	assert(ctx_erofs->inodes_end + ctx_erofs->shared_xattr_size ==
 	       ctx->bytes_written);
 
 	/* Following are full blocks and must be block-aligned */
@@ -1119,10 +1154,9 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 	if (ret < 0)
 		return ret;
 
-	assert(ctx->erofs_current_end == ctx->bytes_written);
-	assert(data_block_start + ctx->erofs_n_data_blocks * EROFS_BLKSIZ ==
+	assert(ctx_erofs->current_end == ctx->bytes_written);
+	assert(data_block_start + ctx_erofs->n_data_blocks * EROFS_BLKSIZ ==
 	       ctx->bytes_written);
 
 	return 0;
 }
-
