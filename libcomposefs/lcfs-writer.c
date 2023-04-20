@@ -1014,7 +1014,7 @@ struct lcfs_node_s *lcfs_node_clone_deep(struct lcfs_node_s *node)
 
 	new = _lcfs_node_clone_deep(node, &data);
 	if (new)
-		_lcfs_node_clone_rewrite_links(node, &data);
+		_lcfs_node_clone_rewrite_links(new, &data);
 
 	free(data.mapping);
 
