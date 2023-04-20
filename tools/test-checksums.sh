@@ -4,6 +4,10 @@ WRITER_JSON="$1"
 ASSET_DIR="$2"
 TEST_ASSETS="$3"
 
+set -e
+tmpfile=$(mktemp /tmp/lcfs-test.XXXXXX)
+trap 'rm -rf -- "$tmpfile"' EXIT
+
 for format in composefs erofs ; do
     for file in ${TEST_ASSETS} ; do
         echo Verifying $file with $format
@@ -13,7 +17,10 @@ for format in composefs erofs ; do
         else
             CAT=cat
         fi
-        SHA=$($CAT $ASSET_DIR/$file | $WRITER_JSON --format=$format - | sha256sum | awk "{print \$1}")
+
+        $CAT $ASSET_DIR/$file | $WRITER_JSON --format=$format --out=$tmpfile -
+        SHA=$(sha256sum $tmpfile | awk "{print \$1}")
+
         if [ $SHA != $EXPECTED_SHA ]; then
             echo Invalid $format checksum of file generated from $file: $SHA, expected $EXPECTED_SHA
         fi

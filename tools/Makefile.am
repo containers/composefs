@@ -25,7 +25,11 @@ TEST_ASSETS = \
 	cs9-x86_64-developer.json.gz cs9-x86_64-minimal.json.gz	\
 	f36-x86_64-silverblue.json.gz
 
+if ENABLE_VALGRIND
+WRITER_JSON_PREFIX=libtool --mode=execute ${VALGRIND} --quiet --leak-check=yes --error-exitcode=42
+endif
+
 check-checksums:
-	$(srcdir)/test-checksums.sh "$(builddir)/writer-json" "$(srcdir)/test-assets" "${TEST_ASSETS}"
+	$(srcdir)/test-checksums.sh "${WRITER_JSON_PREFIX} $(builddir)/writer-json" "$(srcdir)/test-assets" "${TEST_ASSETS}"
 
 check: check-checksums

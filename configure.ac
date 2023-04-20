@@ -92,6 +92,18 @@ case "$host" in
 esac
 AC_SUBST(HIDDEN_VISIBILITY_CFLAGS)
 
+#################################################
+# Enable testing with Valgrind? Default is "no".
+#################################################
+AC_ARG_ENABLE([valgrind-test],
+        AS_HELP_STRING([--enable-valgrind-test], [Enable running tests with Valgrind (slow)]),
+        [use_valgrind=$enableval], [use_valgrind=no])
+AC_MSG_CHECKING([whether to run tests with Valgrind])
+AC_MSG_RESULT([$use_valgrind])
+AC_PATH_PROG([VALGRIND], [valgrind], [no])
+AS_IF([test "${use_valgrind}" != "no" -a "${VALGRIND}" = "no"],
+      [AC_MSG_ERROR([Valgrind test are enabled, but "valgrind" not found in PATH!])])
+AM_CONDITIONAL([ENABLE_VALGRIND], [test "${use_valgrind}" != "no"])
 
 AS_IF([echo "$CFLAGS" | grep -q -E -e '-Werror($| )'], [], [
 CC_CHECK_FLAGS_APPEND([WARN_CFLAGS], [CFLAGS], [\
