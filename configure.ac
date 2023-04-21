@@ -158,5 +158,10 @@ AC_FUNC_MMAP
 AC_FUNC_REALLOC
 AC_CHECK_FUNCS([getcwd memset munmap strdup])
 
-AC_CONFIG_FILES([Makefile libcomposefs/Makefile tools/Makefile])
+AC_CONFIG_FILES([
+Makefile
+libcomposefs/Makefile
+tools/Makefile
+composefs.spec
+])
 AC_OUTPUT
