@@ -2,16 +2,19 @@ COMPOSEFS_HASH_CFLAGS = -DUSE_OBSTACK=0 -DTESTING=0 -DUSE_DIFF_HASH=0
 
 libcomposefs_la_SOURCES = \
                         $(COMPOSEFSDIR)/bitrotate.h \
+                        $(COMPOSEFSDIR)/erofs_fs.h \
+                        $(COMPOSEFSDIR)/erofs_fs_wrapper.h \
                         $(COMPOSEFSDIR)/hash.c \
-                        $(COMPOSEFSDIR)hash.h \
+                        $(COMPOSEFSDIR)/hash.h \
                         $(COMPOSEFSDIR)/lcfs-internal.h \
                         $(COMPOSEFSDIR)/lcfs-cfs.h \
                         $(COMPOSEFSDIR)/lcfs-fsverity.c \
-                        $(COMPOSEFSDIR)/lcfs-fsvertiy.h \
+                        $(COMPOSEFSDIR)/lcfs-fsverity.h \
                         $(COMPOSEFSDIR)/lcfs-writer-erofs.c \
                         $(COMPOSEFSDIR)/lcfs-writer-cfs.c \
                         $(COMPOSEFSDIR)/lcfs-writer.c \
                         $(COMPOSEFSDIR)/lcfs-writer.h \
+                        $(COMPOSEFSDIR)/lcfs-utils.h \
                         $(COMPOSEFSDIR)/lcfs-mount.c \
                         $(COMPOSEFSDIR)/lcfs-mount.h \
                         $(COMPOSEFSDIR)/xalloc-oversized.h
