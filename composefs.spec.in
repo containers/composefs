@@ -41,6 +41,7 @@ Library files for %{name}.
 %files devel
 %{_includedir}/libcomposefs
 %{_libdir}/libcomposefs.so
+%{_libdir}/pkgconfig/%{name}.pc
 
 %files libs
 %{_libdir}/libcomposefs.so.*

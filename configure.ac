@@ -10,6 +10,11 @@ LT_INIT()
 AM_INIT_AUTOMAKE([1.11.2 -Wno-portability foreign tar-ustar no-dist-gzip dist-xz subdir-objects])
 
 AC_PROG_CC
+PKG_PROG_PKG_CONFIG
+m4_ifdef([PKG_INSTALLDIR], [PKG_INSTALLDIR], AC_SUBST([pkgconfigdir], ${libdir}/pkgconfig))
+
+PKGCONFIG_REQUIRES=
+PKGCONFIG_REQUIRES_PRIVATELY=
 
 AC_MSG_CHECKING([for new mount API (fsconfig)])
 AC_COMPILE_IFELSE(
@@ -32,9 +37,12 @@ AC_COMPILE_IFELSE(
 	[AC_MSG_RESULT(no)])
 
 PKG_CHECK_MODULES(FSVERITY, libfsverity)
+PKGCONFIG_REQUIRES_PRIVATELY="$PKGCONFIG_REQUIRES_PRIVATELY libfsverity"
+
 PKG_CHECK_MODULES(LCFS_DEP_CRYPTO, libcrypto,[
       AC_DEFINE([HAVE_OPENSSL], 1, [Define if we have openssl])
       with_openssl=yes
+      PKGCONFIG_REQUIRES_PRIVATELY="$PKGCONFIG_REQUIRES_PRIVATELY libcrypto"
 ],[
       with_openssl=no
 ])
@@ -158,10 +166,14 @@ AC_FUNC_MMAP
 AC_FUNC_REALLOC
 AC_CHECK_FUNCS([getcwd memset munmap strdup])
 
+AC_SUBST(PKGCONFIG_REQUIRES)
+AC_SUBST(PKGCONFIG_REQUIRES_PRIVATELY)
+
 AC_CONFIG_FILES([
 Makefile
 libcomposefs/Makefile
 tools/Makefile
 composefs.spec
+composefs.pc
 ])
 AC_OUTPUT

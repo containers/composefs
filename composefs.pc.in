@@ -1,0 +1,13 @@
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+libdir=@libdir@
+includedir=@includedir@
+
+Name: Composefs
+Description: library for generating and using composefs images
+Version: @VERSION@
+Requires: @PKGCONFIG_REQUIRES@
+Requires.private: @PKGCONFIG_REQUIRES_PRIVATELY@
+Libs: -L${libdir} -lcomposefs
+Libs.private: @LIBS_YAJL@ @LCFS_DEP_CRYPTO_LIBS@
+Cflags: -I${includedir}
