@@ -9,5 +9,5 @@ Version: @VERSION@
 Requires: @PKGCONFIG_REQUIRES@
 Requires.private: @PKGCONFIG_REQUIRES_PRIVATELY@
 Libs: -L${libdir} -lcomposefs
-Libs.private: @LIBS_YAJL@ @LCFS_DEP_CRYPTO_LIBS@
+Libs.private: @LCFS_DEP_CRYPTO_LIBS@
 Cflags: -I${includedir}
