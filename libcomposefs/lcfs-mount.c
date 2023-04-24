@@ -215,6 +215,11 @@ static int lcfs_validate_mount_options(struct lcfs_mount_state_s *state)
 		return -EINVAL;
 	}
 
+	if ((options->flags & LCFS_MOUNT_FLAGS_REQUIRE_VERITY) &&
+	    (options->flags & LCFS_MOUNT_FLAGS_DISABLE_VERITY)) {
+		return -EINVAL; /* Can't have both */
+	}
+
 	if (options->n_objdirs == 0)
 		return -EINVAL;
 
@@ -454,6 +459,7 @@ static int lcfs_mount(struct lcfs_mount_state_s *state)
 	char *overlay_options = NULL;
 	int loopfd;
 	bool require_verity;
+	bool disable_verity;
 	bool readonly;
 	int mount_flags;
 
@@ -471,6 +477,7 @@ static int lcfs_mount(struct lcfs_mount_state_s *state)
 	image_flags = lcfs_u32_from_file(header.flags);
 
 	require_verity = (options->flags & LCFS_MOUNT_FLAGS_REQUIRE_VERITY) != 0;
+	disable_verity = (options->flags & LCFS_MOUNT_FLAGS_DISABLE_VERITY) != 0;
 	readonly = (options->flags & LCFS_MOUNT_FLAGS_READONLY) != 0;
 
 	loopfd = setup_loopback(state->fd, state->image_path, loopname);
@@ -510,7 +517,8 @@ static int lcfs_mount(struct lcfs_mount_state_s *state)
 		       "metacopy=on,redirect_dir=on,lowerdir=%s%s%s%s%s%s", lowerdir,
 		       upperdir ? ",upperdir=" : "", upperdir ? upperdir : "",
 		       workdir ? ",workdir=" : "", workdir ? workdir : "",
-		       require_verity ? ",verity=require" : "");
+		       require_verity ? ",verity=require" :
+					(disable_verity ? ",verity=off" : ""));
 	if (res < 0) {
 		res = -ENOMEM;
 		goto fail;
