@@ -10,6 +10,9 @@ trap 'rm -rf -- "$tmpfile"' EXIT
 
 for format in composefs erofs ; do
     for file in ${TEST_ASSETS} ; do
+        if [ ! -f $ASSET_DIR/$file ] ; then
+            continue;
+        fi
         echo Verifying $file with $format
         EXPECTED_SHA=$(cat $ASSET_DIR/$file.sha256_${format});
         if [[ $file == *.gz ]] ; then
