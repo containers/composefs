@@ -18,6 +18,10 @@
 #define _LCFS_UTILS_H
 
 #include <assert.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#define max(a, b) ((a > b) ? (a) : (b))
 
 static inline void cleanup_freep(void *p)
 {
