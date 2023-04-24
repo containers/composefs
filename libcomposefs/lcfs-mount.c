@@ -343,7 +343,8 @@ static int setup_loopback(int fd, const char *image_path, char *loopname)
 	return loopfd;
 }
 
-static char *compute_lower(const char *imagemount, struct lcfs_mount_state_s *state)
+static char *compute_lower(const char *imagemount,
+			   struct lcfs_mount_state_s *state, bool with_datalower)
 {
 	size_t size;
 	char *lower;
@@ -352,7 +353,7 @@ static char *compute_lower(const char *imagemount, struct lcfs_mount_state_s *st
 	/* Compute the total max size (including escapes) */
 	size = 2 * strlen(imagemount);
 	for (i = 0; i < state->options->n_objdirs; i++)
-		size += 1 + 2 * strlen(state->options->objdirs[i]);
+		size += 2 + 2 * strlen(state->options->objdirs[i]);
 
 	lower = malloc(size + 1);
 	if (lower == NULL)
@@ -362,7 +363,10 @@ static char *compute_lower(const char *imagemount, struct lcfs_mount_state_s *st
 	escape_mount_option_to(imagemount, lower);
 
 	for (i = 0; i < state->options->n_objdirs; i++) {
-		strcat(lower, ":");
+		if (with_datalower && i == 0)
+			strcat(lower, "::");
+		else
+			strcat(lower, ":");
 		escape_mount_option_to(state->options->objdirs[i], lower);
 	}
 
@@ -453,7 +457,8 @@ static int lcfs_mount(struct lcfs_mount_state_s *state)
 	char *imagemount;
 	char loopname[PATH_MAX];
 	int res, errsv;
-	char *lowerdir = NULL;
+	int lowerdir_alt = 0;
+	char *lowerdir[2] = { NULL, NULL };
 	char *upperdir = NULL;
 	char *workdir = NULL;
 	char *overlay_options = NULL;
@@ -499,11 +504,19 @@ static int lcfs_mount(struct lcfs_mount_state_s *state)
 	}
 
 	/* We use the legacy API to mount overlayfs, because the new API doesn't allow use
-         * to pass in escaped directory names
-         */
+	 * to pass in escaped directory names
+	 */
 
-	lowerdir = compute_lower(imagemount, state);
-	if (lowerdir == NULL) {
+	/* First try new version with :: separating datadirs. */
+	lowerdir[0] = compute_lower(imagemount, state, true);
+	if (lowerdir[0] == NULL) {
+		res = -ENOMEM;
+		goto fail;
+	}
+
+	/* Then fall back. */
+	lowerdir[1] = compute_lower(imagemount, state, false);
+	if (lowerdir[1] == NULL) {
 		res = -ENOMEM;
 		goto fail;
 	}
@@ -513,10 +526,12 @@ static int lcfs_mount(struct lcfs_mount_state_s *state)
 	if (options->workdir)
 		workdir = escape_mount_option(options->workdir);
 
+retry:
 	res = asprintf(&overlay_options,
-		       "metacopy=on,redirect_dir=on,lowerdir=%s%s%s%s%s%s", lowerdir,
-		       upperdir ? ",upperdir=" : "", upperdir ? upperdir : "",
-		       workdir ? ",workdir=" : "", workdir ? workdir : "",
+		       "metacopy=on,redirect_dir=on,lowerdir=%s%s%s%s%s%s",
+		       lowerdir[lowerdir_alt], upperdir ? ",upperdir=" : "",
+		       upperdir ? upperdir : "", workdir ? ",workdir=" : "",
+		       workdir ? workdir : "",
 		       require_verity ? ",verity=require" :
 					(disable_verity ? ",verity=off" : ""));
 	if (res < 0) {
@@ -530,9 +545,19 @@ static int lcfs_mount(struct lcfs_mount_state_s *state)
 
 	res = mount("overlay", state->mountpoint, "overlay", mount_flags,
 		    overlay_options);
+	if (res != 0) {
+		res = -errno;
+	}
+
+	if (res == -EINVAL && lowerdir_alt == 0) {
+		free(overlay_options);
+		lowerdir_alt++;
+		goto retry;
+	}
 
 fail:
-	free(lowerdir);
+	free(lowerdir[0]);
+	free(lowerdir[1]);
 	free(workdir);
 	free(upperdir);
 	free(overlay_options);
