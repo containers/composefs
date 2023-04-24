@@ -343,6 +343,31 @@ static int setup_loopback(int fd, const char *image_path, char *loopname)
 	return loopfd;
 }
 
+static char *compute_basedir(struct lcfs_mount_state_s *state)
+{
+	size_t size;
+	char *basedir;
+	int i;
+
+	/* Compute the total max size (including escapes) */
+	size = 0;
+	for (i = 0; i < state->options->n_objdirs; i++)
+		size += 1 + 2 * strlen(state->options->objdirs[i]);
+
+	basedir = malloc(size + 1);
+	if (basedir == NULL)
+		return NULL;
+	*basedir = 0;
+
+	for (i = 0; i < state->options->n_objdirs; i++) {
+		if (i > 0)
+			strcat(basedir, ":");
+		escape_mount_option_to(state->options->objdirs[i], basedir);
+	}
+
+	return basedir;
+}
+
 static char *compute_lower(const char *imagemount,
 			   struct lcfs_mount_state_s *state, bool with_datalower)
 {
@@ -448,10 +473,13 @@ fallback:
 	return 0;
 }
 
-static int lcfs_mount(struct lcfs_mount_state_s *state)
+#define HEADER_SIZE                                                            \
+	max(sizeof(struct lcfs_superblock_s), sizeof(struct lcfs_erofs_header_s))
+
+static int lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
+				struct lcfs_erofs_header_s *header)
 {
 	struct lcfs_mount_options_s *options = state->options;
-	struct lcfs_erofs_header_s header;
 	uint32_t image_flags;
 	char imagemountbuf[] = "/tmp/.composefs.XXXXXX";
 	char *imagemount;
@@ -468,18 +496,7 @@ static int lcfs_mount(struct lcfs_mount_state_s *state)
 	bool readonly;
 	int mount_flags;
 
-	res = lcfs_validate_verity_fd(state);
-	if (res < 0)
-		return res;
-
-	res = pread(state->fd, &header, sizeof(header), 0);
-	if (res < 0)
-		return -errno;
-
-	if (lcfs_u32_from_file(header.magic) != LCFS_EROFS_MAGIC)
-		return -EINVAL;
-
-	image_flags = lcfs_u32_from_file(header.flags);
+	image_flags = lcfs_u32_from_file(header->flags);
 
 	require_verity = (options->flags & LCFS_MOUNT_FLAGS_REQUIRE_VERITY) != 0;
 	disable_verity = (options->flags & LCFS_MOUNT_FLAGS_DISABLE_VERITY) != 0;
@@ -566,6 +583,145 @@ fail:
 	rmdir(imagemount);
 
 	return res;
+}
+
+static int lcfs_mount_cfs(struct lcfs_mount_state_s *state,
+			  struct lcfs_superblock_s *header)
+{
+	struct lcfs_mount_options_s *options = state->options;
+	bool require_verity;
+	bool disable_verity;
+	int res;
+	bool readonly;
+	bool needs_overlay;
+	bool created_tmpdir = false;
+	bool mounted_cfs = false;
+	char imagemountbuf[] = "/tmp/.composefs.XXXXXX";
+	const char *imagemount;
+	int mount_flags;
+	int verity_check = 1;
+	char *basedir = NULL;
+	char *cfs_options = NULL;
+	char *overlay_options = NULL;
+	char *upperdir = NULL;
+	char *workdir = NULL;
+	char *cfsimg = NULL;
+
+	require_verity = (options->flags & LCFS_MOUNT_FLAGS_REQUIRE_VERITY) != 0;
+	disable_verity = (options->flags & LCFS_MOUNT_FLAGS_DISABLE_VERITY) != 0;
+	readonly = (options->flags & LCFS_MOUNT_FLAGS_READONLY) != 0;
+
+	if (disable_verity)
+		verity_check = 0;
+	if (require_verity)
+		verity_check = 2;
+
+	needs_overlay = options->upperdir != NULL;
+
+	if (needs_overlay) {
+		imagemount = mkdtemp(imagemountbuf);
+		if (imagemount == NULL) {
+			res = -errno;
+			goto fail;
+		}
+		created_tmpdir = true;
+	} else {
+		imagemount = state->mountpoint;
+	}
+
+	basedir = compute_basedir(state);
+	if (basedir == NULL) {
+		res = -ENOMEM;
+		goto fail;
+	}
+
+	res = asprintf(&cfsimg, "/proc/self/fd/%d", state->fd);
+	if (res < 0) {
+		res = -ENOMEM;
+		goto fail;
+	}
+
+	res = asprintf(&cfs_options, "basedir=%s,verity_check=%d%s%s", basedir,
+		       verity_check, (options->expected_digest) ? "digest=" : "",
+		       (options->expected_digest) ? "options->expected_digest" : "");
+	if (res < 0) {
+		res = -ENOMEM;
+		goto fail;
+	}
+
+	res = mount(state->image_path ? state->image_path : cfsimg, imagemount,
+		    "composefs", MS_RDONLY, cfs_options);
+	if (res != 0) {
+		res = -errno;
+		goto fail;
+	}
+	mounted_cfs = true;
+
+	if (needs_overlay) {
+		upperdir = escape_mount_option(options->upperdir);
+		workdir = escape_mount_option(options->workdir);
+
+		res = asprintf(&overlay_options,
+			       "metacopy=on,redirect_dir=on,lowerdir=%s,upperdir=%s,workdir=%s",
+			       imagemount, upperdir, workdir);
+		if (res < 0) {
+			res = -ENOMEM;
+			goto fail;
+		}
+
+		mount_flags = 0;
+		if (readonly)
+			mount_flags |= MS_RDONLY;
+
+		res = mount("overlay", state->mountpoint, "overlay",
+			    mount_flags, overlay_options);
+		if (res != 0) {
+			res = -errno;
+		}
+	}
+
+fail:
+
+	if (created_tmpdir) {
+		if (mounted_cfs) {
+			umount2(imagemount, MNT_DETACH);
+		}
+		rmdir(imagemount);
+	}
+	free(cfsimg);
+	free(basedir);
+	free(cfs_options);
+	free(overlay_options);
+	free(workdir);
+	free(upperdir);
+
+	return res;
+}
+
+static int lcfs_mount(struct lcfs_mount_state_s *state)
+{
+	uint8_t header_data[HEADER_SIZE];
+	struct lcfs_erofs_header_s *erofs_header;
+	struct lcfs_superblock_s *cfs_header;
+	int res;
+
+	res = lcfs_validate_verity_fd(state);
+	if (res < 0)
+		return res;
+
+	res = pread(state->fd, &header_data, HEADER_SIZE, 0);
+	if (res < 0)
+		return -errno;
+
+	erofs_header = (struct lcfs_erofs_header_s *)header_data;
+	if (lcfs_u32_from_file(erofs_header->magic) == LCFS_EROFS_MAGIC)
+		return lcfs_mount_erofs_ovl(state, erofs_header);
+
+	cfs_header = (struct lcfs_superblock_s *)header_data;
+	if (lcfs_u32_from_file(cfs_header->magic) == LCFS_MAGIC)
+		return lcfs_mount_cfs(state, cfs_header);
+
+	return -EINVAL;
 }
 
 int lcfs_mount_fd(int fd, const char *mountpoint, struct lcfs_mount_options_s *options)
