@@ -6,7 +6,7 @@ if USE_YAJL
 noinst_PROGRAMS += writer-json
 endif
 
-AM_CFLAGS = $(WARN_CFLAGS) $(FSVERITY_CFLAGS)
+AM_CFLAGS = $(WARN_CFLAGS) $(FSVERITY_CFLAGS) -I$(top_srcdir)/
 
 dump_SOURCES = dump.c
 dump_LDADD = ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)
