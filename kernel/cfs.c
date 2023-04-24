@@ -419,6 +419,11 @@ static int cfs_fill_super(struct super_block *sb, struct fs_context *fc)
 
 	stack_depth = 0;
 
+	if (fc->source == NULL) {
+		pr_err("No composefs source specified\n");
+		return -EINVAL;
+	}
+
 	if (fsi->base_path == NULL) {
 		pr_warn("WARNING: composefs mount without a basedir, all lookups will fail\n");
 	} else {

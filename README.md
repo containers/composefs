@@ -78,16 +78,61 @@ composefs generation is reproducible, we can even verify that the
 composefs image we generated is correct by comparing its digest to one
 in the ostree metadata that was generated when the ostree image was built.
 
-## user space tools
+## Multiple Implementations
 
-The directory `tools/` contains some user space tools to create the binary blob to pass to the client.  They are all experimental and lack documentation.
+Composefs currently has two implementations. One is a (currently out
+of tree) kernel module which directly implements the composefs
+features as an in-kernel filesystem. The second one is based on a
+combination of erofs, loopback mounts and overlayfs. The later
+implementations works in a basic mode with the current kernel, but
+the fs-verity support needs some (currently out of tree) overlayfs
+patches.
+
+The discussion about upstreaming composefs is currently ongoing, but
+currently seems to lean towards the erofs+overlayfs implementation.
+
+## tools
+
+Composefs installs two main tools:
 
 - `mkcomposefs`: Creates a composefs image given a directory pathname. Can also compute digests and create a content store directory.
+- `mount.composefs`: A mount helper that supports mounting composefs images.
+
+## mounting a composefs image
+
+The mount.composefs helper allows you to mount composefs images (of both types).
+
+The basic use is:
+
+```
+# mount /path/to/image.cfs -t composefs -o basedir=/path/to/datafiles  /mnt
+```
+
+The default behaviour for fs-verity is that any image files that
+specifies an expected digest needs the backing file to match that
+fs-verity digest, at least if this is supported in the kernel. This
+can be modified with the `verity` and `noverity` options.
+
+Mount options:
+
+- `basedir`: is the directory to use as a base when resolving relative content paths.
+- `verity`: All image files must specify a fs-verity image.
+- `noverity`: Don't verfy fs-verity digests (useful for example if fs-verity is not supported on basedir).
+- `digest`: A fs-verity sha256 digest that the image file must match. If set, `verity_check` defaults to 2.
+- `signed`: The image file must contain an fs-verity signature.
+- `upperdir`: Sepcify an upperdir for the overlayfs filesystem.
+- `workdir`: Sepcify an upperdir for the overlayfs filesystem.
+- `idmap`: Specify a path to a user namespace that is useda as an idmap.
+
+## Experimental user space tools
+
+The directory `tools/` contains some experimental user space tools to work with composefs images.
+
 - `writer-json`: convert from a [CRFS](https://github.com/google/crfs) metadata file to the binary blob.
 - `dump`: prints the content of the binary blob.
 - `ostree-convert-commit.py`: converts an OSTree commit into a CRFS config file that writer-json can use.
 
-## kernel module
+## composefs kernel module
 
 How to build:
 ```
@@ -107,7 +152,7 @@ Mount options:
 - `verity_check=0,1,2`: When to verify backing file fs-verity: 0 == never, 1 == if specified in image, 2 == always and require it in image.
 - `digest`: A fs-verity sha256 digest that the image file must match. If set, `verity_check` defaults to 2.
 
-## SELinux issues
+## SELinux issues with the kernel module
 
 Composefs support xattrs natively, and selinux normally uses xattrs to
 store selinux file contexts. However, this only works if the local

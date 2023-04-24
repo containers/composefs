@@ -18,6 +18,7 @@
 
 #include "config.h"
 
+#include "lcfs-utils.h"
 #include "lcfs-internal.h"
 #include "lcfs-writer.h"
 #include "lcfs-fsverity.h"
