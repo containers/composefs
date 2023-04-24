@@ -36,8 +36,6 @@ AC_COMPILE_IFELSE(
 		 AC_DEFINE([HAVE_FSCONFIG_CMD_CREATE_LINUX_MOUNT_H], 1, [Define if FSCONFIG_CMD_CREATE is available in linux/mount.h])],
 	[AC_MSG_RESULT(no)])
 
-PKG_CHECK_MODULES(FSVERITY, libfsverity)
-
 PKG_CHECK_MODULES(LCFS_DEP_CRYPTO, libcrypto,[
       AC_DEFINE([HAVE_OPENSSL], 1, [Define if we have openssl])
       with_openssl=yes
