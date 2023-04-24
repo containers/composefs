@@ -450,7 +450,7 @@ int main(int argc, char **argv)
 	bool absolute_path = false;
 	bool by_digest = false;
 	bool print_digest = false;
-	const char *format = "composefs";
+	const char *format = "erofs";
 	struct lcfs_node_s *root;
 	const char *out = NULL;
 	const char *dir_path = NULL;
