@@ -17,3 +17,9 @@ depcomp
 stamp-h1
 install-sh
 .dirstamp
+.libs
+composefs.pc
+composefs.spec
+libtool
+ltmain.sh
+missing

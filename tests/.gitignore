@@ -1,3 +1,5 @@
 shared
 _build
 composefs.qcow2
+.vhostqemu.pid
+vhostqemu.pid
