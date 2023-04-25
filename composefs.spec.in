@@ -37,6 +37,7 @@ Library files for %{name}.
 
 %install
 %make_install
+rm -rf %{buildroot}%{_libdir}/libcomposefs.la
 
 %files devel
 %{_includedir}/libcomposefs
