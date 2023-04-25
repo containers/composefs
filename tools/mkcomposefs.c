@@ -29,9 +29,10 @@
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <sys/types.h>
 #include <getopt.h>
-#include <libfsverity.h>
+#include <sys/types.h>
+#include <sys/ioctl.h>
+#include <linux/fsverity.h>
 
 static void digest_to_string(const uint8_t *csum, char *buf)
 {
@@ -183,6 +184,24 @@ static int join_paths(char **out, const char *path1, const char *path2)
 	return asprintf(out, "%.*s%s%s", len, path1, sep, path2);
 }
 
+static int enable_verity(int fd, off_t size)
+{
+	struct fsverity_enable_arg arg = {};
+
+	arg.version = 1;
+	arg.hash_algorithm = FS_VERITY_HASH_ALG_SHA256;
+	arg.block_size = 4096;
+	arg.salt_size = 0;
+	arg.salt_ptr = 0;
+	arg.sig_size = 0;
+	arg.sig_ptr = 0;
+
+	if (ioctl(fd, FS_IOC_ENABLE_VERITY, &arg) != 0) {
+		return -errno;
+	}
+	return 0;
+}
+
 static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 					 const char *dst, mode_t mode,
 					 bool try_enable_fsverity)
@@ -265,16 +284,7 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 		}
 
 		if (fstat(dfd, &statbuf) == 0) {
-			struct libfsverity_merkle_tree_params params = {
-				1,
-				FS_VERITY_HASH_ALG_SHA256,
-				statbuf.st_size,
-				4096,
-				0,
-				NULL
-			};
-
-			res = libfsverity_enable(dfd, &params);
+			res = enable_verity(dfd, statbuf.st_size);
 			if (res < 0) {
 				/* Ignore errors, we're only trying to enable it */
 			}

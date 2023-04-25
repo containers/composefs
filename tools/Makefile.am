@@ -6,13 +6,13 @@ if USE_YAJL
 noinst_PROGRAMS += writer-json
 endif
 
-AM_CFLAGS = $(WARN_CFLAGS) $(FSVERITY_CFLAGS) -I$(top_srcdir)/
+AM_CFLAGS = $(WARN_CFLAGS) -I$(top_srcdir)/
 
 dump_SOURCES = dump.c
 dump_LDADD = ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)
 
 mkcomposefs_SOURCES = mkcomposefs.c
-mkcomposefs_LDADD =  ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS) $(FSVERITY_LIBS)
+mkcomposefs_LDADD =  ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)
 
 mount_composefs_SOURCES = mountcomposefs.c
 mount_composefs_LDADD = ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)
