@@ -559,6 +559,8 @@ retry:
 	mount_flags = 0;
 	if (readonly)
 		mount_flags |= MS_RDONLY;
+	if (lowerdir_alt == 0)
+		mount_flags |= MS_SILENT;
 
 	res = mount("overlay", state->mountpoint, "overlay", mount_flags,
 		    overlay_options);
