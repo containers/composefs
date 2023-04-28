@@ -483,6 +483,7 @@ static int lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
 	uint32_t image_flags;
 	char imagemountbuf[] = "/tmp/.composefs.XXXXXX";
 	char *imagemount;
+	bool created_tmpdir = false;
 	char loopname[PATH_MAX];
 	int res, errsv;
 	int lowerdir_alt = 0;
@@ -506,11 +507,16 @@ static int lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
 	if (loopfd < 0)
 		return loopfd;
 
-	imagemount = mkdtemp(imagemountbuf);
-	if (imagemount == NULL) {
-		errsv = errno;
-		close(loopfd);
-		return -errsv;
+	if (options->image_mountdir) {
+		imagemount = (char *)options->image_mountdir;
+	} else {
+		imagemount = mkdtemp(imagemountbuf);
+		if (imagemount == NULL) {
+			errsv = errno;
+			close(loopfd);
+			return -errsv;
+		}
+		created_tmpdir = true;
 	}
 
 	res = lcfs_mount_erofs(loopname, imagemount, image_flags, state);
@@ -582,7 +588,9 @@ fail:
 	free(overlay_options);
 
 	umount2(imagemount, MNT_DETACH);
-	rmdir(imagemount);
+	if (created_tmpdir) {
+		rmdir(imagemount);
+	}
 
 	return res;
 }
@@ -621,12 +629,16 @@ static int lcfs_mount_cfs(struct lcfs_mount_state_s *state,
 	needs_overlay = options->upperdir != NULL;
 
 	if (needs_overlay) {
-		imagemount = mkdtemp(imagemountbuf);
-		if (imagemount == NULL) {
-			res = -errno;
-			goto fail;
+		if (options->image_mountdir) {
+			imagemount = options->image_mountdir;
+		} else {
+			imagemount = mkdtemp(imagemountbuf);
+			if (imagemount == NULL) {
+				res = -errno;
+				goto fail;
+			}
+			created_tmpdir = true;
 		}
-		created_tmpdir = true;
 	} else {
 		imagemount = state->mountpoint;
 	}
@@ -684,11 +696,13 @@ static int lcfs_mount_cfs(struct lcfs_mount_state_s *state,
 
 fail:
 
-	if (created_tmpdir) {
+	if (needs_overlay) {
 		if (mounted_cfs) {
 			umount2(imagemount, MNT_DETACH);
 		}
-		rmdir(imagemount);
+		if (created_tmpdir) {
+			rmdir(imagemount);
+		}
 	}
 	free(cfsimg);
 	free(basedir);
