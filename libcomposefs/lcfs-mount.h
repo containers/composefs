@@ -50,6 +50,7 @@ struct lcfs_mount_options_s {
 	const char *expected_digest;
 	uint32_t flags;
 	int idmap_fd; /* userns fd */
+	const char *image_mountdir; /* Temporary location to mount images if needed */
 
 	uint32_t reserved[4];
 	void *reserved2[4];
