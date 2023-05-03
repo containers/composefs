@@ -34,6 +34,7 @@
 #include <sys/xattr.h>
 #include <sys/param.h>
 #include <assert.h>
+#include <linux/hash_info.h>
 
 struct lcfs_ctx_erofs_s {
 	struct lcfs_ctx_s base;
@@ -883,9 +884,12 @@ static int add_overlayfs_xattrs(struct lcfs_node_s *node)
 		}
 
 		if (node->digest_set) {
+			uint8_t xattr_data[1 + LCFS_DIGEST_SIZE];
+			xattr_data[0] = HASH_ALGO_SHA256;
+			memcpy(xattr_data + 1, node->digest, LCFS_DIGEST_SIZE);
 			ret = lcfs_node_set_xattr(node, "trusted.overlay.verity",
-						  (char *)node->digest,
-						  LCFS_DIGEST_SIZE);
+						  (char *)xattr_data,
+						  sizeof(xattr_data));
 			if (ret < 0)
 				return ret;
 		}
