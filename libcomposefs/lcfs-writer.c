@@ -1025,8 +1025,8 @@ bool lcfs_node_dirp(struct lcfs_node_s *node)
 	return (node->inode.st_mode & S_IFMT) == S_IFDIR;
 }
 
-struct lcfs_node_s *lcfs_build(int dirfd, const char *fname, const char *name,
-			       int buildflags, char **failed_path_out)
+struct lcfs_node_s *lcfs_build(int dirfd, const char *fname, int buildflags,
+			       char **failed_path_out)
 {
 	struct lcfs_node_s *node = NULL;
 	struct dirent *de;
@@ -1092,7 +1092,7 @@ struct lcfs_node_s *lcfs_build(int dirfd, const char *fname, const char *name,
 		}
 
 		if (de->d_type == DT_DIR) {
-			n = lcfs_build(dfd, de->d_name, de->d_name, buildflags,
+			n = lcfs_build(dfd, de->d_name, buildflags,
 				       &free_failed_subpath);
 			if (n == NULL) {
 				failed_subpath = free_failed_subpath;

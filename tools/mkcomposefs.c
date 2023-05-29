@@ -546,7 +546,7 @@ int main(int argc, char **argv)
 			error(EXIT_FAILURE, errno, "failed to open output file");
 	}
 
-	root = lcfs_build(AT_FDCWD, dir_path, "", buildflags, &failed_path);
+	root = lcfs_build(AT_FDCWD, dir_path, buildflags, &failed_path);
 	if (root == NULL)
 		error(EXIT_FAILURE, errno, "error accessing %s", failed_path);
 
