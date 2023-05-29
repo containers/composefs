@@ -1139,29 +1139,29 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 	if (ret < 0)
 		return ret;
 
-	assert(ctx_erofs->inodes_end == ctx->bytes_written);
+	assert(ctx_erofs->inodes_end == (uint64_t)ctx->bytes_written);
 
 	ret = write_erofs_shared_xattrs(ctx);
 	if (ret < 0)
 		return ret;
 
 	assert(ctx_erofs->inodes_end + ctx_erofs->shared_xattr_size ==
-	       ctx->bytes_written);
+	       (uint64_t)ctx->bytes_written);
 
 	/* Following are full blocks and must be block-aligned */
 	ret = lcfs_write_align(ctx, EROFS_BLKSIZ);
 	if (ret < 0)
 		return ret;
 
-	assert(data_block_start == ctx->bytes_written);
+	assert(data_block_start == (uint64_t)ctx->bytes_written);
 
 	ret = write_erofs_dirent_blocks(ctx);
 	if (ret < 0)
 		return ret;
 
-	assert(ctx_erofs->current_end == ctx->bytes_written);
+	assert(ctx_erofs->current_end == (uint64_t)ctx->bytes_written);
 	assert(data_block_start + ctx_erofs->n_data_blocks * EROFS_BLKSIZ ==
-	       ctx->bytes_written);
+	       (uint64_t)ctx->bytes_written);
 
 	return 0;
 }

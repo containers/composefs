@@ -1152,7 +1152,7 @@ const char *lcfs_node_get_xattr_name(struct lcfs_node_s *node, size_t index)
 static ssize_t find_xattr(struct lcfs_node_s *node, const char *name)
 {
 	ssize_t i;
-	for (i = 0; i < node->n_xattrs; i++) {
+	for (i = 0; i < (ssize_t)node->n_xattrs; i++) {
 		struct lcfs_xattr_s *xattr = &node->xattrs[i];
 		if (strcmp(name, xattr->key) == 0)
 			return i;
@@ -1180,7 +1180,7 @@ int lcfs_node_unset_xattr(struct lcfs_node_s *node, const char *name)
 	ssize_t index = find_xattr(node, name);
 
 	if (index >= 0) {
-		if (index != node->n_xattrs - 1)
+		if (index != (ssize_t)node->n_xattrs - 1)
 			node->xattrs[index] = node->xattrs[node->n_xattrs - 1];
 		node->n_xattrs--;
 	}
