@@ -463,7 +463,7 @@ int main(int argc, char **argv)
 	const char *out = NULL;
 	const char *dir_path = NULL;
 	const char *digest_store_path = NULL;
-	size_t path_start_offset;
+	ssize_t path_start_offset;
 	cleanup_free char *pathbuf = NULL;
 	uint8_t digest[LCFS_DIGEST_SIZE];
 	int opt;
