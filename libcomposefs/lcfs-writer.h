@@ -122,8 +122,7 @@ LCFS_EXTERN int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node,
 LCFS_EXTERN int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node, int fd);
 
 LCFS_EXTERN struct lcfs_node_s *lcfs_build(int dirfd, const char *fname,
-					   const char *name, int buildflags,
-					   char **failed_path_out);
+					   int buildflags, char **failed_path_out);
 
 LCFS_EXTERN int lcfs_write_to(struct lcfs_node_s *root,
 			      struct lcfs_write_options_s *options);

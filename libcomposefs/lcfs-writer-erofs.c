@@ -563,7 +563,7 @@ static int write_erofs_dentries_chunk(struct lcfs_ctx_s *ctx,
 	uint16_t nameoff = n_children * sizeof(struct erofs_dirent);
 	int ret;
 
-	for (size_t i = first_child; i < first_child + n_children; i++) {
+	for (int i = first_child; i < first_child + n_children; i++) {
 		struct lcfs_node_s *dirent_child = node->children[i];
 		struct lcfs_node_s *target_child = follow_links(dirent_child);
 
@@ -580,7 +580,7 @@ static int write_erofs_dentries_chunk(struct lcfs_ctx_s *ctx,
 			return ret;
 	}
 
-	for (size_t i = first_child; i < first_child + n_children; i++) {
+	for (int i = first_child; i < first_child + n_children; i++) {
 		struct lcfs_node_s *dirent_child = node->children[i];
 
 		ret = lcfs_write(ctx, dirent_child->name, strlen(dirent_child->name));
@@ -698,7 +698,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 	format = datalayout << EROFS_I_DATALAYOUT_BIT | version << EROFS_I_VERSION_BIT;
 
 	if (node->erofs_compact) {
-		struct erofs_inode_compact i = { lcfs_u16_to_file(format) };
+		struct erofs_inode_compact i = { 0 };
+		i.i_format = lcfs_u16_to_file(format);
 		i.i_xattr_icount = lcfs_u16_to_file(xattr_icount);
 		i.i_mode = lcfs_u16_to_file(node->inode.st_mode);
 		i.i_nlink = lcfs_u16_to_file(node->inode.st_nlink);
@@ -726,7 +727,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 		if (ret < 0)
 			return ret;
 	} else {
-		struct erofs_inode_extended i = { lcfs_u16_to_file(format) };
+		struct erofs_inode_extended i = { 0 };
+		i.i_format = lcfs_u16_to_file(format);
 		i.i_xattr_icount = lcfs_u16_to_file(xattr_icount);
 		i.i_mode = lcfs_u16_to_file(node->inode.st_mode);
 		i.i_nlink = lcfs_u32_to_file(node->inode.st_nlink);
@@ -1137,29 +1139,29 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 	if (ret < 0)
 		return ret;
 
-	assert(ctx_erofs->inodes_end == ctx->bytes_written);
+	assert(ctx_erofs->inodes_end == (uint64_t)ctx->bytes_written);
 
 	ret = write_erofs_shared_xattrs(ctx);
 	if (ret < 0)
 		return ret;
 
 	assert(ctx_erofs->inodes_end + ctx_erofs->shared_xattr_size ==
-	       ctx->bytes_written);
+	       (uint64_t)ctx->bytes_written);
 
 	/* Following are full blocks and must be block-aligned */
 	ret = lcfs_write_align(ctx, EROFS_BLKSIZ);
 	if (ret < 0)
 		return ret;
 
-	assert(data_block_start == ctx->bytes_written);
+	assert(data_block_start == (uint64_t)ctx->bytes_written);
 
 	ret = write_erofs_dirent_blocks(ctx);
 	if (ret < 0)
 		return ret;
 
-	assert(ctx_erofs->current_end == ctx->bytes_written);
+	assert(ctx_erofs->current_end == (uint64_t)ctx->bytes_written);
 	assert(data_block_start + ctx_erofs->n_data_blocks * EROFS_BLKSIZ ==
-	       ctx->bytes_written);
+	       (uint64_t)ctx->bytes_written);
 
 	return 0;
 }

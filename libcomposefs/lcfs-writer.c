@@ -1025,8 +1025,8 @@ bool lcfs_node_dirp(struct lcfs_node_s *node)
 	return (node->inode.st_mode & S_IFMT) == S_IFDIR;
 }
 
-struct lcfs_node_s *lcfs_build(int dirfd, const char *fname, const char *name,
-			       int buildflags, char **failed_path_out)
+struct lcfs_node_s *lcfs_build(int dirfd, const char *fname, int buildflags,
+			       char **failed_path_out)
 {
 	struct lcfs_node_s *node = NULL;
 	struct dirent *de;
@@ -1092,7 +1092,7 @@ struct lcfs_node_s *lcfs_build(int dirfd, const char *fname, const char *name,
 		}
 
 		if (de->d_type == DT_DIR) {
-			n = lcfs_build(dfd, de->d_name, de->d_name, buildflags,
+			n = lcfs_build(dfd, de->d_name, buildflags,
 				       &free_failed_subpath);
 			if (n == NULL) {
 				failed_subpath = free_failed_subpath;
@@ -1152,7 +1152,7 @@ const char *lcfs_node_get_xattr_name(struct lcfs_node_s *node, size_t index)
 static ssize_t find_xattr(struct lcfs_node_s *node, const char *name)
 {
 	ssize_t i;
-	for (i = 0; i < node->n_xattrs; i++) {
+	for (i = 0; i < (ssize_t)node->n_xattrs; i++) {
 		struct lcfs_xattr_s *xattr = &node->xattrs[i];
 		if (strcmp(name, xattr->key) == 0)
 			return i;
@@ -1180,7 +1180,7 @@ int lcfs_node_unset_xattr(struct lcfs_node_s *node, const char *name)
 	ssize_t index = find_xattr(node, name);
 
 	if (index >= 0) {
-		if (index != node->n_xattrs - 1)
+		if (index != (ssize_t)node->n_xattrs - 1)
 			node->xattrs[index] = node->xattrs[node->n_xattrs - 1];
 		node->n_xattrs--;
 	}

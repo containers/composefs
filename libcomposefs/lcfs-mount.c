@@ -347,7 +347,7 @@ static char *compute_basedir(struct lcfs_mount_state_s *state)
 {
 	size_t size;
 	char *basedir;
-	int i;
+	size_t i;
 
 	/* Compute the total max size (including escapes) */
 	size = 0;
@@ -373,7 +373,7 @@ static char *compute_lower(const char *imagemount,
 {
 	size_t size;
 	char *lower;
-	int i;
+	size_t i;
 
 	/* Compute the total max size (including escapes) */
 	size = 2 * strlen(imagemount);
@@ -595,8 +595,7 @@ fail:
 	return res;
 }
 
-static int lcfs_mount_cfs(struct lcfs_mount_state_s *state,
-			  struct lcfs_superblock_s *header)
+static int lcfs_mount_cfs(struct lcfs_mount_state_s *state)
 {
 	struct lcfs_mount_options_s *options = state->options;
 	bool require_verity;
@@ -735,7 +734,7 @@ static int lcfs_mount(struct lcfs_mount_state_s *state)
 
 	cfs_header = (struct lcfs_superblock_s *)header_data;
 	if (lcfs_u32_from_file(cfs_header->magic) == LCFS_MAGIC)
-		return lcfs_mount_cfs(state, cfs_header);
+		return lcfs_mount_cfs(state);
 
 	return -EINVAL;
 }

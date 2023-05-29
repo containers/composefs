@@ -445,8 +445,7 @@ int main(int argc, char **argv)
 	struct lcfs_node_s *root;
 	struct lcfs_write_options_s options = { 0 };
 	const char *format = "composefs";
-	char cwd[PATH_MAX];
-	size_t i;
+	ssize_t i;
 	int opt;
 	const char *out = NULL;
 	FILE *out_file;
@@ -501,9 +500,6 @@ int main(int argc, char **argv)
 		if (to_close)
 			fclose(to_close);
 	}
-
-	if (getcwd(cwd, sizeof(cwd)) == NULL)
-		error(EXIT_FAILURE, errno, "get current working directory");
 
 	options.format = LCFS_FORMAT_COMPOSEFS;
 	options.file = out_file;

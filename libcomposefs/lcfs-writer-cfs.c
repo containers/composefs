@@ -453,8 +453,8 @@ int lcfs_write_cfs_to(struct lcfs_ctx_s *ctx)
 		return ret;
 
 	assert(ctx->bytes_written ==
-	       sizeof(struct lcfs_superblock_s) +
-		       ctx->num_inodes * sizeof(struct lcfs_inode_s));
+	       (off_t)(sizeof(struct lcfs_superblock_s) +
+		       ctx->num_inodes * sizeof(struct lcfs_inode_s)));
 
 	if (ctx_cfs->vdata) {
 		/* Pad vdata to 4k alignment */

@@ -184,7 +184,7 @@ static int join_paths(char **out, const char *path1, const char *path2)
 	return asprintf(out, "%.*s%s%s", len, path1, sep, path2);
 }
 
-static int enable_verity(int fd, off_t size)
+static int enable_verity(int fd)
 {
 	struct fsverity_enable_arg arg = {};
 
@@ -203,8 +203,7 @@ static int enable_verity(int fd, off_t size)
 }
 
 static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
-					 const char *dst, mode_t mode,
-					 bool try_enable_fsverity)
+					 const char *dst, bool try_enable_fsverity)
 {
 	cleanup_free char *pathbuf = NULL;
 	cleanup_free char *tmppath = NULL;
@@ -284,7 +283,7 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 		}
 
 		if (fstat(dfd, &statbuf) == 0) {
-			res = enable_verity(dfd, statbuf.st_size);
+			res = enable_verity(dfd);
 			if (res < 0) {
 				/* Ignore errors, we're only trying to enable it */
 			}
@@ -354,8 +353,7 @@ static int fill_payload(struct lcfs_node_s *node, const char *path, size_t len,
 
 			if (digest_store_path) {
 				ret = copy_file_with_dirs_if_needed(
-					path, digest_store_path, digest_path,
-					0644, true);
+					path, digest_store_path, digest_path, true);
 				if (ret < 0)
 					return ret;
 			}
@@ -465,7 +463,7 @@ int main(int argc, char **argv)
 	const char *out = NULL;
 	const char *dir_path = NULL;
 	const char *digest_store_path = NULL;
-	size_t path_start_offset;
+	ssize_t path_start_offset;
 	cleanup_free char *pathbuf = NULL;
 	uint8_t digest[LCFS_DIGEST_SIZE];
 	int opt;
@@ -548,7 +546,7 @@ int main(int argc, char **argv)
 			error(EXIT_FAILURE, errno, "failed to open output file");
 	}
 
-	root = lcfs_build(AT_FDCWD, dir_path, "", buildflags, &failed_path);
+	root = lcfs_build(AT_FDCWD, dir_path, buildflags, &failed_path);
 	if (root == NULL)
 		error(EXIT_FAILURE, errno, "error accessing %s", failed_path);
 
