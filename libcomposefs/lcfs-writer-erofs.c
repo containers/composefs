@@ -563,7 +563,7 @@ static int write_erofs_dentries_chunk(struct lcfs_ctx_s *ctx,
 	uint16_t nameoff = n_children * sizeof(struct erofs_dirent);
 	int ret;
 
-	for (size_t i = first_child; i < first_child + n_children; i++) {
+	for (int i = first_child; i < first_child + n_children; i++) {
 		struct lcfs_node_s *dirent_child = node->children[i];
 		struct lcfs_node_s *target_child = follow_links(dirent_child);
 
@@ -580,7 +580,7 @@ static int write_erofs_dentries_chunk(struct lcfs_ctx_s *ctx,
 			return ret;
 	}
 
-	for (size_t i = first_child; i < first_child + n_children; i++) {
+	for (int i = first_child; i < first_child + n_children; i++) {
 		struct lcfs_node_s *dirent_child = node->children[i];
 
 		ret = lcfs_write(ctx, dirent_child->name, strlen(dirent_child->name));

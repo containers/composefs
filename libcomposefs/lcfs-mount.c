@@ -347,7 +347,7 @@ static char *compute_basedir(struct lcfs_mount_state_s *state)
 {
 	size_t size;
 	char *basedir;
-	int i;
+	size_t i;
 
 	/* Compute the total max size (including escapes) */
 	size = 0;
@@ -373,7 +373,7 @@ static char *compute_lower(const char *imagemount,
 {
 	size_t size;
 	char *lower;
-	int i;
+	size_t i;
 
 	/* Compute the total max size (including escapes) */
 	size = 2 * strlen(imagemount);
