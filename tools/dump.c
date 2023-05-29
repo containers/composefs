@@ -323,7 +323,7 @@ int main(int argc, char *argv[])
 	superblock = (struct lcfs_superblock_s *)data;
 
 	data_offset = lcfs_u64_from_file(superblock->vdata_offset);
-	if (data_offset > size || data_offset % 4 != 0)
+	if (data_offset > (size_t)size || data_offset % 4 != 0)
 		error(EXIT_FAILURE, EINVAL, "Invalid data offset");
 
 	inode_data = data + sizeof(struct lcfs_superblock_s);
