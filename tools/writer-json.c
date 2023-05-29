@@ -445,7 +445,7 @@ int main(int argc, char **argv)
 	struct lcfs_node_s *root;
 	struct lcfs_write_options_s options = { 0 };
 	const char *format = "composefs";
-	size_t i;
+	ssize_t i;
 	int opt;
 	const char *out = NULL;
 	FILE *out_file;
