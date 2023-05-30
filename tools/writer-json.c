@@ -516,6 +516,12 @@ int main(int argc, char **argv)
 	if (lcfs_write_to(root, &options) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
 
+	if (fflush(out_file) < 0)
+		error(EXIT_FAILURE, errno, "fflush");
+
+	if (fclose(out_file) < 0)
+		error(EXIT_FAILURE, errno, "fclose");
+
 	lcfs_node_unref(root);
 
 	return 0;
