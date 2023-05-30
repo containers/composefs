@@ -192,8 +192,24 @@ static void drop_caps(void)
 #endif
 }
 
+static void do_set_oom_score_adj(void)
+{
+	int fd, ret;
+
+	fd = open("/proc/self/oom_score_adj", O_WRONLY);
+	if (fd < 0)
+		error(EXIT_FAILURE, errno, "open /proc/self/oom_score_adj");
+
+	ret = write(fd, "1000", 4);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "write to /proc/self/oom_score_adj");
+
+	close(fd);
+}
+
 static void sandbox(void)
 {
+	do_set_oom_score_adj();
 	do_namespace_sandbox();
 	drop_caps();
 
