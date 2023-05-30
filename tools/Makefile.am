@@ -18,7 +18,7 @@ mount_composefs_SOURCES = mountcomposefs.c
 mount_composefs_LDADD = ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)
 
 writer_json_SOURCES = writer-json.c read-file.c read-file.h
-writer_json_LDADD = ../libcomposefs/libcomposefs.la $(LIBS_YAJL) $(LIBCRYPTO_LIBS)
+writer_json_LDADD = ../libcomposefs/libcomposefs.la $(LIBS_YAJL) $(LIBCRYPTO_LIBS) $(LIBS_SECCOMP)
 
 TEST_ASSETS_SMALL = \
 	config.json.gz config-with-hard-link.json.gz

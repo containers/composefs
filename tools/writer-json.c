@@ -34,6 +34,46 @@
 #include <yajl/yajl_tree.h>
 #include <getopt.h>
 
+#ifdef HAVE_LIBSECCOMP
+#include <linux/seccomp.h>
+#include <seccomp.h>
+#endif
+
+static void do_seccomp_sandbox(void)
+{
+#ifdef HAVE_LIBSECCOMP
+	scmp_filter_ctx ctx;
+	int ret;
+	size_t i;
+	int syscalls[] = {
+		SCMP_SYS(brk),	      SCMP_SYS(close),	SCMP_SYS(exit),
+		SCMP_SYS(exit_group), SCMP_SYS(fstat),	SCMP_SYS(lseek),
+		SCMP_SYS(mmap),	      SCMP_SYS(mremap), SCMP_SYS(munmap),
+		SCMP_SYS(newfstatat), SCMP_SYS(read),	SCMP_SYS(sysinfo),
+		SCMP_SYS(write),
+	};
+
+	ctx = seccomp_init(SCMP_ACT_ERRNO(EPERM));
+	if (ctx == NULL)
+		error(EXIT_FAILURE, errno, "seccomp_init");
+
+	for (i = 0; i < sizeof(syscalls) / sizeof(syscalls[0]); i++) {
+		ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, syscalls[i], 0);
+		if (ret < 0)
+			error(EXIT_FAILURE, -ret, "seccomp_rule_add");
+	}
+
+	ret = seccomp_load(ctx);
+	if (ret < 0)
+		error(EXIT_FAILURE, -ret, "seccomp_load");
+#endif
+}
+
+static void sandbox(void)
+{
+	do_seccomp_sandbox();
+}
+
 /* Adapted from mailutils 0.6.91(distributed under LGPL 2.0+)  */
 static int b64_input(char c)
 {
@@ -415,7 +455,9 @@ static void do_file(struct lcfs_node_s *root, FILE *file)
 
 static void usage(const char *argv0)
 {
-	fprintf(stderr, "usage: %s [--out=filedname] [--format=erofs|composefs] jsonfile...\n", argv0);
+	fprintf(stderr,
+		"usage: %s [--out=filedname] [--format=erofs|composefs] jsonfile...\n",
+		argv0);
 }
 
 static ssize_t write_cb(void *_file, void *buf, size_t count)
@@ -449,6 +491,7 @@ int main(int argc, char **argv)
 	int opt;
 	const char *out = NULL;
 	FILE *out_file;
+	FILE **input_files;
 
 	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
 		switch (opt) {
@@ -480,25 +523,30 @@ int main(int argc, char **argv)
 		out_file = stdout;
 	}
 
+	input_files = malloc(sizeof(FILE *) * argc);
+	if (input_files == NULL)
+		error(EXIT_FAILURE, errno, "malloc");
+
+	for (i = 0; i < argc; i++) {
+		if (strcmp(argv[i], "-") == 0) {
+			input_files[i] = stdin;
+		} else {
+			input_files[i] = fopen(argv[i], "r");
+			if (input_files[i] == NULL)
+				error(EXIT_FAILURE, errno, "open `%s`", argv[i]);
+		}
+	}
+
+	sandbox();
+
 	root = lcfs_node_new();
 	if (root == NULL)
 		error(EXIT_FAILURE, errno, "malloc");
 
 	for (i = 0; i < argc; i++) {
-		FILE *to_close = NULL;
-		FILE *f;
-
-		if (strcmp(argv[i], "-") == 0) {
-			f = stdin;
-		} else {
-			f = fopen(argv[i], "r");
-			if (f == NULL)
-				error(EXIT_FAILURE, errno, "open `%s`", argv[i]);
-			to_close = f;
-		}
-		do_file(root, f);
-		if (to_close)
-			fclose(to_close);
+		do_file(root, input_files[i]);
+		fclose(input_files[i]);
+		input_files[i] = NULL;
 	}
 
 	options.format = LCFS_FORMAT_COMPOSEFS;
