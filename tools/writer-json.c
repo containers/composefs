@@ -33,6 +33,7 @@
 #include <sys/sysmacros.h>
 #include <yajl/yajl_tree.h>
 #include <getopt.h>
+#include <sys/prctl.h>
 
 #ifdef HAVE_LIBSECCOMP
 #include <linux/seccomp.h>
@@ -71,6 +72,9 @@ static void do_seccomp_sandbox(void)
 
 static void sandbox(void)
 {
+	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0)
+		error(EXIT_FAILURE, errno, "prctl(PR_SET_NO_NEW_PRIVS)");
+
 	do_seccomp_sandbox();
 }
 
