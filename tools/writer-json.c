@@ -34,7 +34,11 @@
 #include <yajl/yajl_tree.h>
 #include <getopt.h>
 #include <sys/prctl.h>
-
+#include <sched.h>
+#include <sys/mount.h>
+#ifdef HAVE_SYS_CAPABILITY_H
+#include <sys/capability.h>
+#endif
 #ifdef HAVE_LIBSECCOMP
 #include <linux/seccomp.h>
 #include <seccomp.h>
@@ -70,8 +74,129 @@ static void do_seccomp_sandbox(void)
 #endif
 }
 
+#ifdef __NR_pivot_root
+static int pivot_root(const char *new_root, const char *put_old)
+{
+	return syscall(__NR_pivot_root, new_root, put_old);
+}
+#endif
+
+static void do_namespace_sandbox(void)
+{
+	uid_t uid = geteuid();
+	gid_t gid = getegid();
+	int ret, fd;
+#ifdef __NR_pivot_root
+	int old_root;
+	char *cwd;
+#endif
+
+	ret = unshare(CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWUTS |
+		      CLONE_NEWIPC | CLONE_NEWNET);
+	if (ret < 0)
+		return;
+
+	fd = open("/proc/self/setgroups", O_WRONLY);
+	if (fd < 0)
+		error(EXIT_FAILURE, errno, "open /proc/self/setgroups");
+	ret = write(fd, "deny", 4);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "write to /proc/self/gid_map");
+	close(fd);
+
+	fd = open("/proc/self/gid_map", O_WRONLY);
+	if (fd < 0)
+		error(EXIT_FAILURE, errno, "open /proc/self/gid_map");
+	ret = dprintf(fd, "0 %d 1\n", gid);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "write to /proc/self/gid_map");
+	close(fd);
+
+	fd = open("/proc/self/uid_map", O_WRONLY);
+	if (fd < 0)
+		error(EXIT_FAILURE, errno, "open /proc/self/uid_map");
+	ret = dprintf(fd, "0 %d 1\n", uid);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "write to /proc/self/uid_map");
+	close(fd);
+
+#ifdef __NR_pivot_root
+	ret = mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "mount /");
+
+	cwd = get_current_dir_name();
+	if (!cwd)
+		error(EXIT_FAILURE, errno, "get_current_dir_name");
+
+	ret = mount(NULL, cwd, "tmpfs", 0, NULL);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "mount tmpfs");
+
+	old_root = open("/", O_PATH | O_DIRECTORY);
+	if (old_root < 0)
+		error(EXIT_FAILURE, errno, "open /");
+
+	chdir(cwd);
+	free(cwd);
+	cwd = NULL;
+
+	ret = pivot_root(".", ".");
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "pivot_root");
+
+	ret = fchdir(old_root);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "fchdir");
+	close(old_root);
+
+	ret = umount2(".", MNT_DETACH);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "umount2");
+
+	ret = chdir("/");
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "fchdir");
+#endif
+}
+
+static void drop_caps(void)
+{
+#ifdef HAVE_SYS_CAPABILITY_H
+	struct __user_cap_header_struct hdr = { _LINUX_CAPABILITY_VERSION_3, 0 };
+	struct __user_cap_data_struct data[2] = { { 0 } };
+#endif
+	int ret, cap;
+	ret = prctl(PR_SET_KEEPCAPS, 0, 0, 0, 0);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "prctl(PR_SET_KEEPCAPS)");
+
+	for (cap = 0;; cap++) {
+		ret = prctl(PR_CAPBSET_DROP, cap, 0, 0, 0);
+		if (ret < 0 && errno != EINVAL)
+			error(EXIT_FAILURE, errno, "prctl(PR_CAPBSET_DROP)");
+		if (ret < 0)
+			break;
+	}
+
+#ifdef PR_CAP_AMBIENT
+	ret = prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0);
+	if (ret < 0 && errno != EINVAL)
+		error(EXIT_FAILURE, errno, "prctl(PR_CAP_AMBIENT)");
+#endif
+
+#ifdef HAVE_SYS_CAPABILITY_H
+	ret = capset(&hdr, data);
+	if (ret < 0 && errno != EINVAL)
+		error(EXIT_FAILURE, errno, "capset");
+#endif
+}
+
 static void sandbox(void)
 {
+	do_namespace_sandbox();
+	drop_caps();
+
 	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0)
 		error(EXIT_FAILURE, errno, "prctl(PR_SET_NO_NEW_PRIVS)");
 
