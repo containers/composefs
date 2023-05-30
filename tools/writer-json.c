@@ -415,7 +415,7 @@ static void do_file(struct lcfs_node_s *root, FILE *file)
 
 static void usage(const char *argv0)
 {
-	fprintf(stderr, "usage: %s [--out=filedname] jsonfile...\n", argv0);
+	fprintf(stderr, "usage: %s [--out=filedname] [--format=erofs|composefs] jsonfile...\n", argv0);
 }
 
 static ssize_t write_cb(void *_file, void *buf, size_t count)
