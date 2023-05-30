@@ -597,11 +597,12 @@ static void do_file(struct lcfs_node_s *root, FILE *file)
 
 #define OPT_OUT 100
 #define OPT_FORMAT 101
+#define OPT_NO_SANDBOX 102
 
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage: %s [--out=filedname] [--format=erofs|composefs] jsonfile...\n",
+		"usage: %s [--out=filedname] [--format=erofs|composefs] [--no-sandbox] jsonfile...\n",
 		argv0);
 }
 
@@ -627,6 +628,7 @@ int main(int argc, char **argv)
 			flag: NULL,
 			val: OPT_FORMAT
 		},
+		{ name: "no-sandbox", flag: NULL, val: OPT_NO_SANDBOX },
 		{},
 	};
 	struct lcfs_node_s *root;
@@ -637,6 +639,7 @@ int main(int argc, char **argv)
 	const char *out = NULL;
 	FILE *out_file;
 	FILE **input_files;
+	bool no_sandbox = false;
 
 	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
 		switch (opt) {
@@ -645,6 +648,9 @@ int main(int argc, char **argv)
 			break;
 		case OPT_FORMAT:
 			format = optarg;
+			break;
+		case OPT_NO_SANDBOX:
+			no_sandbox = true;
 			break;
 		case ':':
 			fprintf(stderr, "option needs a value\n");
@@ -682,7 +688,8 @@ int main(int argc, char **argv)
 		}
 	}
 
-	sandbox();
+	if (!no_sandbox)
+		sandbox();
 
 	root = lcfs_node_new();
 	if (root == NULL)
