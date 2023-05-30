@@ -45,6 +45,8 @@ PKG_CHECK_MODULES(LCFS_DEP_CRYPTO, libcrypto,[
 ])
 AM_CONDITIONAL(USE_OPENSSL, test $with_openssl != no)
 
+AC_CHECK_HEADERS([sys/capability.h])
+
 AC_DEFUN([CC_CHECK_FLAG_APPEND], [
   AC_CACHE_CHECK([if $CC supports flag $3 in envvar $2],
                  AS_TR_SH([cc_cv_$2_$3]),
@@ -135,6 +137,25 @@ CC_CHECK_FLAGS_APPEND([WARN_CFLAGS], [CFLAGS], [\
   -Werror=unused-result \
 ])])
 AC_SUBST(WARN_CFLAGS)
+
+AC_ARG_WITH(seccomp,
+        AS_HELP_STRING([--with-seccomp], [Build with seccomp support [default=auto]]),
+        , with_seccomp=auto)
+if test "x$with_seccomp" != "xno"; then
+  old_LIBS=$LIBS
+  AC_SEARCH_LIBS(seccomp_rule_add, [seccomp], [have_libseccomp=yes], [have_libseccomp=no])
+  LIBS=$old_LIBS
+  if test $have_libseccomp = yes; then
+    AC_DEFINE(HAVE_LIBSECCOMP, 1, [Define if libseccomp is available])
+    LIBS_SECCOMP=$ac_cv_search_seccomp_rule_add
+    AC_SUBST([LIBS_SECCOMP])
+  elif test "x$with_seccomp" == "xyes"; then
+    AC_MSG_ERROR([seccomp was requested but it could not be found])
+  fi
+else
+  have_libseccomp=no
+fi
+AM_CONDITIONAL([USE_SECCOMP],[test "$have_libseccomp" = "yes"])
 
 AC_ARG_WITH(yajl,
         AS_HELP_STRING([--with-yajl], [Build with yajl support [default=auto]]),

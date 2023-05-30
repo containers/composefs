@@ -33,6 +33,191 @@
 #include <sys/sysmacros.h>
 #include <yajl/yajl_tree.h>
 #include <getopt.h>
+#include <sys/prctl.h>
+#include <sched.h>
+#include <sys/mount.h>
+#ifdef HAVE_SYS_CAPABILITY_H
+#include <sys/capability.h>
+#endif
+#ifdef HAVE_LIBSECCOMP
+#include <linux/seccomp.h>
+#include <seccomp.h>
+#endif
+
+static void do_seccomp_sandbox(void)
+{
+#ifdef HAVE_LIBSECCOMP
+	scmp_filter_ctx ctx;
+	int ret;
+	size_t i;
+	int syscalls[] = {
+		SCMP_SYS(brk),	      SCMP_SYS(close),	SCMP_SYS(exit),
+		SCMP_SYS(exit_group), SCMP_SYS(fstat),	SCMP_SYS(lseek),
+		SCMP_SYS(mmap),	      SCMP_SYS(mremap), SCMP_SYS(munmap),
+		SCMP_SYS(newfstatat), SCMP_SYS(read),	SCMP_SYS(sysinfo),
+		SCMP_SYS(write),
+	};
+
+	ctx = seccomp_init(SCMP_ACT_ERRNO(EPERM));
+	if (ctx == NULL)
+		error(EXIT_FAILURE, errno, "seccomp_init");
+
+	for (i = 0; i < sizeof(syscalls) / sizeof(syscalls[0]); i++) {
+		ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, syscalls[i], 0);
+		if (ret < 0)
+			error(EXIT_FAILURE, -ret, "seccomp_rule_add");
+	}
+
+	ret = seccomp_load(ctx);
+	if (ret < 0)
+		error(EXIT_FAILURE, -ret, "seccomp_load");
+#endif
+}
+
+#ifdef __NR_pivot_root
+static int pivot_root(const char *new_root, const char *put_old)
+{
+	return syscall(__NR_pivot_root, new_root, put_old);
+}
+#endif
+
+static void do_namespace_sandbox(void)
+{
+	uid_t uid = geteuid();
+	gid_t gid = getegid();
+	int ret, fd;
+#ifdef __NR_pivot_root
+	int old_root;
+	char *cwd;
+#endif
+
+	ret = unshare(CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWUTS |
+		      CLONE_NEWIPC | CLONE_NEWNET);
+	if (ret < 0)
+		return;
+
+	fd = open("/proc/self/setgroups", O_WRONLY);
+	if (fd < 0)
+		error(EXIT_FAILURE, errno, "open /proc/self/setgroups");
+	ret = write(fd, "deny", 4);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "write to /proc/self/gid_map");
+	close(fd);
+
+	fd = open("/proc/self/gid_map", O_WRONLY);
+	if (fd < 0)
+		error(EXIT_FAILURE, errno, "open /proc/self/gid_map");
+	ret = dprintf(fd, "0 %d 1\n", gid);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "write to /proc/self/gid_map");
+	close(fd);
+
+	fd = open("/proc/self/uid_map", O_WRONLY);
+	if (fd < 0)
+		error(EXIT_FAILURE, errno, "open /proc/self/uid_map");
+	ret = dprintf(fd, "0 %d 1\n", uid);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "write to /proc/self/uid_map");
+	close(fd);
+
+#ifdef __NR_pivot_root
+	ret = mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "mount /");
+
+	cwd = get_current_dir_name();
+	if (!cwd)
+		error(EXIT_FAILURE, errno, "get_current_dir_name");
+
+	ret = mount(NULL, cwd, "tmpfs", 0, NULL);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "mount tmpfs");
+
+	old_root = open("/", O_PATH | O_DIRECTORY);
+	if (old_root < 0)
+		error(EXIT_FAILURE, errno, "open /");
+
+	chdir(cwd);
+	free(cwd);
+	cwd = NULL;
+
+	ret = pivot_root(".", ".");
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "pivot_root");
+
+	ret = fchdir(old_root);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "fchdir");
+	close(old_root);
+
+	ret = umount2(".", MNT_DETACH);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "umount2");
+
+	ret = chdir("/");
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "fchdir");
+#endif
+}
+
+static void drop_caps(void)
+{
+#ifdef HAVE_SYS_CAPABILITY_H
+	struct __user_cap_header_struct hdr = { _LINUX_CAPABILITY_VERSION_3, 0 };
+	struct __user_cap_data_struct data[2] = { { 0 } };
+#endif
+	int ret, cap;
+	ret = prctl(PR_SET_KEEPCAPS, 0, 0, 0, 0);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "prctl(PR_SET_KEEPCAPS)");
+
+	for (cap = 0;; cap++) {
+		ret = prctl(PR_CAPBSET_DROP, cap, 0, 0, 0);
+		if (ret < 0 && errno != EINVAL)
+			error(EXIT_FAILURE, errno, "prctl(PR_CAPBSET_DROP)");
+		if (ret < 0)
+			break;
+	}
+
+#ifdef PR_CAP_AMBIENT
+	ret = prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0);
+	if (ret < 0 && errno != EINVAL)
+		error(EXIT_FAILURE, errno, "prctl(PR_CAP_AMBIENT)");
+#endif
+
+#ifdef HAVE_SYS_CAPABILITY_H
+	ret = capset(&hdr, data);
+	if (ret < 0 && errno != EINVAL)
+		error(EXIT_FAILURE, errno, "capset");
+#endif
+}
+
+static void do_set_oom_score_adj(void)
+{
+	int fd, ret;
+
+	fd = open("/proc/self/oom_score_adj", O_WRONLY);
+	if (fd < 0)
+		error(EXIT_FAILURE, errno, "open /proc/self/oom_score_adj");
+
+	ret = write(fd, "1000", 4);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "write to /proc/self/oom_score_adj");
+
+	close(fd);
+}
+
+static void sandbox(void)
+{
+	do_set_oom_score_adj();
+	do_namespace_sandbox();
+	drop_caps();
+
+	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0)
+		error(EXIT_FAILURE, errno, "prctl(PR_SET_NO_NEW_PRIVS)");
+
+	do_seccomp_sandbox();
+}
 
 /* Adapted from mailutils 0.6.91(distributed under LGPL 2.0+)  */
 static int b64_input(char c)
@@ -412,10 +597,13 @@ static void do_file(struct lcfs_node_s *root, FILE *file)
 
 #define OPT_OUT 100
 #define OPT_FORMAT 101
+#define OPT_NO_SANDBOX 102
 
 static void usage(const char *argv0)
 {
-	fprintf(stderr, "usage: %s [--out=filedname] jsonfile...\n", argv0);
+	fprintf(stderr,
+		"usage: %s [--out=filedname] [--format=erofs|composefs] [--no-sandbox] jsonfile...\n",
+		argv0);
 }
 
 static ssize_t write_cb(void *_file, void *buf, size_t count)
@@ -440,6 +628,7 @@ int main(int argc, char **argv)
 			flag: NULL,
 			val: OPT_FORMAT
 		},
+		{ name: "no-sandbox", flag: NULL, val: OPT_NO_SANDBOX },
 		{},
 	};
 	struct lcfs_node_s *root;
@@ -449,6 +638,8 @@ int main(int argc, char **argv)
 	int opt;
 	const char *out = NULL;
 	FILE *out_file;
+	FILE **input_files;
+	bool no_sandbox = false;
 
 	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
 		switch (opt) {
@@ -457,6 +648,9 @@ int main(int argc, char **argv)
 			break;
 		case OPT_FORMAT:
 			format = optarg;
+			break;
+		case OPT_NO_SANDBOX:
+			no_sandbox = true;
 			break;
 		case ':':
 			fprintf(stderr, "option needs a value\n");
@@ -480,25 +674,31 @@ int main(int argc, char **argv)
 		out_file = stdout;
 	}
 
+	input_files = malloc(sizeof(FILE *) * argc);
+	if (input_files == NULL)
+		error(EXIT_FAILURE, errno, "malloc");
+
+	for (i = 0; i < argc; i++) {
+		if (strcmp(argv[i], "-") == 0) {
+			input_files[i] = stdin;
+		} else {
+			input_files[i] = fopen(argv[i], "r");
+			if (input_files[i] == NULL)
+				error(EXIT_FAILURE, errno, "open `%s`", argv[i]);
+		}
+	}
+
+	if (!no_sandbox)
+		sandbox();
+
 	root = lcfs_node_new();
 	if (root == NULL)
 		error(EXIT_FAILURE, errno, "malloc");
 
 	for (i = 0; i < argc; i++) {
-		FILE *to_close = NULL;
-		FILE *f;
-
-		if (strcmp(argv[i], "-") == 0) {
-			f = stdin;
-		} else {
-			f = fopen(argv[i], "r");
-			if (f == NULL)
-				error(EXIT_FAILURE, errno, "open `%s`", argv[i]);
-			to_close = f;
-		}
-		do_file(root, f);
-		if (to_close)
-			fclose(to_close);
+		do_file(root, input_files[i]);
+		fclose(input_files[i]);
+		input_files[i] = NULL;
 	}
 
 	options.format = LCFS_FORMAT_COMPOSEFS;
@@ -515,6 +715,12 @@ int main(int argc, char **argv)
 
 	if (lcfs_write_to(root, &options) < 0)
 		error(EXIT_FAILURE, errno, "cannot write to stdout");
+
+	if (fflush(out_file) < 0)
+		error(EXIT_FAILURE, errno, "fflush");
+
+	if (fclose(out_file) < 0)
+		error(EXIT_FAILURE, errno, "fclose");
 
 	lcfs_node_unref(root);
 
