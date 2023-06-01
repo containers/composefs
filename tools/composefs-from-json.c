@@ -59,7 +59,7 @@ static void do_seccomp_sandbox(void)
 		SCMP_SYS(write),
 	};
 
-	ctx = seccomp_init(SCMP_ACT_ERRNO(EPERM));
+	ctx = seccomp_init(SCMP_ACT_ERRNO(ENOSYS));
 	if (ctx == NULL)
 		error(EXIT_FAILURE, errno, "seccomp_init");
 
