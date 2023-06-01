@@ -43,6 +43,7 @@
 #include <linux/seccomp.h>
 #include <seccomp.h>
 #endif
+#include <time.h>
 
 static void do_seccomp_sandbox(void)
 {
@@ -380,6 +381,16 @@ static struct lcfs_node_s *get_node(struct lcfs_node_s *root, const char *what)
 	return node;
 }
 
+static void parse_time(const char *time, struct timespec *ts)
+{
+	struct tm tm;
+
+	strptime(time, "%Y-%m-%dT%H:%M:%S%z", &tm);
+
+	ts->tv_sec = mktime(&tm);
+	ts->tv_nsec = 0;
+}
+
 static int fill_file(const char *typ, struct lcfs_node_s *root,
 		     struct lcfs_node_s *node, yajl_val entry)
 {
@@ -455,6 +466,20 @@ static int fill_file(const char *typ, struct lcfs_node_s *root,
 		v = get_child(entry, "size", yajl_t_number);
 		if (v)
 			lcfs_node_set_size(node, YAJL_GET_INTEGER(v));
+	}
+
+	v = get_child(entry, "modtime", yajl_t_string);
+	if (v) {
+		struct timespec ts;
+		parse_time(YAJL_GET_STRING(v), &ts);
+		lcfs_node_set_mtime(node, &ts);
+	}
+
+	v = get_child(entry, "changetime", yajl_t_string);
+	if (v) {
+		struct timespec ts;
+		parse_time(YAJL_GET_STRING(v), &ts);
+		lcfs_node_set_ctime(node, &ts);
 	}
 
 	v = get_child(entry, "devMinor", yajl_t_number);
