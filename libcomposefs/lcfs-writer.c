@@ -479,7 +479,7 @@ struct lcfs_node_s *lcfs_node_new(void)
 int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node, void *file,
 					lcfs_read_cb read_cb)
 {
-	uint8_t digest[32];
+	uint8_t digest[LCFS_DIGEST_SIZE];
 	uint8_t buffer[4096];
 	ssize_t n_read;
 	FsVerityContext *ctx;
