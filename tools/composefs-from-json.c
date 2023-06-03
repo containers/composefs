@@ -97,7 +97,7 @@ static void do_namespace_sandbox(void)
 	if (ret < 0)
 		return;
 
-	fd = open("/proc/self/setgroups", O_WRONLY);
+	fd = open("/proc/self/setgroups", O_WRONLY | O_CLOEXEC);
 	if (fd < 0)
 		error(EXIT_FAILURE, errno, "open /proc/self/setgroups");
 	ret = write(fd, "deny", 4);
@@ -105,7 +105,7 @@ static void do_namespace_sandbox(void)
 		error(EXIT_FAILURE, errno, "write to /proc/self/gid_map");
 	close(fd);
 
-	fd = open("/proc/self/gid_map", O_WRONLY);
+	fd = open("/proc/self/gid_map", O_WRONLY | O_CLOEXEC);
 	if (fd < 0)
 		error(EXIT_FAILURE, errno, "open /proc/self/gid_map");
 	ret = dprintf(fd, "0 %d 1\n", gid);
@@ -113,7 +113,7 @@ static void do_namespace_sandbox(void)
 		error(EXIT_FAILURE, errno, "write to /proc/self/gid_map");
 	close(fd);
 
-	fd = open("/proc/self/uid_map", O_WRONLY);
+	fd = open("/proc/self/uid_map", O_WRONLY | O_CLOEXEC);
 	if (fd < 0)
 		error(EXIT_FAILURE, errno, "open /proc/self/uid_map");
 	ret = dprintf(fd, "0 %d 1\n", uid);
@@ -134,7 +134,7 @@ static void do_namespace_sandbox(void)
 	if (ret < 0)
 		error(EXIT_FAILURE, errno, "mount tmpfs");
 
-	old_root = open("/", O_PATH | O_DIRECTORY);
+	old_root = open("/", O_PATH | O_DIRECTORY | O_CLOEXEC);
 	if (old_root < 0)
 		error(EXIT_FAILURE, errno, "open /");
 

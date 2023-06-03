@@ -309,7 +309,7 @@ static int setup_loopback(int fd, const char *image_path, char *loopname)
 	long devnr;
 	int errsv;
 
-	loopctlfd = open("/dev/loop-control", O_RDWR);
+	loopctlfd = open("/dev/loop-control", O_RDWR | O_CLOEXEC);
 	if (loopctlfd < 0)
 		return -errno;
 
@@ -321,7 +321,7 @@ static int setup_loopback(int fd, const char *image_path, char *loopname)
 	}
 
 	sprintf(loopname, "/dev/loop%ld", devnr);
-	loopfd = open(loopname, O_RDWR);
+	loopfd = open(loopname, O_RDWR | O_CLOEXEC);
 	if (loopfd < 0)
 		return -errno;
 
@@ -775,7 +775,7 @@ int lcfs_mount_image(const char *path, const char *mountpoint,
 		return -1;
 	}
 
-	fd = open(path, O_RDONLY);
+	fd = open(path, O_RDONLY | O_CLOEXEC);
 	if (fd < 0) {
 		return -1;
 	}

@@ -308,7 +308,7 @@ int main(int argc, char *argv[])
 		error(EXIT_FAILURE, 0, "invalid mode");
 	}
 
-	fd = open(argv[2], O_RDONLY);
+	fd = open(argv[2], O_RDONLY | O_CLOEXEC);
 	if (fd < 0)
 		error(EXIT_FAILURE, errno, "open %s", argv[1]);
 

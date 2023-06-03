@@ -247,7 +247,7 @@ int main(int argc, char **argv)
 		options.idmap_fd = userns_fd;
 	}
 
-	fd = open(image_path, O_RDONLY);
+	fd = open(image_path, O_RDONLY | O_CLOEXEC);
 	if (fd < 0)
 		printexit("Failed to open %s: %s\n", image_path, strerror(errno));
 
