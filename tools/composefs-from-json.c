@@ -690,7 +690,7 @@ int main(int argc, char **argv)
 	argc -= optind;
 
 	if (out != NULL) {
-		out_file = fopen(out, "w");
+		out_file = fopen(out, "we");
 		if (out_file == NULL)
 			error(EXIT_FAILURE, errno, "Failed to open output file");
 	} else {
@@ -707,7 +707,7 @@ int main(int argc, char **argv)
 		if (strcmp(argv[i], "-") == 0) {
 			input_files[i] = stdin;
 		} else {
-			input_files[i] = fopen(argv[i], "r");
+			input_files[i] = fopen(argv[i], "re");
 			if (input_files[i] == NULL)
 				error(EXIT_FAILURE, errno, "open `%s`", argv[i]);
 		}
