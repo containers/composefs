@@ -1,6 +1,8 @@
 *.o
 *.lo
-Makefile
+/Makefile
+libcomposefs/Makefile
+tools/Makefile
 Makefile.in
 aclocal.m4
 autom4te.cache
