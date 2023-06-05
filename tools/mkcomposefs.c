@@ -39,7 +39,7 @@ static void digest_to_string(const uint8_t *csum, char *buf)
 	static const char hexchars[] = "0123456789abcdef";
 	uint32_t i, j;
 
-	for (i = 0, j = 0; i < 32; i++, j += 2) {
+	for (i = 0, j = 0; i < LCFS_DIGEST_SIZE; i++, j += 2) {
 		uint8_t byte = csum[i];
 		buf[j] = hexchars[byte >> 4];
 		buf[j + 1] = hexchars[byte & 0xF];

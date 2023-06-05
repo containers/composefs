@@ -30,7 +30,6 @@
 #include <sys/param.h>
 
 #define SHA256_DATASIZE 64
-#define SHA256_DIGEST_LEN 32
 
 #ifdef HAVE_OPENSSL
 /* For sha256 computation */
@@ -392,7 +391,7 @@ static void lcfs_fsverity_context_update_level(FsVerityContext *ctx, uint8_t *da
 		   so we only flush to the next level if there is more data after
 		   the block is full */
 		if (ctx->buffer_pos[level] == FSVERITY_BLOCK_SIZE) {
-			uint8_t digest[32];
+			uint8_t digest[LCFS_SHA256_DIGEST_LEN];
 			do_sha256(ctx, ctx->buffer[level], FSVERITY_BLOCK_SIZE,
 				  digest);
 			lcfs_fsverity_context_update_level(ctx, digest, 32,
@@ -419,7 +418,7 @@ void lcfs_fsverity_context_update(FsVerityContext *ctx, void *data, size_t data_
 
 static void lcfs_fsverity_context_flush_level(FsVerityContext *ctx, uint32_t level)
 {
-	uint8_t digest[32];
+	uint8_t digest[LCFS_SHA256_DIGEST_LEN];
 
 	if (ctx->buffer_pos[level] < FSVERITY_BLOCK_SIZE) {
 		memset(ctx->buffer[level] + ctx->buffer_pos[level], 0,
@@ -431,12 +430,14 @@ static void lcfs_fsverity_context_flush_level(FsVerityContext *ctx, uint32_t lev
 		return;
 
 	do_sha256(ctx, ctx->buffer[level], FSVERITY_BLOCK_SIZE, digest);
-	lcfs_fsverity_context_update_level(ctx, digest, 32, level + 1);
+	lcfs_fsverity_context_update_level(ctx, digest, LCFS_SHA256_DIGEST_LEN,
+					   level + 1);
 
 	lcfs_fsverity_context_flush_level(ctx, level + 1);
 }
 
-void lcfs_fsverity_context_get_digest(FsVerityContext *ctx, uint8_t digest[32])
+void lcfs_fsverity_context_get_digest(FsVerityContext *ctx,
+				      uint8_t digest[LCFS_SHA256_DIGEST_LEN])
 {
 	struct fsverity_descriptor descriptor;
 

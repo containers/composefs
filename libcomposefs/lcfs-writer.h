@@ -113,7 +113,7 @@ LCFS_EXTERN void lcfs_node_get_ctime(struct lcfs_node_s *node, struct timespec *
 
 LCFS_EXTERN const uint8_t *lcfs_node_get_fsverity_digest(struct lcfs_node_s *node);
 LCFS_EXTERN void lcfs_node_set_fsverity_digest(struct lcfs_node_s *node,
-					       uint8_t digest[32]);
+					       uint8_t digest[LCFS_DIGEST_SIZE]);
 
 LCFS_EXTERN int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node,
 						    void *file,
