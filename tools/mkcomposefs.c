@@ -541,7 +541,7 @@ int main(int argc, char **argv)
 			error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
 		out_file = stdout;
 	} else {
-		out_file = fopen(out, "w");
+		out_file = fopen(out, "we");
 		if (out_file == NULL)
 			error(EXIT_FAILURE, errno, "failed to open output file");
 	}
