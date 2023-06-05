@@ -2,8 +2,32 @@ name: Test
 
 on: [push, pull_request]
 
+permissions:
+  actions: read
+
 jobs:
-  build_job:
+  build:
+    runs-on: ubuntu-latest
+    name: "Build"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Install dependencies
+        run: sudo ./hacking/installdeps.sh
+      - name: Configure
+        run: ./autogen.sh && ./configure --prefix=/usr --sysconfdir=/etc --libdir=/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH) CFLAGS='-Wall -Werror'
+      - name: Build
+        run: make -j $(nproc)
+      - name: Unit tests
+        run: make check
+      - name: Capture build
+        run: make install DESTDIR=$(pwd)/instroot && tar -C instroot -czf composefs.tar .
+      - name: Upload binary
+        uses: actions/upload-artifact@v2
+        with:
+          name: composefs.tar
+          path: composefs.tar
+  build-unit-cross:
     runs-on: ubuntu-latest
     name: Build on ${{ matrix.arch }}
 
@@ -33,32 +57,39 @@ jobs:
 
           githubToken: ${{ github.token }}
 
-          install: |
-            apt-get update -y
-            apt-get install -y automake libtool autoconf autotools-dev git make gcc libyajl-dev libssl-dev libfsverity-dev pkg-config
-
-            find $(pwd) -name '.git' -exec bash -c 'git config --global --add safe.directory ${0%/.git}' {} \;
-
           run: |
+            apt-get update -y
+            ./hacking/installdeps.sh
             ./autogen.sh
             ./configure CFLAGS='-Wall -Werror'
             make -j $(nproc)
             make check
-
-  clang-formatter:
+  integration:
+    needs: build
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
+
     steps:
-    - name: checkout
-      uses: actions/checkout@v2
-
-    - name: install dependencies
-      run: |
-            sudo apt-get update -y
-            sudo apt-get install -y make clang-format
-
-    - name: check formatting
-      run: |
-            sudo docker build -t clang-format hacking/clang-format
-            sudo docker run --rm -w /src -v ${PWD}:/src clang-format
+      - name: Install erofs kmod
+        run: sudo apt install linux-modules-extra-$(uname -r)
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Download
+        uses: actions/download-artifact@v2
+        with:
+          name: composefs.tar
+      - run: sudo tar -C / -xvf composefs.tar
+      - name: Integration tests
+        run: sudo ./tests/integration.sh
+  clang-format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y make clang-format
+      - name: check formatting
+        run: |
+          sudo docker build -t clang-format hacking/clang-format
+          sudo docker run --rm -w /src -v ${PWD}:/src clang-format
