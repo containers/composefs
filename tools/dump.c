@@ -20,6 +20,7 @@
 #include "config.h"
 
 #include "libcomposefs/lcfs-cfs.h"
+#include "libcomposefs/lcfs-utils.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -245,7 +246,8 @@ static uint64_t lookup(const uint8_t *inode_data, const uint8_t *vdata,
 		       uint64_t parent, const void *what)
 {
 	char *it;
-	char *dpath, *path;
+	char *dpath;
+	cleanup_free char *path = NULL;
 	uint64_t current;
 
 	if (strcmp(what, "/") == 0)
@@ -263,12 +265,10 @@ static uint64_t lookup(const uint8_t *inode_data, const uint8_t *vdata,
 		current = find_child(inode_data, vdata, current, it);
 		if (current == UINT64_MAX) {
 			errno = ENOENT;
-			free(path);
 			return current;
 		}
 	}
 
-	free(path);
 	return current;
 }
 

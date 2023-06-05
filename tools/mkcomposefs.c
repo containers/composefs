@@ -20,6 +20,7 @@
 #include "config.h"
 
 #include "libcomposefs/lcfs-writer.h"
+#include "libcomposefs/lcfs-utils.h"
 
 #include <stdio.h>
 #include <linux/limits.h>
@@ -87,7 +88,7 @@ static int ensure_dir(const char *path, mode_t mode)
 
 static int mkdir_parents(const char *pathname, int mode)
 {
-	char *fn = NULL;
+	cleanup_free char *fn = NULL;
 	char *p;
 
 	fn = strdup(pathname);
@@ -109,7 +110,6 @@ static int mkdir_parents(const char *pathname, int mode)
 		*p = '\0';
 
 		if (ensure_dir(fn, mode) != 0) {
-			free(fn);
 			return -1;
 		}
 
@@ -118,7 +118,6 @@ static int mkdir_parents(const char *pathname, int mode)
 			p++;
 	} while (p);
 
-	free(fn);
 	return 0;
 }
 
@@ -165,13 +164,6 @@ static int copy_file_data(int sfd, int dfd)
 
 	return 0;
 }
-
-static inline void cleanup_freep(void *p)
-{
-	void **pp = (void **)p;
-	free(*pp);
-}
-#define cleanup_free __attribute__((cleanup(cleanup_freep)))
 
 static int join_paths(char **out, const char *path1, const char *path2)
 {

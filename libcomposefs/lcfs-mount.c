@@ -488,9 +488,9 @@ static int lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
 	int res, errsv;
 	int lowerdir_alt = 0;
 	char *lowerdir[2] = { NULL, NULL };
-	char *upperdir = NULL;
-	char *workdir = NULL;
-	char *overlay_options = NULL;
+	cleanup_free char *upperdir = NULL;
+	cleanup_free char *workdir = NULL;
+	cleanup_free char *overlay_options = NULL;
 	int loopfd;
 	bool require_verity;
 	bool disable_verity;
@@ -575,7 +575,6 @@ retry:
 	}
 
 	if (res == -EINVAL && lowerdir_alt == 0) {
-		free(overlay_options);
 		lowerdir_alt++;
 		goto retry;
 	}
@@ -583,9 +582,6 @@ retry:
 fail:
 	free(lowerdir[0]);
 	free(lowerdir[1]);
-	free(workdir);
-	free(upperdir);
-	free(overlay_options);
 
 	umount2(imagemount, MNT_DETACH);
 	if (created_tmpdir) {
@@ -609,12 +605,12 @@ static int lcfs_mount_cfs(struct lcfs_mount_state_s *state)
 	const char *imagemount;
 	int mount_flags;
 	int verity_check = 1;
-	char *basedir = NULL;
-	char *cfs_options = NULL;
-	char *overlay_options = NULL;
-	char *upperdir = NULL;
-	char *workdir = NULL;
-	char *cfsimg = NULL;
+	cleanup_free char *basedir = NULL;
+	cleanup_free char *cfs_options = NULL;
+	cleanup_free char *overlay_options = NULL;
+	cleanup_free char *upperdir = NULL;
+	cleanup_free char *workdir = NULL;
+	cleanup_free char *cfsimg = NULL;
 
 	require_verity = (options->flags & LCFS_MOUNT_FLAGS_REQUIRE_VERITY) != 0;
 	disable_verity = (options->flags & LCFS_MOUNT_FLAGS_DISABLE_VERITY) != 0;
@@ -703,12 +699,6 @@ fail:
 			rmdir(imagemount);
 		}
 	}
-	free(cfsimg);
-	free(basedir);
-	free(cfs_options);
-	free(overlay_options);
-	free(workdir);
-	free(upperdir);
 
 	return res;
 }
