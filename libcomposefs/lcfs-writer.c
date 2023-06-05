@@ -20,6 +20,7 @@
 
 #include "lcfs-internal.h"
 #include "lcfs-writer.h"
+#include "lcfs-utils.h"
 #include "lcfs-fsverity.h"
 #include "hash.h"
 
@@ -394,9 +395,9 @@ static int read_xattrs(struct lcfs_node_s *ret, int dirfd, const char *fname)
 {
 	char path[PATH_MAX];
 	ssize_t list_size;
-	char *list, *it;
+	cleanup_free char *list = NULL;
 	ssize_t r;
-	int fd;
+	cleanup_fd int fd = -1;
 
 	fd = openat(dirfd, fname, O_PATH | O_NOFOLLOW | O_CLOEXEC, 0);
 	if (fd < 0)
@@ -406,62 +407,43 @@ static int read_xattrs(struct lcfs_node_s *ret, int dirfd, const char *fname)
 
 	list_size = listxattr(path, NULL, 0);
 	if (list_size < 0) {
-		close(fd);
 		return list_size;
 	}
 
 	list = malloc(list_size);
 	if (list == NULL) {
-		close(fd);
 		return -1;
 	}
 
 	r = listxattr(path, list, list_size);
 	if (r < 0) {
-		close(fd);
 		return r;
 	}
 
-	for (it = list; it < list + list_size; it += strlen(it) + 1) {
+	for (const char *it = list; it < list + list_size; it += strlen(it) + 1) {
 		ssize_t value_size;
-		char *value;
+		cleanup_free char *value = NULL;
 
 		value_size = getxattr(path, it, NULL, 0);
 		if (value_size < 0) {
-			close(fd);
-			free(list);
 			return value_size;
 		}
 
 		value = malloc(value_size);
 		if (value == NULL) {
-			close(fd);
-			free(list);
 			return -1;
 		}
 
 		r = getxattr(path, it, value, value_size);
 		if (r < 0) {
-			close(fd);
-			free(list);
-			free(value);
 			return r;
 		}
 
 		r = lcfs_node_set_xattr(ret, it, value, value_size);
 		if (r < 0) {
-			close(fd);
-			free(list);
-			free(value);
 			return r;
 		}
-
-		free(value);
 	}
-
-	free(list);
-	close(fd);
-
 	return r;
 }
 
