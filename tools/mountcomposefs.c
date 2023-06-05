@@ -50,8 +50,11 @@ static void printexit(const char *format, ...)
 
 static void usage(const char *argv0)
 {
-	fprintf(stderr, "usage: %s [-t type] [-o opt[,opts..]] IMAGE MOUNTPOINT\n",
-		argv0);
+	fprintf(stderr,
+		"usage: %s [-t type] [-o opt[,opts..]] IMAGE MOUNTPOINT\n"
+		"Example:\n"
+		"  %s -o basedir=/composefs/objects exampleimage.cfs /mnt/exampleimage\n",
+		argv0, argv0);
 }
 
 static void unescape_option(char *s)
@@ -118,7 +121,7 @@ int main(int argc, char **argv)
 	bool opt_ro = false;
 	int opt, fd, res, userns_fd;
 
-	while ((opt = getopt(argc, argv, "t:o:")) != -1) {
+	while ((opt = getopt(argc, argv, "ht:o:")) != -1) {
 		switch (opt) {
 		case 't':
 			if (strcmp(optarg, "composefs") != 0)
@@ -127,6 +130,9 @@ int main(int argc, char **argv)
 		case 'o':
 			mount_options = optarg;
 			break;
+		case 'h':
+			usage(bin);
+			exit(0);
 		default:
 			usage(bin);
 			exit(1);
