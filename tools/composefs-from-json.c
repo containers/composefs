@@ -20,6 +20,7 @@
 #include "config.h"
 
 #include "libcomposefs/lcfs-writer.h"
+#include "libcomposefs/lcfs-utils.h"
 #include "read-file.h"
 
 #include <stdio.h>
@@ -627,7 +628,7 @@ static void do_file(struct lcfs_node_s *root, FILE *file)
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage: %s [--out=filedname] [--format=erofs|composefs] [--no-sandbox] jsonfile...\n",
+		"usage: %s [--out=filedname] [--format=erofs] [--no-sandbox] jsonfile...\n",
 		argv0);
 }
 
@@ -658,12 +659,12 @@ int main(int argc, char **argv)
 	};
 	struct lcfs_node_s *root;
 	struct lcfs_write_options_s options = { 0 };
-	const char *format = "composefs";
+	const char *format = "erofs";
 	ssize_t i;
 	int opt;
 	const char *out = NULL;
 	FILE *out_file;
-	FILE **input_files;
+	cleanup_free FILE **input_files = NULL;
 	bool no_sandbox = false;
 
 	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
