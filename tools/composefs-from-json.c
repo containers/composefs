@@ -20,6 +20,7 @@
 #include "config.h"
 
 #include "libcomposefs/lcfs-writer.h"
+#include "libcomposefs/lcfs-utils.h"
 #include "read-file.h"
 
 #include <stdio.h>
@@ -663,7 +664,7 @@ int main(int argc, char **argv)
 	int opt;
 	const char *out = NULL;
 	FILE *out_file;
-	FILE **input_files;
+	cleanup_free FILE **input_files = NULL;
 	bool no_sandbox = false;
 
 	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
