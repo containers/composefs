@@ -730,8 +730,9 @@ static void lcfs_node_remove_child_node(struct lcfs_node_s *parent, int offset,
 	assert(child->parent == parent);
 	assert(parent->children[offset] == child);
 
-	memcpy(&parent->children[offset], &parent->children[offset + 1],
-	       sizeof(struct lcfs_node_s *) * (parent->children_size - (offset + 1)));
+	memmove(&parent->children[offset], &parent->children[offset + 1],
+		sizeof(struct lcfs_node_s *) *
+			(parent->children_size - (offset + 1)));
 	parent->children_size -= 1;
 
 	/* Unlink correctly as it may live on outside the tree and be reinserted */
