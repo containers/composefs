@@ -38,7 +38,6 @@ enum {
 
 enum lcfs_format_t {
 	LCFS_FORMAT_EROFS,
-	LCFS_FORMAT_COMPOSEFS,
 };
 
 enum lcfs_flags_t {

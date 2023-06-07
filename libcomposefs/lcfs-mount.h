@@ -14,8 +14,8 @@
    You should have received a copy of the GNU Lesser General Public License
    along with this program.  If not, see <https://www.gnu.org/licenses/>.  */
 
-#ifndef _LCFS_OPS_H
-#define _LCFS_OPS_H
+#ifndef _LCFS_MOUNT_H
+#define _LCFS_MOUNT_H
 
 #include <stdlib.h>
 #include <sys/stat.h>

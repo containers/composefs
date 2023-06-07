@@ -581,8 +581,6 @@ int main(int argc, char **argv)
 
 	if (strcmp(format, "erofs") == 0) {
 		options.format = LCFS_FORMAT_EROFS;
-	} else if (strcmp(format, "composefs") == 0) {
-		options.format = LCFS_FORMAT_COMPOSEFS;
 	} else {
 		error(EXIT_FAILURE, errno, "Unknown format %s", format);
 	}

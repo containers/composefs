@@ -1,21 +1,23 @@
 # composefs
 
-Composefs is a native Linux file system designed to help sharing
-filesystem contents, as well as ensuring said content is not
-modified. The initial target usecase are container images and ostree
-commits.
+Composefs is a image based system that supports opportunistic sharing
+of file contents (on a per-file level) as well as full integrity
+validation of directory structure, metadata and file contents.
 
-The basic idea is to have a single binary file that contains all the
+The implementation is based on overlayfs and erofs, and the initial
+target usecase are container images and ostree commits.
+
+The basic idea is to have a single image file that contains all the
 metadata of the filesystem, including the filenames, the permissions,
 the timestamps, etc. However, it doesn't contain the actual contents,
-but rather filenames to the real files that contain the contents. This
-is somewhat similar to overlayfs, which also doesn't store the file.
+but rather filenames to the real files that contain the contents.
 
-You pass the filename of the blob as well as the base directory for the
-content files when you mount the filesystem like this:
+Composefs ships with a mount helper that allows you to easily mount
+images by pass the image filename and the base directory for
+the content files like this:
 
 ```
-# mount /path/to/blob -t composefs -o basedir=/path/to/content /mnt
+# mount -t composefs /path/to/image  -o basedir=/path/to/content /mnt
 ```
 
 This by itself doesn't seem very useful. You could use a single
@@ -78,19 +80,6 @@ composefs generation is reproducible, we can even verify that the
 composefs image we generated is correct by comparing its digest to one
 in the ostree metadata that was generated when the ostree image was built.
 
-## Multiple Implementations
-
-Composefs currently has two implementations. One is a (currently out
-of tree) kernel module which directly implements the composefs
-features as an in-kernel filesystem. The second one is based on a
-combination of erofs, loopback mounts and overlayfs. The later
-implementations works in a basic mode with the current kernel, but
-the fs-verity support needs some (currently out of tree) overlayfs
-patches.
-
-The discussion about upstreaming composefs is currently ongoing, but
-currently seems to lean towards the erofs+overlayfs implementation.
-
 ## tools
 
 Composefs installs two main tools:
@@ -105,7 +94,7 @@ The mount.composefs helper allows you to mount composefs images (of both types).
 The basic use is:
 
 ```
-# mount /path/to/image.cfs -t composefs -o basedir=/path/to/datafiles  /mnt
+# mount -t composefs /path/to/image.cfs -o basedir=/path/to/datafiles  /mnt
 ```
 
 The default behaviour for fs-verity is that any image files that
@@ -128,47 +117,5 @@ Mount options:
 
 The directory `tools/` contains some experimental user space tools to work with composefs images.
 
-- `writer-json`: convert from a [CRFS](https://github.com/google/crfs) metadata file to the binary blob.
-- `dump`: prints the content of the binary blob.
+- `composefs-from-json`: convert from a [CRFS](https://github.com/google/crfs) metadata file to the binary blob.
 - `ostree-convert-commit.py`: converts an OSTree commit into a CRFS config file that writer-json can use.
-
-## composefs kernel module
-
-How to build:
-```
-# make -C $KERNEL_SOURCE modules M=$PWD &&  make -C $KERNEL_SOURCE modules_install M=$PWD
-# insmod /lib/modules/$(uname -r)/extra/composefs.ko
-```
-
-Once it is loaded, it can be used as:
-
-```
-# mount /path/to/blob -t composefs -o basedir=$BASE_DIR  /mnt
-```
-
-Mount options:
-
-- `basedir`: is the directory to use as a base when resolving relative content paths.
-- `verity_check=0,1,2`: When to verify backing file fs-verity: 0 == never, 1 == if specified in image, 2 == always and require it in image.
-- `digest`: A fs-verity sha256 digest that the image file must match. If set, `verity_check` defaults to 2.
-
-## SELinux issues with the kernel module
-
-Composefs support xattrs natively, and selinux normally uses xattrs to
-store selinux file contexts. However, this only works if the local
-policy allows a particular filesystem type to use xattrs for selinux,
-and the default is to not allow it. So, until the default selinux
-contexts supports composefs, you need to manually install a local
-policy for this.
-
-To enable composefs selinux support, run:
-
-```
-# semodule -i composefs.cil
-```
-
-And, to later revert it, run:
-
-```
-# semodule -r composefs
-```

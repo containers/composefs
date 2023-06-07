@@ -8,7 +8,7 @@ set -e
 tmpfile=$(mktemp /tmp/lcfs-test.XXXXXX)
 trap 'rm -rf -- "$tmpfile"' EXIT
 
-for format in composefs erofs ; do
+for format in erofs ; do
     for file in ${TEST_ASSETS} ; do
         if [ ! -f $ASSET_DIR/$file ] ; then
             continue;
