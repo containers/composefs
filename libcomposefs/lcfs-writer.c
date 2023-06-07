@@ -390,7 +390,7 @@ static int read_xattrs(struct lcfs_node_s *ret, int dirfd, const char *fname)
 	char path[PATH_MAX];
 	ssize_t list_size;
 	cleanup_free char *list = NULL;
-	ssize_t r;
+	ssize_t r = 0;
 	cleanup_fd int fd = -1;
 
 	fd = openat(dirfd, fname, O_PATH | O_NOFOLLOW | O_CLOEXEC, 0);
@@ -409,9 +409,9 @@ static int read_xattrs(struct lcfs_node_s *ret, int dirfd, const char *fname)
 		return -1;
 	}
 
-	r = listxattr(path, list, list_size);
-	if (r < 0) {
-		return r;
+	list_size = listxattr(path, list, list_size);
+	if (list_size < 0) {
+		return list_size;
 	}
 
 	for (const char *it = list; it < list + list_size; it += strlen(it) + 1) {
