@@ -26,6 +26,7 @@ for format in erofs ; do
 
         if [ $SHA != $EXPECTED_SHA ]; then
             echo Invalid $format checksum of file generated from $file: $SHA, expected $EXPECTED_SHA
+            exit 1
         fi
     done
 done
