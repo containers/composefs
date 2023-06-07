@@ -385,10 +385,16 @@ static struct lcfs_node_s *get_node(struct lcfs_node_s *root, const char *what)
 static void parse_time(const char *time, struct timespec *ts)
 {
 	struct tm tm;
+	time_t t;
+	long gmtoff;
 
+	memset(&tm, 0, sizeof(tm));
 	strptime(time, "%Y-%m-%dT%H:%M:%S%z", &tm);
+	gmtoff = tm.tm_gmtoff;
 
-	ts->tv_sec = mktime(&tm);
+	tm.tm_isdst = -1;
+	t = timegm(&tm);
+	ts->tv_sec = t - gmtoff;
 	ts->tv_nsec = 0;
 }
 
@@ -666,6 +672,8 @@ int main(int argc, char **argv)
 	FILE *out_file;
 	cleanup_free FILE **input_files = NULL;
 	bool no_sandbox = false;
+
+	tzset();
 
 	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
 		switch (opt) {
