@@ -726,14 +726,12 @@ int main(int argc, char **argv)
 		input_files[i] = NULL;
 	}
 
-	options.format = LCFS_FORMAT_COMPOSEFS;
+	options.format = LCFS_FORMAT_EROFS;
 	options.file = out_file;
 	options.file_write_cb = write_cb;
 
 	if (strcmp(format, "erofs") == 0) {
 		options.format = LCFS_FORMAT_EROFS;
-	} else if (strcmp(format, "composefs") == 0) {
-		options.format = LCFS_FORMAT_COMPOSEFS;
 	} else {
 		error(EXIT_FAILURE, errno, "Unknown format %s", format);
 	}

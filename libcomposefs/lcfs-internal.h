@@ -18,7 +18,6 @@
 #define _LCFS_INTERNAL_H
 
 #include "lcfs-writer.h"
-#include "lcfs-cfs.h"
 #include "lcfs-fsverity.h"
 #include "hash.h"
 
@@ -29,6 +28,38 @@
 #define round_up(x, y) ((((x)-1) | __round_mask(x, y)) + 1)
 #define round_down(x, y) ((x) & ~__round_mask(x, y))
 
+#define LCFS_MAX_NAME_LENGTH 255 /* max len of file name excluding NULL */
+
+static inline uint16_t lcfs_u16_to_file(uint16_t val)
+{
+	return htole16(val);
+}
+
+static inline uint32_t lcfs_u32_to_file(uint32_t val)
+{
+	return htole32(val);
+}
+
+static inline uint64_t lcfs_u64_to_file(uint64_t val)
+{
+	return htole64(val);
+}
+
+static inline uint16_t lcfs_u16_from_file(uint16_t val)
+{
+	return le16toh(val);
+}
+
+static inline uint32_t lcfs_u32_from_file(uint32_t val)
+{
+	return le32toh(val);
+}
+
+static inline uint64_t lcfs_u64_from_file(uint64_t val)
+{
+	return le64toh(val);
+}
+
 /* In memory representation used to build the file.  */
 
 struct lcfs_xattr_s {
@@ -38,6 +69,19 @@ struct lcfs_xattr_s {
 
 	/* Used during writing */
 	int64_t erofs_shared_xattr_offset; /* shared offset, or -1 if not shared */
+};
+
+struct lcfs_inode_s {
+	uint32_t st_mode; /* File type and mode.  */
+	uint32_t st_nlink; /* Number of hard links, only for regular files.  */
+	uint32_t st_uid; /* User ID of owner.  */
+	uint32_t st_gid; /* Group ID of owner.  */
+	uint32_t st_rdev; /* Device ID (if special file).  */
+	uint64_t st_size; /* Size of file, only used for regular files */
+	int64_t st_mtim_sec;
+	uint32_t st_mtim_nsec;
+	int64_t st_ctim_sec;
+	uint32_t st_ctim_nsec;
 };
 
 struct lcfs_node_s {

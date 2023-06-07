@@ -1,15 +1,12 @@
 bin_PROGRAMS = mkcomposefs
 sbin_PROGRAMS = mount.composefs
-noinst_PROGRAMS = dump
+noinst_PROGRAMS = 
 
 if USE_YAJL
 noinst_PROGRAMS += composefs-from-json
 endif
 
 AM_CFLAGS = $(WARN_CFLAGS) -I$(top_srcdir)/
-
-dump_SOURCES = dump.c
-dump_LDADD = ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)
 
 mkcomposefs_SOURCES = mkcomposefs.c
 mkcomposefs_LDADD =  ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)

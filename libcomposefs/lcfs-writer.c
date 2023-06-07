@@ -91,10 +91,6 @@ static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root,
 		ret = lcfs_ctx_erofs_new();
 		break;
 
-	case LCFS_FORMAT_COMPOSEFS:
-		ret = lcfs_ctx_cfs_new();
-		break;
-
 	default:
 		ret = NULL;
 	}
@@ -368,9 +364,7 @@ int lcfs_write_to(struct lcfs_node_s *root, struct lcfs_write_options_s *options
 		return -1;
 	}
 
-	if (format == LCFS_FORMAT_COMPOSEFS)
-		res = lcfs_write_cfs_to(ctx);
-	else if (format == LCFS_FORMAT_EROFS)
+	if (format == LCFS_FORMAT_EROFS)
 		res = lcfs_write_erofs_to(ctx);
 	else {
 		errno = -EINVAL;
