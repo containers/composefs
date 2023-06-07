@@ -452,10 +452,20 @@ struct lcfs_node_s *lcfs_node_new(void)
 	return node;
 }
 
-int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node, void *file,
-					lcfs_read_cb read_cb)
+static ssize_t fsverity_read_cb(void *_fd, void *buf, size_t count)
 {
-	uint8_t digest[LCFS_DIGEST_SIZE];
+	int fd = *(int *)_fd;
+	ssize_t res;
+
+	do
+		res = read(fd, buf, count);
+	while (res < 0 && errno == EINTR);
+
+	return res;
+}
+
+int lcfs_compute_fsverity_from_content(uint8_t *digest, void *file, lcfs_read_cb read_cb)
+{
 	uint8_t buffer[4096];
 	ssize_t n_read;
 	FsVerityContext *ctx;
@@ -479,23 +489,48 @@ int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node, void *file,
 	}
 
 	lcfs_fsverity_context_get_digest(ctx, digest);
-	lcfs_node_set_fsverity_digest(node, digest);
 
 	lcfs_fsverity_context_free(ctx);
 
 	return 0;
 }
 
-static ssize_t fsverity_read_cb(void *_fd, void *buf, size_t count)
+int lcfs_compute_fsverity_from_fd(uint8_t *digest, int fd)
 {
-	int fd = *(int *)_fd;
-	ssize_t res;
+	int _fd = fd;
+	return lcfs_compute_fsverity_from_content(digest, &_fd, fsverity_read_cb);
+}
 
-	do
-		res = read(fd, buf, count);
-	while (res < 0 && errno == EINTR);
+int lcfs_compute_fsverity_from_data(uint8_t *digest, uint8_t *data, size_t data_len)
+{
+	FsVerityContext *ctx;
 
-	return res;
+	ctx = lcfs_fsverity_context_new();
+	if (ctx == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	lcfs_fsverity_context_update(ctx, data, data_len);
+
+	lcfs_fsverity_context_get_digest(ctx, digest);
+
+	lcfs_fsverity_context_free(ctx);
+
+	return 0;
+}
+
+int lcfs_node_set_fsverity_from_content(struct lcfs_node_s *node, void *file,
+					lcfs_read_cb read_cb)
+{
+	uint8_t digest[LCFS_DIGEST_SIZE];
+
+	if (lcfs_compute_fsverity_from_content(digest, file, read_cb) < 0)
+		return -1;
+
+	lcfs_node_set_fsverity_digest(node, digest);
+
+	return 0;
 }
 
 int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node, int fd)
