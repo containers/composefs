@@ -28,7 +28,7 @@ if ENABLE_VALGRIND
 WRITER_JSON_PREFIX=libtool --mode=execute ${VALGRIND} --quiet --leak-check=yes --error-exitcode=42
 endif
 
-EXTRA_DIST = test-checksums.sh $(patsubst %,test-assets/%,${TEST_ASSETS_SMALL}) $(patsubst %,test-assets/%.sha256_erofs,${TEST_ASSETS_SMALL})  $(patsubst %,test-assets/%.sha256_composefs,${TEST_ASSETS_SMALL})
+EXTRA_DIST = test-checksums.sh $(patsubst %,test-assets/%,${TEST_ASSETS_SMALL}) $(patsubst %,test-assets/%.sha256_erofs,${TEST_ASSETS_SMALL})
 
 check-checksums:
 	$(srcdir)/test-checksums.sh "${WRITER_JSON_PREFIX} $(builddir)/composefs-from-json" "$(srcdir)/test-assets" "${TEST_ASSETS}"
