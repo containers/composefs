@@ -34,6 +34,7 @@
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <linux/fsverity.h>
+#include <linux/fs.h>
 
 static void digest_to_string(const uint8_t *csum, char *buf)
 {
@@ -232,14 +233,18 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 		return -1;
 	}
 
-	res = copy_file_data(sfd, dfd);
-	if (res < 0) {
-		errsv = errno;
-		unlink(tmppath);
-		close(sfd);
-		close(dfd);
-		errno = errsv;
-		return res;
+	// First try reflinking, which is fast and efficient if available.
+	if (ioctl(dfd, FICLONE, sfd) != 0) {
+		// Fall back to copying bits by hand
+		res = copy_file_data(sfd, dfd);
+		if (res < 0) {
+			errsv = errno;
+			unlink(tmppath);
+			close(sfd);
+			close(dfd);
+			errno = errsv;
+			return res;
+		}
 	}
 	close(sfd);
 
