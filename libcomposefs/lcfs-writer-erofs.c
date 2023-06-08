@@ -710,8 +710,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 
 		if (type == S_IFDIR) {
 			if (node->erofs_n_blocks > 0) {
-				i.i_u.raw_blkaddr =
-					ctx_erofs->current_end / EROFS_BLKSIZ;
+				i.i_u.raw_blkaddr = lcfs_u32_to_file(
+					ctx_erofs->current_end / EROFS_BLKSIZ);
 				ctx_erofs->current_end +=
 					EROFS_BLKSIZ * node->erofs_n_blocks;
 			}
@@ -741,8 +741,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 
 		if (type == S_IFDIR) {
 			if (node->erofs_n_blocks > 0) {
-				i.i_u.raw_blkaddr =
-					ctx_erofs->current_end / EROFS_BLKSIZ;
+				i.i_u.raw_blkaddr = lcfs_u32_to_file(
+					ctx_erofs->current_end / EROFS_BLKSIZ);
 				ctx_erofs->current_end +=
 					EROFS_BLKSIZ * node->erofs_n_blocks;
 			}
