@@ -364,7 +364,7 @@ static char *compute_lower(const char *imagemount,
 	escape_mount_option_to(imagemount, lower);
 
 	for (i = 0; i < state->options->n_objdirs; i++) {
-		if (with_datalower && i == 0)
+		if (with_datalower)
 			strcat(lower, "::");
 		else
 			strcat(lower, ":");
