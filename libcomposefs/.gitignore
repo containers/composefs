@@ -1,2 +1,4 @@
 .libs
 libcomposefs.la
+# This is used by ostree today, see https://github.com/ostreedev/ostree/blob/c4591c2d285a890c0db3789f9d8e1d727aa174af/autogen.sh#L38
+Makefile-*.am.inc
