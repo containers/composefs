@@ -201,7 +201,8 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 	cleanup_free char *pathbuf = NULL;
 	cleanup_free char *tmppath = NULL;
 	int ret, res;
-	int sfd, dfd;
+	cleanup_fd int sfd = -1;
+	cleanup_fd int dfd = -1;
 	int errsv;
 	struct stat statbuf;
 
@@ -228,7 +229,6 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 	if (sfd == -1) {
 		errsv = errno;
 		unlink(tmppath);
-		close(dfd);
 		errno = errsv;
 		return -1;
 	}
@@ -240,20 +240,18 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 		if (res < 0) {
 			errsv = errno;
 			unlink(tmppath);
-			close(sfd);
-			close(dfd);
 			errno = errsv;
 			return res;
 		}
 	}
 	close(sfd);
+	sfd = -1;
 
 	/* Make sure file is readable by all */
 	res = fchmod(dfd, 0644);
 	if (res < 0) {
 		errsv = errno;
 		unlink(tmppath);
-		close(dfd);
 		errno = errsv;
 		return res;
 	}
@@ -262,11 +260,11 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 	if (res < 0) {
 		errsv = errno;
 		unlink(tmppath);
-		close(dfd);
 		errno = errsv;
 		return res;
 	}
 	close(dfd);
+	dfd = -1;
 
 	if (try_enable_fsverity) {
 		/* Try to enable fsverity */
@@ -274,7 +272,6 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 		if (dfd < 0) {
 			errsv = errno;
 			unlink(tmppath);
-			close(dfd);
 			errno = errsv;
 			return res;
 		}
@@ -285,7 +282,6 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 				/* Ignore errors, we're only trying to enable it */
 			}
 		}
-		close(dfd);
 	}
 
 	res = rename(tmppath, pathbuf);
