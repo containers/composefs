@@ -35,7 +35,7 @@ enum lcfs_mount_flags_t {
 	LCFS_MOUNT_FLAGS_NONE = 0,
 	LCFS_MOUNT_FLAGS_REQUIRE_VERITY = (1 << 0),
 	LCFS_MOUNT_FLAGS_READONLY = (1 << 1),
-	LCFS_MOUNT_FLAGS_REQUIRE_SIGNATURE = (1 << 2),
+	LCFS_MOUNT_FLAGS_REQUIRE_FSVERITY_SIGNATURE = (1 << 2),
 	LCFS_MOUNT_FLAGS_IDMAP = (1 << 3),
 	LCFS_MOUNT_FLAGS_DISABLE_VERITY = (1 << 4),
 
@@ -47,7 +47,7 @@ struct lcfs_mount_options_s {
 	size_t n_objdirs;
 	const char *workdir;
 	const char *upperdir;
-	const char *expected_digest;
+	const char *expected_fsverity_digest;
 	uint32_t flags;
 	int idmap_fd; /* userns fd */
 	const char *image_mountdir; /* Temporary location to mount images if needed */

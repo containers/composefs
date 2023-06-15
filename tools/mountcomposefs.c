@@ -229,7 +229,7 @@ int main(int argc, char **argv)
 	options.upperdir = opt_upperdir;
 	options.workdir = opt_workdir;
 
-	options.expected_digest = opt_digest;
+	options.expected_fsverity_digest = opt_digest;
 
 	if (opt_verity && opt_noverity) {
 		printexit("Incompatible options verity, noverity\n");
@@ -240,7 +240,7 @@ int main(int argc, char **argv)
 	if (opt_noverity)
 		options.flags |= LCFS_MOUNT_FLAGS_DISABLE_VERITY;
 	if (opt_signed)
-		options.flags |= LCFS_MOUNT_FLAGS_REQUIRE_SIGNATURE;
+		options.flags |= LCFS_MOUNT_FLAGS_REQUIRE_FSVERITY_SIGNATURE;
 	if (opt_ro)
 		options.flags |= LCFS_MOUNT_FLAGS_READONLY;
 

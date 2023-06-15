@@ -228,8 +228,8 @@ static int lcfs_validate_mount_options(struct lcfs_mount_state_s *state)
 	    (!options->upperdir && options->workdir))
 		return -EINVAL;
 
-	if (options->expected_digest) {
-		int raw_len = digest_to_raw(options->expected_digest,
+	if (options->expected_fsverity_digest) {
+		int raw_len = digest_to_raw(options->expected_fsverity_digest,
 					    state->expected_digest, MAX_DIGEST_SIZE);
 		if (raw_len < 0)
 			return -EINVAL;
@@ -254,8 +254,8 @@ static int lcfs_validate_verity_fd(struct lcfs_mount_state_s *state)
 	char sig_data[1];
 	struct fsverity_read_metadata_arg read_metadata = { 0 };
 
-	require_signature =
-		(state->options->flags & LCFS_MOUNT_FLAGS_REQUIRE_SIGNATURE) != 0;
+	require_signature = (state->options->flags &
+			     LCFS_MOUNT_FLAGS_REQUIRE_FSVERITY_SIGNATURE) != 0;
 	if (require_signature) {
 		/* First ensure fs-verity is enabled for the image,
 		 * the actual digest doesn't matter at this point. */
