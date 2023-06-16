@@ -2,3 +2,4 @@ dump
 mkcomposefs
 writer-json
 mount.composefs
+composefs-fuse

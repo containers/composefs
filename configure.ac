@@ -206,6 +206,7 @@ AC_CONFIG_FILES([
 Makefile
 libcomposefs/Makefile
 tools/Makefile
+examples/Makefile
 composefs.spec
 composefs.pc
 ])

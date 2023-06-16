@@ -3,6 +3,7 @@
 /Makefile
 libcomposefs/Makefile
 tools/Makefile
+examples/Makefile
 Makefile.in
 aclocal.m4
 autom4te.cache
