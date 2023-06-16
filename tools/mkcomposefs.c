@@ -369,7 +369,7 @@ static int fill_payload(struct lcfs_node_s *node, const char *path, size_t len,
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage: %s [--use-epoch] [--skip-xattrs] [--absolute] [--by-digest] [--digest-store=path] [--print-digest] [--skip-devices] [--compute-digest] SOURCEDIR IMAGE\n",
+		"usage: %s [--use-epoch] [--skip-xattrs] [--absolute] [--by-digest] [--digest-store=path] [--print-digest] [--print-digest-only] [--skip-devices] [--compute-digest] SOURCEDIR IMAGE\n",
 		argv0);
 }
 
@@ -382,6 +382,7 @@ static void usage(const char *argv0)
 #define OPT_DIGEST_STORE 108
 #define OPT_PRINT_DIGEST 109
 #define OPT_FORMAT 110
+#define OPT_PRINT_DIGEST_ONLY 111
 
 static ssize_t write_cb(void *_file, void *buf, size_t count)
 {
@@ -442,6 +443,12 @@ int main(int argc, char **argv)
 			val: OPT_PRINT_DIGEST
 		},
 		{
+			name: "print-digest-only",
+			has_arg: no_argument,
+			flag: NULL,
+			val: OPT_PRINT_DIGEST_ONLY
+		},
+		{
 			name: "format",
 			has_arg: required_argument,
 			flag: NULL,
@@ -455,6 +462,7 @@ int main(int argc, char **argv)
 	bool absolute_path = false;
 	bool by_digest = false;
 	bool print_digest = false;
+	bool print_digest_only = false;
 	const char *format = "erofs";
 	struct lcfs_node_s *root;
 	const char *out = NULL;
@@ -496,6 +504,9 @@ int main(int argc, char **argv)
 		case OPT_PRINT_DIGEST:
 			print_digest = true;
 			break;
+		case OPT_PRINT_DIGEST_ONLY:
+			print_digest = print_digest_only = true;
+			break;
 		case ':':
 			fprintf(stderr, "option needs a value\n");
 			exit(EXIT_FAILURE);
@@ -513,15 +524,30 @@ int main(int argc, char **argv)
 		usage(bin);
 		exit(1);
 	}
+	dir_path = argv[0];
 
-	if (argc != 2) {
-		fprintf(stderr, "No destination path specified\n");
+	if (argc > 2) {
+		fprintf(stderr, "Too many arguments\n");
+		usage(bin);
+		exit(1);
+	}
+	if (argc == 1) {
+		if (!print_digest_only) {
+			fprintf(stderr, "No destination path specified\n");
+			usage(bin);
+			exit(1);
+		}
+	} else if (!print_digest_only) {
+		assert(argc == 2);
+		out = argv[1];
+	} else {
+		fprintf(stderr,
+			"Cannot specify destination path with --print-digest-only\n");
 		usage(bin);
 		exit(1);
 	}
 
-	dir_path = argv[0];
-	out = argv[1];
+	assert(out || print_digest_only);
 
 	if (digest_store_path != NULL)
 		by_digest = true; /* implied */
@@ -533,7 +559,9 @@ int main(int argc, char **argv)
 		error(EXIT_FAILURE, 0,
 		      "Can't specify both --absolute and --by-digest");
 
-	if (strcmp(out, "-") == 0) {
+	if (print_digest_only) {
+		out_file = NULL;
+	} else if (strcmp(out, "-") == 0) {
 		if (isatty(1))
 			error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
 		out_file = stdout;
@@ -590,8 +618,10 @@ int main(int argc, char **argv)
 		error(EXIT_FAILURE, errno, "Unknown format %s", format);
 	}
 
-	options.file = out_file;
-	options.file_write_cb = write_cb;
+	if (out_file) {
+		options.file = out_file;
+		options.file_write_cb = write_cb;
+	}
 	if (print_digest)
 		options.digest_out = digest;
 

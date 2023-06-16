@@ -9,13 +9,16 @@ nonhardlink_ls() {
     ls "$@" | sed -e 's,^\([^ ]*\)  *\([0-9][0-9]*\)\(.*\)$,\1\3,'
 }
 
-cfsroot=/composefs
+cfsroot=${cfsroot:-/composefs}
 rm ${cfsroot}/tmp -rf
 mkdir -p ${cfsroot}/{objects,roots,tmp}
 
 cd ${cfsroot}/tmp
 testsrc=/usr/bin
-mkcomposefs --digest-store=${cfsroot}/objects ${testsrc} ${cfsroot}/roots/test.cfs
+mkcomposefs --print-digest --digest-store=${cfsroot}/objects ${testsrc} ${cfsroot}/roots/test.cfs | tee digest.txt
+prev_digest=$(cat digest.txt)
+new_digest=$(mkcomposefs --by-digest --print-digest-only ${testsrc})
+test "$prev_digest" = "$new_digest"
 
 mkdir -p mnt
 mount.composefs -o basedir=${cfsroot}/objects ${cfsroot}/roots/test.cfs mnt
