@@ -195,15 +195,25 @@ static int enable_verity(int fd)
 	return 0;
 }
 
+static void cleanup_unlink_freep(void *pp)
+{
+	char *filename = *(char **)pp;
+	if (!filename)
+		return;
+	PROTECT_ERRNO;
+	(void)unlink(filename);
+	free(filename);
+}
+#define cleanup_unlink_free __attribute__((cleanup(cleanup_unlink_freep)))
+
 static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 					 const char *dst, bool try_enable_fsverity)
 {
 	cleanup_free char *pathbuf = NULL;
-	cleanup_free char *tmppath = NULL;
+	cleanup_unlink_free char *tmppath = NULL;
 	int ret, res;
 	cleanup_fd int sfd = -1;
 	cleanup_fd int dfd = -1;
-	int errsv;
 	struct stat statbuf;
 
 	ret = join_paths(&pathbuf, dst_base, dst);
@@ -227,9 +237,6 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 
 	sfd = open(src, O_CLOEXEC | O_RDONLY);
 	if (sfd == -1) {
-		errsv = errno;
-		unlink(tmppath);
-		errno = errsv;
 		return -1;
 	}
 
@@ -238,9 +245,6 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 		// Fall back to copying bits by hand
 		res = copy_file_data(sfd, dfd);
 		if (res < 0) {
-			errsv = errno;
-			unlink(tmppath);
-			errno = errsv;
 			return res;
 		}
 	}
@@ -250,17 +254,11 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 	/* Make sure file is readable by all */
 	res = fchmod(dfd, 0644);
 	if (res < 0) {
-		errsv = errno;
-		unlink(tmppath);
-		errno = errsv;
 		return res;
 	}
 
 	res = fsync(dfd);
 	if (res < 0) {
-		errsv = errno;
-		unlink(tmppath);
-		errno = errsv;
 		return res;
 	}
 	close(dfd);
@@ -270,9 +268,6 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 		/* Try to enable fsverity */
 		dfd = open(tmppath, O_CLOEXEC | O_RDONLY);
 		if (dfd < 0) {
-			errsv = errno;
-			unlink(tmppath);
-			errno = errsv;
 			return res;
 		}
 
@@ -286,11 +281,10 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 
 	res = rename(tmppath, pathbuf);
 	if (res < 0) {
-		errsv = errno;
-		unlink(tmppath);
-		errno = errsv;
 		return res;
 	}
+	// Avoid a spurious extra unlink() from the cleanup
+	free(steal_pointer(&tmppath));
 
 	return 0;
 }
