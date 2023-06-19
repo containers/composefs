@@ -84,7 +84,6 @@ LCFS_EXTERN struct lcfs_node_s *lcfs_node_get_parent(struct lcfs_node_s *node);
 LCFS_EXTERN int lcfs_node_add_child(struct lcfs_node_s *parent,
 				    struct lcfs_node_s *child, /* Takes ownership on success */
 				    const char *name);
-LCFS_EXTERN int lcfs_node_remove_child(struct lcfs_node_s *parent, const char *name);
 LCFS_EXTERN const char *lcfs_node_get_name(struct lcfs_node_s *node);
 LCFS_EXTERN size_t lcfs_node_get_n_children(struct lcfs_node_s *node);
 LCFS_EXTERN struct lcfs_node_s *lcfs_node_get_child(struct lcfs_node_s *node,
