@@ -210,10 +210,12 @@ int lcfs_compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		}
 
 		/* Canonical order */
-		qsort(node->children, node->children_size,
-		      sizeof(node->children[0]), cmp_nodes);
-		qsort(node->xattrs, node->n_xattrs, sizeof(node->xattrs[0]),
-		      cmp_xattr);
+		if (node->children)
+			qsort(node->children, node->children_size,
+			      sizeof(node->children[0]), cmp_nodes);
+		if (node->xattrs)
+			qsort(node->xattrs, node->n_xattrs,
+			      sizeof(node->xattrs[0]), cmp_xattr);
 
 		if (node->inode.st_mtim_sec < ctx->min_mtim_sec ||
 		    (node->inode.st_mtim_sec == ctx->min_mtim_sec &&
