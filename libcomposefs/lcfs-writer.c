@@ -35,6 +35,7 @@
 #include <sys/param.h>
 #include <assert.h>
 
+static void lcfs_node_remove_all_children(struct lcfs_node_s *node);
 static void lcfs_node_destroy(struct lcfs_node_s *node);
 
 static int lcfs_close(struct lcfs_ctx_s *ctx);
@@ -846,10 +847,7 @@ void lcfs_node_unref(struct lcfs_node_s *node)
 	/* if we have a parent, that should have a real ref to us */
 	assert(node->parent == NULL);
 
-	while (node->children_size > 0) {
-		struct lcfs_node_s *child = node->children[0];
-		lcfs_node_remove_child_node(node, 0, child);
-	}
+	lcfs_node_remove_all_children(node);
 	free(node->children);
 
 	if (node->link_to)
@@ -867,14 +865,19 @@ void lcfs_node_unref(struct lcfs_node_s *node)
 	free(node);
 }
 
-/* Unlink all children (recursively) and then unref. Useful to handle refcount loops like dot and dotdot. */
-static void lcfs_node_destroy(struct lcfs_node_s *node)
+static void lcfs_node_remove_all_children(struct lcfs_node_s *node)
 {
 	while (node->children_size > 0) {
 		struct lcfs_node_s *child = lcfs_node_ref(node->children[0]);
 		lcfs_node_remove_child_node(node, 0, child);
 		lcfs_node_destroy(child);
 	}
+}
+
+/* Unlink all children (recursively) and then unref. Useful to handle refcount loops like dot and dotdot. */
+static void lcfs_node_destroy(struct lcfs_node_s *node)
+{
+	lcfs_node_remove_all_children(node);
 	lcfs_node_unref(node);
 };
 
