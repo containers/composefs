@@ -482,13 +482,6 @@ static int fill_file(const char *typ, struct lcfs_node_s *root,
 		lcfs_node_set_mtime(node, &ts);
 	}
 
-	v = get_child(entry, "changetime", yajl_t_string);
-	if (v) {
-		struct timespec ts;
-		parse_time(YAJL_GET_STRING(v), &ts);
-		lcfs_node_set_ctime(node, &ts);
-	}
-
 	v = get_child(entry, "devMinor", yajl_t_number);
 	if (v)
 		min = YAJL_GET_INTEGER(v);

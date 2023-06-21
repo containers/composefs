@@ -934,8 +934,6 @@ static int add_overlay_whiteouts(struct lcfs_node_s *root)
 		child->inode.st_gid = root->inode.st_gid;
 		child->inode.st_mtim_sec = root->inode.st_mtim_sec;
 		child->inode.st_mtim_nsec = root->inode.st_mtim_nsec;
-		child->inode.st_ctim_sec = root->inode.st_ctim_sec;
-		child->inode.st_ctim_nsec = root->inode.st_ctim_nsec;
 
 		/* Inherit selinux context from root dir */
 		if (selinux != NULL) {

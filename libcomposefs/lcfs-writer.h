@@ -106,8 +106,6 @@ LCFS_EXTERN uint64_t lcfs_node_get_size(struct lcfs_node_s *node);
 LCFS_EXTERN void lcfs_node_set_size(struct lcfs_node_s *node, uint64_t size);
 LCFS_EXTERN void lcfs_node_set_mtime(struct lcfs_node_s *node, struct timespec *time);
 LCFS_EXTERN void lcfs_node_get_mtime(struct lcfs_node_s *node, struct timespec *time);
-LCFS_EXTERN void lcfs_node_set_ctime(struct lcfs_node_s *node, struct timespec *time);
-LCFS_EXTERN void lcfs_node_get_ctime(struct lcfs_node_s *node, struct timespec *time);
 
 LCFS_EXTERN const uint8_t *lcfs_node_get_fsverity_digest(struct lcfs_node_s *node);
 LCFS_EXTERN void lcfs_node_set_fsverity_digest(struct lcfs_node_s *node,

@@ -80,8 +80,6 @@ struct lcfs_inode_s {
 	uint64_t st_size; /* Size of file, only used for regular files */
 	int64_t st_mtim_sec;
 	uint32_t st_mtim_nsec;
-	int64_t st_ctim_sec;
-	uint32_t st_ctim_nsec;
 };
 
 struct lcfs_node_s {
