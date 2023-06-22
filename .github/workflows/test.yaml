@@ -17,7 +17,7 @@ jobs:
       - name: Configure
         run: ./autogen.sh && ./configure --prefix=/usr --sysconfdir=/etc --libdir=/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH) CFLAGS='-Wall -Werror'
       - name: Build
-        run: make -j $(nproc)
+        run: make -j $(nproc) CFLAGS='-fsanitize=address -fsanitize=undefined'
       - name: Unit tests
         run: make check
       - name: Capture build
@@ -71,6 +71,8 @@ jobs:
     steps:
       - name: Install erofs kmod
         run: sudo apt install linux-modules-extra-$(uname -r)
+      - name: Install sanitizer dependencies
+        run: sudo apt install libasan6 libubsan1
       - name: Checkout repository
         uses: actions/checkout@v3
       - name: Download
