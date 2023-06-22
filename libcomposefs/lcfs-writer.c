@@ -585,8 +585,6 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 	if ((buildflags & LCFS_BUILD_USE_EPOCH) == 0) {
 		ret->inode.st_mtim_sec = sb.st_mtim.tv_sec;
 		ret->inode.st_mtim_nsec = sb.st_mtim.tv_nsec;
-		ret->inode.st_ctim_sec = sb.st_ctim.tv_sec;
-		ret->inode.st_ctim_nsec = sb.st_ctim.tv_nsec;
 	}
 
 	if ((buildflags & LCFS_BUILD_SKIP_XATTRS) == 0) {
@@ -713,18 +711,6 @@ void lcfs_node_get_mtime(struct lcfs_node_s *node, struct timespec *time)
 {
 	time->tv_sec = node->inode.st_mtim_sec;
 	time->tv_nsec = node->inode.st_mtim_nsec;
-}
-
-void lcfs_node_set_ctime(struct lcfs_node_s *node, struct timespec *time)
-{
-	node->inode.st_ctim_sec = time->tv_sec;
-	node->inode.st_ctim_nsec = time->tv_nsec;
-}
-
-void lcfs_node_get_ctime(struct lcfs_node_s *node, struct timespec *time)
-{
-	time->tv_sec = node->inode.st_ctim_sec;
-	time->tv_nsec = node->inode.st_ctim_nsec;
 }
 
 struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node, const char *name)
