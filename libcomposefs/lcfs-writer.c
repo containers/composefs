@@ -35,6 +35,7 @@
 #include <sys/param.h>
 #include <assert.h>
 
+static void lcfs_node_remove_all_children(struct lcfs_node_s *node);
 static void lcfs_node_destroy(struct lcfs_node_s *node);
 
 static int lcfs_close(struct lcfs_ctx_s *ctx);
@@ -739,25 +740,6 @@ void lcfs_node_make_hardlink(struct lcfs_node_s *node, struct lcfs_node_s *targe
 	target->inode.st_nlink++;
 }
 
-static void lcfs_node_remove_child_node(struct lcfs_node_s *parent, int offset,
-					struct lcfs_node_s *child)
-{
-	assert(child->parent == parent);
-	assert(parent->children[offset] == child);
-
-	memmove(&parent->children[offset], &parent->children[offset + 1],
-		sizeof(struct lcfs_node_s *) *
-			(parent->children_size - (offset + 1)));
-	parent->children_size -= 1;
-
-	/* Unlink correctly as it may live on outside the tree and be reinserted */
-	free(child->name);
-	child->name = NULL;
-	child->parent = NULL;
-
-	lcfs_node_unref(child);
-}
-
 int lcfs_node_add_child(struct lcfs_node_s *parent, struct lcfs_node_s *child,
 			const char *name)
 {
@@ -832,10 +814,7 @@ void lcfs_node_unref(struct lcfs_node_s *node)
 	/* if we have a parent, that should have a real ref to us */
 	assert(node->parent == NULL);
 
-	while (node->children_size > 0) {
-		struct lcfs_node_s *child = node->children[0];
-		lcfs_node_remove_child_node(node, 0, child);
-	}
+	lcfs_node_remove_all_children(node);
 	free(node->children);
 
 	if (node->link_to)
@@ -853,14 +832,24 @@ void lcfs_node_unref(struct lcfs_node_s *node)
 	free(node);
 }
 
+static void lcfs_node_remove_all_children(struct lcfs_node_s *node)
+{
+	for (size_t i = 0; i < node->children_size; i++) {
+		struct lcfs_node_s *child = node->children[i];
+		assert(child->parent == node);
+		/* Unlink correctly as it may live on outside the tree and be reinserted */
+		free(child->name);
+		child->name = NULL;
+		child->parent = NULL;
+		lcfs_node_destroy(child);
+	}
+	node->children_size = 0;
+}
+
 /* Unlink all children (recursively) and then unref. Useful to handle refcount loops like dot and dotdot. */
 static void lcfs_node_destroy(struct lcfs_node_s *node)
 {
-	while (node->children_size > 0) {
-		struct lcfs_node_s *child = lcfs_node_ref(node->children[0]);
-		lcfs_node_remove_child_node(node, 0, child);
-		lcfs_node_destroy(child);
-	}
+	lcfs_node_remove_all_children(node);
 	lcfs_node_unref(node);
 };
 
