@@ -275,5 +275,7 @@ int main(int argc, char **argv)
 			  strerror(errno));
 	}
 
+	free(options.objdirs);
+
 	return 0;
 }

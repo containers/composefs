@@ -525,6 +525,7 @@ static int lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
 		workdir = escape_mount_option(options->workdir);
 
 retry:
+	free(steal_pointer(&overlay_options));
 	res = asprintf(&overlay_options,
 		       "metacopy=on,redirect_dir=on,lowerdir=%s%s%s%s%s%s",
 		       lowerdir[lowerdir_alt], upperdir ? ",upperdir=" : "",
