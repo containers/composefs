@@ -868,7 +868,20 @@ static int add_overlayfs_xattrs(struct lcfs_node_s *node)
 	int ret;
 
 	if ((node->inode.st_mode & S_IFMT) == S_IFREG && node->inode.st_size > 0) {
-		ret = lcfs_node_set_xattr(node, "trusted.overlay.metacopy", "", 0);
+		uint8_t xattr_data[4 + LCFS_DIGEST_SIZE];
+		size_t xattr_len = 0;
+
+		if (node->digest_set) {
+			xattr_len = sizeof(xattr_data);
+			xattr_data[0] = 0; /* version */
+			xattr_data[1] = xattr_len;
+			xattr_data[2] = 0; /* flags */
+			xattr_data[3] = FS_VERITY_HASH_ALG_SHA256;
+			memcpy(xattr_data + 4, node->digest, LCFS_DIGEST_SIZE);
+		}
+
+		ret = lcfs_node_set_xattr(node, "trusted.overlay.metacopy",
+					  (const char *)xattr_data, xattr_len);
 		if (ret < 0)
 			return ret;
 
@@ -881,17 +894,6 @@ static int add_overlayfs_xattrs(struct lcfs_node_s *node)
 			ret = lcfs_node_set_xattr(node, "trusted.overlay.redirect",
 						  path, strlen(path));
 			free(path);
-			if (ret < 0)
-				return ret;
-		}
-
-		if (node->digest_set) {
-			uint8_t xattr_data[1 + LCFS_DIGEST_SIZE];
-			xattr_data[0] = FS_VERITY_HASH_ALG_SHA256;
-			memcpy(xattr_data + 1, node->digest, LCFS_DIGEST_SIZE);
-			ret = lcfs_node_set_xattr(node, "trusted.overlay.verity",
-						  (char *)xattr_data,
-						  sizeof(xattr_data));
 			if (ret < 0)
 				return ret;
 		}
