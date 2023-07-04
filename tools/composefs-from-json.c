@@ -139,7 +139,10 @@ static void do_namespace_sandbox(void)
 	if (old_root < 0)
 		error(EXIT_FAILURE, errno, "open /");
 
-	chdir(cwd);
+	ret = chdir(cwd);
+	if (ret < 0)
+		error(EXIT_FAILURE, errno, "chdir cwd");
+
 	free(cwd);
 	cwd = NULL;
 

@@ -810,7 +810,7 @@ static void cfs_listxattr(fuse_req_t req, fuse_ino_t ino, size_t max_size)
 		if (max_size == 0) {
 			fuse_reply_xattr(req, 0);
 		} else {
-			fuse_reply_buf(req, buf, 0);
+			fuse_reply_buf(req, NULL, 0);
 		}
 		return;
 	}
