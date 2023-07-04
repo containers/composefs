@@ -566,6 +566,9 @@ static struct lcfs_node_s *get_or_add_node(const char *typ,
 	while ((it = strsep(&dpath, "/"))) {
 		struct lcfs_node_s *c;
 
+		if (it[0] == '\0')
+			continue;
+
 		c = lcfs_node_lookup_child(node, it);
 		if (c) {
 			node = c;
