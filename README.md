@@ -41,7 +41,7 @@ some of these filesystems may share *parts* of their storage (i.e. some
 files may be different, but not all).
 
 Composefs ships with a mount helper that allows you to easily mount
-images by pass the image filename and the base directory for
+images by passing the image filename and the base directory for
 the content files like this:
 
 ```
@@ -49,7 +49,7 @@ the content files like this:
 ```
 
 By storing the files content-addressed (e.g. using the hash of the content to name
-the file) shared files need only be stored once, yet can appear in
+the file), shared files only need to be stored once, yet can appear in
 multiple mounts. 
 
 # Backing store shared on disk *and* in page cache
@@ -74,7 +74,7 @@ You can also use fs-verity on the image file itself, and pass the
 expected fs-verity digest as a mount option, which composefs will
 validate. In this case we have full trust of both data and metadata of
 the mounted file. This solves a weakness that fs-verity has when used
-on on its own, in that it can only verify file data, not
+on its own, in that it can only verify file data, not
 metadata.
 
 ## Usecase: container images
@@ -112,7 +112,7 @@ but nothing can protect against changes to the checkout directories. A
 malicious user can add, remove or replace files there. We want to use
 composefs to avoid this.
 
-Instead of checking out to a directory we generate a composefs image
+Instead of checking out to a directory, we generate a composefs image
 pointing into the object store and mount that as the root fs. We can
 then enable fs-verity of the composefs image and embed the digest of
 that in the kernel commandline which specifies the rootfs. Since
@@ -151,13 +151,13 @@ Mount options:
 - `noverity`: Don't verfy fs-verity digests (useful for example if fs-verity is not supported on basedir).
 - `digest`: A fs-verity sha256 digest that the image file must match. If set, `verity_check` defaults to 2.
 - `signed`: The image file must contain an fs-verity signature.
-- `upperdir`: Sepcify an upperdir for the overlayfs filesystem.
-- `workdir`: Sepcify an upperdir for the overlayfs filesystem.
-- `idmap`: Specify a path to a user namespace that is useda as an idmap.
+- `upperdir`: Specify an upperdir for the overlayfs filesystem.
+- `workdir`: Specify an upperdir for the overlayfs filesystem.
+- `idmap`: Specify a path to a user namespace that is used as an idmap.
 
 ## Experimental user space tools
 
-The directory `tools/` contains some experimental user space tools to work with composefs images.
+The directory `tools/` contains some experimental user space tools for working with composefs images.
 
 - `composefs-from-json`: convert from a [CRFS](https://github.com/google/crfs) metadata file to the binary blob.
 - `ostree-convert-commit.py`: converts an OSTree commit into a CRFS config file that writer-json can use.
