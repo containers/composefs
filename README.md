@@ -160,4 +160,3 @@ Mount options:
 The directory `tools/` contains some experimental user space tools for working with composefs images.
 
 - `composefs-from-json`: convert from a [CRFS](https://github.com/google/crfs) metadata file to the binary blob.
-- `ostree-convert-commit.py`: converts an OSTree commit into a CRFS config file that writer-json can use.
