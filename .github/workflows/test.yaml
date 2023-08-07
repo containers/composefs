@@ -69,6 +69,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - run: sudo apt-get update -y
       - name: Install erofs kmod
         run: sudo apt install linux-modules-extra-$(uname -r)
       - name: Install sanitizer dependencies
