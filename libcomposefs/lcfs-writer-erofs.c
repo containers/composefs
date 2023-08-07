@@ -941,8 +941,10 @@ static int add_overlay_whiteouts(struct lcfs_node_s *root)
 		if (selinux != NULL) {
 			res = lcfs_node_set_xattr(child, "security.selinux",
 						  selinux, selinux_len);
-			if (res < 0)
+			if (res < 0) {
+				lcfs_node_unref(child);
 				return res;
+			}
 		}
 
 		res = lcfs_node_add_child(root, child, name);
