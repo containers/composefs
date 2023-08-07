@@ -117,7 +117,6 @@ int main(int argc, char **argv)
 	const char *opt_workdir = NULL;
 	bool opt_verity = false;
 	bool opt_noverity = false;
-	bool opt_signed = false;
 	bool opt_ro = false;
 	int opt, fd, res, userns_fd;
 
@@ -172,8 +171,6 @@ int main(int argc, char **argv)
 			opt_verity = true;
 		} else if (strcmp("noverity", key) == 0) {
 			opt_noverity = true;
-		} else if (strcmp("signed", key) == 0) {
-			opt_signed = true;
 		} else if (strcmp("upperdir", key) == 0) {
 			if (value == NULL)
 				printexit("No value specified for upperdir option\n");
@@ -239,8 +236,6 @@ int main(int argc, char **argv)
 		options.flags |= LCFS_MOUNT_FLAGS_REQUIRE_VERITY;
 	if (opt_noverity)
 		options.flags |= LCFS_MOUNT_FLAGS_DISABLE_VERITY;
-	if (opt_signed)
-		options.flags |= LCFS_MOUNT_FLAGS_REQUIRE_FSVERITY_SIGNATURE;
 	if (opt_ro)
 		options.flags |= LCFS_MOUNT_FLAGS_READONLY;
 

@@ -250,41 +250,6 @@ static int lcfs_validate_verity_fd(struct lcfs_mount_state_s *state)
 		char buf[MAX_DIGEST_SIZE];
 	} buf;
 	int res;
-	bool require_signature;
-	char sig_data[1];
-	struct fsverity_read_metadata_arg read_metadata = { 0 };
-
-	require_signature = (state->options->flags &
-			     LCFS_MOUNT_FLAGS_REQUIRE_FSVERITY_SIGNATURE) != 0;
-	if (require_signature) {
-		/* First ensure fs-verity is enabled for the image,
-		 * the actual digest doesn't matter at this point. */
-		buf.fsv.digest_size = MAX_DIGEST_SIZE;
-		res = ioctl(state->fd, FS_IOC_MEASURE_VERITY, &buf.fsv);
-		if (res == -1) {
-			if (errno == ENODATA || errno == EOPNOTSUPP || errno == ENOTTY)
-				return -ENOVERITY;
-			return -errno;
-		}
-
-		/* If the file has verity enabled, has a signature and
-		 * we were able to open it, then the kernel will have
-		 * verified it against the kernel keyring, making it
-		 * valid. So, we read just one byte of the signature,
-		 * to validate that a signature exist in the file */
-
-		read_metadata.metadata_type = FS_VERITY_METADATA_TYPE_SIGNATURE;
-		read_metadata.offset = 0;
-		read_metadata.length = sizeof(sig_data);
-		read_metadata.buf_ptr = (size_t)&sig_data;
-
-		res = ioctl(state->fd, FS_IOC_READ_VERITY_METADATA, &read_metadata);
-		if (res == -1) {
-			if (errno == ENODATA)
-				return -ENOSIGNATURE;
-			return -errno;
-		}
-	}
 
 	if (state->expected_digest_len != 0) {
 		buf.fsv.digest_size = MAX_DIGEST_SIZE;
