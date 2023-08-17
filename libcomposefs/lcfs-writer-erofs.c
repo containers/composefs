@@ -19,6 +19,7 @@
 #include "config.h"
 
 #include "lcfs-internal.h"
+#include "lcfs-utils.h"
 #include "lcfs-writer.h"
 #include "lcfs-fsverity.h"
 #include "lcfs-erofs.h"
@@ -33,6 +34,7 @@
 #include <dirent.h>
 #include <sys/xattr.h>
 #include <sys/param.h>
+#include <sys/sysmacros.h>
 #include <assert.h>
 #include <linux/fsverity.h>
 
@@ -863,11 +865,44 @@ static int write_erofs_shared_xattrs(struct lcfs_ctx_s *ctx)
 	return 0;
 }
 
+static char *str_join(const char *a, const char *b)
+{
+	size_t a_len = strlen(a);
+	size_t b_len = strlen(b);
+	char *res = malloc(a_len + b_len + 1);
+	if (res) {
+		memcpy(res, a, a_len);
+		memcpy(res + a_len, b, b_len + 1);
+	}
+	return res;
+}
+
 static int add_overlayfs_xattrs(struct lcfs_node_s *node)
 {
+	int type = node->inode.st_mode & S_IFMT;
 	int ret;
 
-	if ((node->inode.st_mode & S_IFMT) == S_IFREG && node->inode.st_size > 0) {
+	/* First escape all existing "trusted.overlay.*" xattrs */
+	for (size_t i = 0; i < lcfs_node_get_n_xattr(node); i++) {
+		const char *name = lcfs_node_get_xattr_name(node, i);
+
+		if (str_has_prefix(name, "trusted.overlay.")) {
+			cleanup_free char *renamed =
+				str_join("trusted.overlay.overlay.",
+					 name + strlen("trusted.overlay."));
+			if (renamed == NULL) {
+				errno = ENOMEM;
+				return -1;
+			}
+			/* We rename in-place, this is safe from
+			   collisions because we also rename any
+			   colliding xattr */
+			if (lcfs_node_rename_xattr(node, i, renamed) < 0)
+				return -1;
+		}
+	}
+
+	if (type == S_IFREG && node->inode.st_size > 0) {
 		uint8_t xattr_data[4 + LCFS_DIGEST_SIZE];
 		size_t xattr_len = 0;
 
@@ -897,6 +932,24 @@ static int add_overlayfs_xattrs(struct lcfs_node_s *node)
 			if (ret < 0)
 				return ret;
 		}
+	}
+
+	/* escape whiteouts */
+	if (type == S_IFCHR && node->inode.st_rdev == makedev(0, 0)) {
+		struct lcfs_node_s *parent = lcfs_node_get_parent(node);
+
+		lcfs_node_set_mode(node,
+				   S_IFREG | (lcfs_node_get_mode(node) & ~S_IFMT));
+		ret = lcfs_node_set_xattr(node, "trusted.overlay.overlay.whiteout",
+					  "", 0);
+		if (ret < 0)
+			return ret;
+
+		/* Mark parent dir containing whiteouts */
+		ret = lcfs_node_set_xattr(
+			parent, "trusted.overlay.overlay.whiteouts", "", 0);
+		if (ret < 0)
+			return ret;
 	}
 
 	return 0;
