@@ -292,7 +292,7 @@ static int compute_erofs_shared_xattrs(struct lcfs_ctx_s *ctx)
 
 			ent = hash_lookup(xattr_hash, &hkey);
 			assert(ent != NULL);
-			if (ent->shared && n_shared < EROFS_MAX_SHARED_XATTRS) {
+			if (ent->shared && n_shared < EROFS_XATTR_LONG_PREFIX) {
 				xattr->erofs_shared_xattr_offset = ent->shared_offset;
 				n_shared++;
 			} else {

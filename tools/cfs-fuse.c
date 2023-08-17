@@ -114,7 +114,7 @@ static const erofs_inode *cfs_get_erofs_inode(fuse_ino_t ino)
 static uint16_t erofs_inode_version(const erofs_inode *cino)
 {
 	uint16_t i_format = lcfs_u16_from_file(cino->i_format);
-	return (i_format & ((1 << EROFS_I_VERSION_BITS) - 1)) >> EROFS_I_VERSION_BIT;
+	return (i_format >> EROFS_I_VERSION_BIT) & EROFS_I_VERSION_MASK;
 }
 
 static bool erofs_inode_is_compact(const erofs_inode *cino)
@@ -125,8 +125,7 @@ static bool erofs_inode_is_compact(const erofs_inode *cino)
 static uint16_t erofs_inode_datalayout(const erofs_inode *cino)
 {
 	uint16_t i_format = lcfs_u16_from_file(cino->i_format);
-	return (i_format & ((1 << EROFS_I_DATALAYOUT_BITS) - 1)) >>
-	       EROFS_I_DATALAYOUT_BIT;
+	return (i_format >> EROFS_I_DATALAYOUT_BIT) & EROFS_I_DATALAYOUT_MASK;
 }
 
 static bool erofs_inode_is_tailpacked(const erofs_inode *cino)
