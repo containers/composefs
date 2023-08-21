@@ -484,10 +484,20 @@ static int lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
 		goto fail;
 	}
 
-	if (options->upperdir)
+	if (options->upperdir) {
 		upperdir = escape_mount_option(options->upperdir);
-	if (options->workdir)
+		if (upperdir == NULL) {
+			res = -ENOMEM;
+			goto fail;
+		}
+	}
+	if (options->workdir) {
 		workdir = escape_mount_option(options->workdir);
+		if (workdir == NULL) {
+			res = -ENOMEM;
+			goto fail;
+		}
+	}
 
 retry:
 	free(steal_pointer(&overlay_options));
