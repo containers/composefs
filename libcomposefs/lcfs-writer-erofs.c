@@ -36,7 +36,10 @@
 #include <assert.h>
 #include <linux/fsverity.h>
 
-/* The xxh32 hash function is copied from xxhash with this copyright:
+/* The xxh32 hash function is copied from the linux kernel at:
+ *  https://github.com/torvalds/linux/blob/d89775fc929c5a1d91ed518a71b456da0865e5ff/lib/xxhash.c
+ *
+ * The original copyright is:
  *
  * xxHash - Extremely Fast Hash algorithm
  * Copyright (C) 2012-2016, Yann Collet.
@@ -544,6 +547,26 @@ static void compute_erofs_xattr_counts(struct lcfs_node_s *node,
 	*unshared_xattrs_size_out = unshared_xattrs_size;
 }
 
+static uint32_t compute_erofs_xattr_filter(struct lcfs_node_s *node)
+{
+	uint32_t name_filter = 0;
+
+	for (size_t i = 0; i < node->n_xattrs; i++) {
+		struct lcfs_xattr_s *xattr = &node->xattrs[i];
+		uint32_t name_filter_bit;
+		uint8_t index;
+		char *key;
+
+		index = xattr_erofs_entry_index(xattr, &key);
+		name_filter_bit =
+			xxh32(key, strlen(key), EROFS_XATTR_FILTER_SEED + index) &
+			(EROFS_XATTR_FILTER_BITS - 1);
+		name_filter |= 1UL << name_filter_bit;
+	}
+
+	return EROFS_XATTR_FILTER_DEFAULT & ~name_filter;
+}
+
 static uint64_t compute_erofs_inode_padding_for_tail(struct lcfs_node_s *node,
 						     uint64_t pos, size_t inode_size,
 						     size_t xattr_size)
@@ -878,6 +901,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 	if (xattr_size) {
 		struct erofs_xattr_ibody_header xattr_header = { 0 };
 		xattr_header.h_shared_count = n_shared_xattrs;
+		xattr_header.h_name_filter =
+			lcfs_u32_to_file(compute_erofs_xattr_filter(node));
 
 		ret = lcfs_write(ctx, &xattr_header, sizeof(xattr_header));
 		if (ret < 0)
@@ -1218,7 +1243,8 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 	if (ret < 0)
 		return ret;
 
-	superblock.feature_compat = lcfs_u32_to_file(EROFS_FEATURE_COMPAT_MTIME);
+	superblock.feature_compat = lcfs_u32_to_file(
+		EROFS_FEATURE_COMPAT_MTIME | EROFS_FEATURE_COMPAT_XATTR_FILTER);
 	superblock.inos = lcfs_u64_to_file(ctx->num_inodes);
 
 	superblock.build_time = lcfs_u64_to_file(ctx->min_mtim_sec);
