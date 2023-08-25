@@ -89,16 +89,13 @@ static int ensure_dir(const char *path, mode_t mode)
 
 static int mkdir_parents(const char *pathname, int mode)
 {
-	cleanup_free char *fn = NULL;
-	char *p;
-
-	fn = strdup(pathname);
+	cleanup_free char *fn = strdup(pathname);
 	if (fn == NULL) {
 		errno = ENOMEM;
 		return -1;
 	}
 
-	p = fn;
+	char *p = fn;
 	while (*p == '/')
 		p++;
 
