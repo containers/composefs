@@ -569,7 +569,7 @@ int main(int argc, char **argv)
 		cleanup_free char *cwd_cleanup = NULL;
 		cleanup_free char *tmp_pathbuf = NULL;
 		cleanup_free char *absolute_prefix = NULL;
-		char *cwd = "";
+		const char *cwd = "";
 		int r;
 
 		if (dir_path[0] != '/') {
@@ -578,6 +578,7 @@ int main(int argc, char **argv)
 				error(EXIT_FAILURE, errno,
 				      "retrieve current working directory");
 		}
+		(void)cwd_cleanup; // This is just used for cleanup
 		r = join_paths(&tmp_pathbuf, cwd, dir_path);
 		if (r < 0)
 			error(EXIT_FAILURE, errno, "compute directory path");
