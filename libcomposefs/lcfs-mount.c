@@ -426,11 +426,13 @@ static int lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
 	bool created_tmpdir = false;
 	char loopname[PATH_MAX];
 	int res, errsv;
-	int lowerdir_alt = 0;
-	char *lowerdir[2] = { NULL, NULL };
+	cleanup_free char *lowerdir_1 = NULL;
+	cleanup_free char *lowerdir_2 = NULL;
 	cleanup_free char *upperdir = NULL;
 	cleanup_free char *workdir = NULL;
 	cleanup_free char *overlay_options = NULL;
+	/* Can point to lowerdir_1 or _2 */
+	const char *lowerdir_target = NULL;
 	int loopfd;
 	bool require_verity;
 	bool disable_verity;
@@ -471,15 +473,16 @@ static int lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
 	 */
 
 	/* First try new version with :: separating datadirs. */
-	lowerdir[0] = compute_lower(imagemount, state, true);
-	if (lowerdir[0] == NULL) {
+	lowerdir_1 = compute_lower(imagemount, state, true);
+	if (lowerdir_1 == NULL) {
 		res = -ENOMEM;
 		goto fail;
 	}
+	lowerdir_target = lowerdir_1;
 
 	/* Then fall back. */
-	lowerdir[1] = compute_lower(imagemount, state, false);
-	if (lowerdir[1] == NULL) {
+	lowerdir_2 = compute_lower(imagemount, state, false);
+	if (lowerdir_2 == NULL) {
 		res = -ENOMEM;
 		goto fail;
 	}
@@ -503,7 +506,7 @@ retry:
 	free(steal_pointer(&overlay_options));
 	res = asprintf(&overlay_options,
 		       "metacopy=on,redirect_dir=on,lowerdir=%s%s%s%s%s%s",
-		       lowerdir[lowerdir_alt], upperdir ? ",upperdir=" : "",
+		       lowerdir_target, upperdir ? ",upperdir=" : "",
 		       upperdir ? upperdir : "", workdir ? ",workdir=" : "",
 		       workdir ? workdir : "",
 		       require_verity ? ",verity=require" :
@@ -516,7 +519,7 @@ retry:
 	mount_flags = 0;
 	if (readonly)
 		mount_flags |= MS_RDONLY;
-	if (lowerdir_alt == 0)
+	if (lowerdir_target == lowerdir_1)
 		mount_flags |= MS_SILENT;
 
 	res = mount("overlay", state->mountpoint, "overlay", mount_flags,
@@ -525,15 +528,12 @@ retry:
 		res = -errno;
 	}
 
-	if (res == -EINVAL && lowerdir_alt == 0) {
-		lowerdir_alt++;
+	if (res == -EINVAL && lowerdir_target == lowerdir_1) {
+		lowerdir_target = lowerdir_2;
 		goto retry;
 	}
 
 fail:
-	free(lowerdir[0]);
-	free(lowerdir[1]);
-
 	umount2(imagemount, MNT_DETACH);
 	if (created_tmpdir) {
 		rmdir(imagemount);
