@@ -319,7 +319,7 @@ static int fill_payload(struct lcfs_node_s *node, const char *path, size_t len,
 		char target[PATH_MAX + 1];
 		ssize_t s = readlink(path, target, sizeof(target));
 		if (s < 0)
-			return ret;
+			return s;
 
 		target[s] = '\0';
 		ret = lcfs_node_set_payload(node, target);
