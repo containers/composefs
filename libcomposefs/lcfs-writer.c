@@ -858,6 +858,8 @@ static void lcfs_node_destroy(struct lcfs_node_s *node)
 struct lcfs_node_s *lcfs_node_clone(struct lcfs_node_s *node)
 {
 	struct lcfs_node_s *new = lcfs_node_new();
+	if (new == NULL)
+		return NULL;
 
 	/* Note: This copies only data, not structure like name or children */
 
@@ -918,6 +920,8 @@ static struct lcfs_node_s *_lcfs_node_clone_deep(struct lcfs_node_s *node,
 						 struct lcfs_clone_data *data)
 {
 	struct lcfs_node_s *new = lcfs_node_clone(node);
+	if (new == NULL)
+		return NULL;
 
 	if (data->n_mappings >= data->allocated_mappings) {
 		struct lcfs_node_mapping_s *new_mapping;
