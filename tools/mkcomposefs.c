@@ -89,16 +89,13 @@ static int ensure_dir(const char *path, mode_t mode)
 
 static int mkdir_parents(const char *pathname, int mode)
 {
-	cleanup_free char *fn = NULL;
-	char *p;
-
-	fn = strdup(pathname);
+	cleanup_free char *fn = strdup(pathname);
 	if (fn == NULL) {
 		errno = ENOMEM;
 		return -1;
 	}
 
-	p = fn;
+	char *p = fn;
 	while (*p == '/')
 		p++;
 
@@ -322,7 +319,7 @@ static int fill_payload(struct lcfs_node_s *node, const char *path, size_t len,
 		char target[PATH_MAX + 1];
 		ssize_t s = readlink(path, target, sizeof(target));
 		if (s < 0)
-			return ret;
+			return s;
 
 		target[s] = '\0';
 		ret = lcfs_node_set_payload(node, target);
@@ -569,7 +566,7 @@ int main(int argc, char **argv)
 		cleanup_free char *cwd_cleanup = NULL;
 		cleanup_free char *tmp_pathbuf = NULL;
 		cleanup_free char *absolute_prefix = NULL;
-		char *cwd = "";
+		const char *cwd = "";
 		int r;
 
 		if (dir_path[0] != '/') {
@@ -578,6 +575,7 @@ int main(int argc, char **argv)
 				error(EXIT_FAILURE, errno,
 				      "retrieve current working directory");
 		}
+		(void)cwd_cleanup; // This is just used for cleanup
 		r = join_paths(&tmp_pathbuf, cwd, dir_path);
 		if (r < 0)
 			error(EXIT_FAILURE, errno, "compute directory path");

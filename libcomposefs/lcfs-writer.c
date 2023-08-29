@@ -188,8 +188,6 @@ int lcfs_compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 	ctx->min_mtim_nsec = root->inode.st_mtim_nsec;
 	ctx->has_acl = false;
 
-	node = root;
-
 	for (node = root, index = 0; node != NULL; node = node->next, index++) {
 		if ((node->inode.st_mode & S_IFMT) != S_IFDIR &&
 		    node->children_size != 0) {
