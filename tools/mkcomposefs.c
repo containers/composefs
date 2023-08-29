@@ -245,8 +245,7 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 			return res;
 		}
 	}
-	close(sfd);
-	sfd = -1;
+	cleanup_fdp(&sfd);
 
 	/* Make sure file is readable by all */
 	res = fchmod(dfd, 0644);
@@ -258,8 +257,7 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 	if (res < 0) {
 		return res;
 	}
-	close(dfd);
-	dfd = -1;
+	cleanup_fdp(&dfd);
 
 	if (try_enable_fsverity) {
 		/* Try to enable fsverity */

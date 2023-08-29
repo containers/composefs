@@ -45,6 +45,9 @@ static inline void cleanup_freep(void *p)
 		free(*pp);
 }
 
+// A wrapper around close() that takes a pointer to a file descriptor (integer):
+// - Never returns an error (and preserves errno)
+// - Sets the value to -1 after closing to make cleanup idempotent
 static inline void cleanup_fdp(int *fdp)
 {
 	PROTECT_ERRNO;
@@ -55,6 +58,7 @@ static inline void cleanup_fdp(int *fdp)
 	fd = *fdp;
 	if (fd != -1)
 		(void)close(fd);
+	*fdp = -1;
 }
 
 #define cleanup_free __attribute__((cleanup(cleanup_freep)))
