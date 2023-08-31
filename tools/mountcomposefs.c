@@ -37,6 +37,7 @@
 
 #include "libcomposefs/lcfs-mount.h"
 
+static void printexit(const char *format, ...) __attribute__((noreturn));
 static void printexit(const char *format, ...)
 {
 	va_list args;
