@@ -56,6 +56,7 @@ uint64_t erofs_build_time;
 uint32_t erofs_build_time_nsec;
 int basedir_fd;
 
+static void printexit(const char *format, ...) __attribute__((noreturn));
 static void printexit(const char *format, ...)
 {
 	va_list args;
