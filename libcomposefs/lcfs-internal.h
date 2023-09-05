@@ -17,6 +17,8 @@
 #ifndef _LCFS_INTERNAL_H
 #define _LCFS_INTERNAL_H
 
+#include <endian.h>
+
 #include "lcfs-writer.h"
 #include "lcfs-fsverity.h"
 #include "hash.h"
