@@ -34,6 +34,7 @@
 #include <sys/xattr.h>
 #include <sys/param.h>
 #include <assert.h>
+#include <sys/mman.h>
 
 static void lcfs_node_remove_all_children(struct lcfs_node_s *node);
 static void lcfs_node_destroy(struct lcfs_node_s *node);
@@ -626,6 +627,40 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 	}
 
 	return steal_pointer(&ret);
+}
+
+struct lcfs_node_s *lcfs_load_node_from_fd(int fd)
+{
+	struct lcfs_node_s *node;
+	uint8_t *image_data;
+	size_t image_data_size;
+	struct stat s;
+	int errsv;
+	int r;
+
+	r = fstat(fd, &s);
+	if (r < 0) {
+		return NULL;
+	}
+
+	image_data_size = s.st_size;
+
+	image_data = mmap(0, image_data_size, PROT_READ, MAP_PRIVATE, fd, 0);
+	if (image_data == MAP_FAILED) {
+		return NULL;
+	}
+
+	node = lcfs_load_node_from_image(image_data, image_data_size);
+	if (node == NULL) {
+		errsv = errno;
+		munmap(image_data, image_data_size);
+		errno = errsv;
+		return NULL;
+	}
+
+	munmap(image_data, image_data_size);
+
+	return node;
 }
 
 int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload)

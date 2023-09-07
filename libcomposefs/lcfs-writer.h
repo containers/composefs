@@ -67,6 +67,9 @@ LCFS_EXTERN struct lcfs_node_s *lcfs_node_clone(struct lcfs_node_s *node);
 LCFS_EXTERN struct lcfs_node_s *lcfs_node_clone_deep(struct lcfs_node_s *node);
 LCFS_EXTERN struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 							 int buildflags);
+LCFS_EXTERN struct lcfs_node_s *lcfs_load_node_from_image(const uint8_t *image_data,
+							  size_t image_data_size);
+LCFS_EXTERN struct lcfs_node_s *lcfs_load_node_from_fd(int fd);
 
 LCFS_EXTERN const char *lcfs_node_get_xattr(struct lcfs_node_s *node,
 					    const char *name, size_t *length);
