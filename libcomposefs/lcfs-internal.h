@@ -147,6 +147,15 @@ struct lcfs_ctx_s {
 	void (*finalize)(struct lcfs_ctx_s *ctx);
 };
 
+static inline void lcfs_node_unrefp(struct lcfs_node_s **nodep)
+{
+	if (*nodep != NULL) {
+		lcfs_node_unref(*nodep);
+		*nodep = NULL;
+	}
+}
+#define cleanup_node __attribute__((cleanup(lcfs_node_unrefp)))
+
 /* lcfs-writer.c */
 size_t hash_memory(const char *string, size_t len, size_t n_buckets);
 int lcfs_write(struct lcfs_ctx_s *ctx, void *_data, size_t data_len);
