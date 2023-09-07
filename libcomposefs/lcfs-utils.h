@@ -23,6 +23,7 @@
 #include <unistd.h>
 
 #define max(a, b) ((a > b) ? (a) : (b))
+#define min(a, b) (((a) < (b)) ? (a) : (b))
 
 static inline void _lcfs_reset_errno_(int *saved_errno)
 {
