@@ -323,11 +323,6 @@ static bool erofs_xattr_should_be_shared(struct hasher_xattr_s *ent)
 	if (ent->count > 1)
 		return true;
 
-	/* Also share verity overlay xattrs, as they are kind
-	   of large to have inline, and not always accessed. */
-	if (strcmp(ent->xattr->key, "trusted.overlay.verity") == 0)
-		return true;
-
 	return false;
 }
 
