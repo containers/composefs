@@ -78,6 +78,7 @@ LCFS_EXTERN const char *lcfs_node_get_xattr_name(struct lcfs_node_s *node,
 						 size_t index);
 
 LCFS_EXTERN int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload);
+LCFS_EXTERN const char *lcfs_node_get_payload(struct lcfs_node_s *node);
 
 LCFS_EXTERN int lcfs_node_set_content(struct lcfs_node_s *node,
 				      const uint8_t *data, size_t data_size);
@@ -95,6 +96,7 @@ LCFS_EXTERN struct lcfs_node_s *lcfs_node_get_child(struct lcfs_node_s *node,
 						    size_t i);
 LCFS_EXTERN void lcfs_node_make_hardlink(struct lcfs_node_s *node,
 					 struct lcfs_node_s *target);
+LCFS_EXTERN struct lcfs_node_s *lcfs_node_get_hardlink_target(struct lcfs_node_s *node);
 
 LCFS_EXTERN bool lcfs_node_dirp(struct lcfs_node_s *node);
 LCFS_EXTERN uint32_t lcfs_node_get_mode(struct lcfs_node_s *node);

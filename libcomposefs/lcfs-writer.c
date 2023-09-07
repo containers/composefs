@@ -641,6 +641,11 @@ int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload)
 	return 0;
 }
 
+const char *lcfs_node_get_payload(struct lcfs_node_s *node)
+{
+	return node->payload;
+}
+
 const uint8_t *lcfs_node_get_fsverity_digest(struct lcfs_node_s *node)
 {
 	if (node->digest_set)
@@ -800,6 +805,11 @@ void lcfs_node_make_hardlink(struct lcfs_node_s *node, struct lcfs_node_s *targe
 	target = follow_links(target);
 	node->link_to = lcfs_node_ref(target);
 	target->inode.st_nlink++;
+}
+
+struct lcfs_node_s *lcfs_node_get_hardlink_target(struct lcfs_node_s *node)
+{
+	return node->link_to;
 }
 
 int lcfs_node_add_child(struct lcfs_node_s *parent, struct lcfs_node_s *child,
