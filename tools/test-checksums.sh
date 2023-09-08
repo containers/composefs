@@ -1,12 +1,13 @@
 #!/usr/bin/bash
 
-WRITER_JSON="$1"
+BINDIR="$1"
 ASSET_DIR="$2"
 TEST_ASSETS="$3"
 
 set -e
 tmpfile=$(mktemp /tmp/lcfs-test.XXXXXX)
-trap 'rm -rf -- "$tmpfile"' EXIT
+tmpfile2=$(mktemp /tmp/lcfs-test.XXXXXX)
+trap 'rm -rf -- "$tmpfile" "$tmpfile2"' EXIT
 
 for format in erofs ; do
     for file in ${TEST_ASSETS} ; do
@@ -21,11 +22,18 @@ for format in erofs ; do
             CAT=cat
         fi
 
-        $CAT $ASSET_DIR/$file | $WRITER_JSON --format=$format --out=$tmpfile -
+        $CAT $ASSET_DIR/$file | ${BINDIR}/composefs-from-json --format=$format --out=$tmpfile -
         SHA=$(sha256sum $tmpfile | awk "{print \$1}")
 
         if [ $SHA != $EXPECTED_SHA ]; then
             echo Invalid $format checksum of file generated from $file: $SHA, expected $EXPECTED_SHA
+            exit 1
+        fi
+
+        # Ensure dump reproduces the same file
+        ${BINDIR}/composefs-dump $tmpfile $tmpfile2
+        if ! cmp $tmpfile $tmpfile2; then
+            echo Dump is not reproducible
             exit 1
         fi
     done

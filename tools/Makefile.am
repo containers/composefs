@@ -2,7 +2,7 @@ COMPOSEFS_HASH_CFLAGS = -DUSE_OBSTACK=0 -DTESTING=0 -DUSE_DIFF_HASH=0
 
 bin_PROGRAMS = mkcomposefs composefs-info
 sbin_PROGRAMS = mount.composefs
-noinst_PROGRAMS =
+noinst_PROGRAMS = composefs-dump
 
 if USE_YAJL
 noinst_PROGRAMS += composefs-from-json
@@ -27,6 +27,9 @@ composefs_info_SOURCES = composefs-info.c ../libcomposefs/hash.c
 composefs_info_CFLAGS = $(AM_CFLAGS) $(COMPOSEFS_HASH_CFLAGS)
 composefs_info_LDADD = ../libcomposefs/libcomposefs.la
 
+composefs_dump_SOURCES = composefs-dump.c
+composefs_dump_LDADD = ../libcomposefs/libcomposefs.la
+
 composefs_fuse_SOURCES = cfs-fuse.c
 composefs_fuse_LDADD =   ../libcomposefs/libcomposefs.la $(FUSE3_LIBS)
 composefs_fuse_CFLAGS =  $(AM_CFLAGS) $(FUSE3_CFLAGS)
@@ -45,6 +48,6 @@ endif
 EXTRA_DIST = test-checksums.sh $(patsubst %,test-assets/%,${TEST_ASSETS_SMALL}) $(patsubst %,test-assets/%.sha256_erofs,${TEST_ASSETS_SMALL})
 
 check-checksums:
-	$(srcdir)/test-checksums.sh "${WRITER_JSON_PREFIX} $(builddir)/composefs-from-json" "$(srcdir)/test-assets" "${TEST_ASSETS}"
+	$(srcdir)/test-checksums.sh "${WRITER_JSON_PREFIX} $(builddir)" "$(srcdir)/test-assets" "${TEST_ASSETS}"
 
 check: check-checksums
