@@ -23,7 +23,7 @@ composefs_from_json_LDADD = ../libcomposefs/libcomposefs.la $(LIBS_YAJL) $(LIBCR
 
 composefs_fuse_SOURCES = cfs-fuse.c
 composefs_fuse_LDADD =   ../libcomposefs/libcomposefs.la $(FUSE3_LIBS)
-composefs_fuse_CFLAGS = $(FUSE3_CFLAGS)
+composefs_fuse_CFLAGS =  $(AM_CFLAGS) $(FUSE3_CFLAGS)
 
 TEST_ASSETS_SMALL = \
 	config.json.gz config-with-hard-link.json.gz

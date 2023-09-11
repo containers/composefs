@@ -301,7 +301,6 @@ static void cfs_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
 	uint64_t last_block;
 	bool tailpacked;
 	int start_block, end_block;
-	int cmp;
 
 	if (parent_cino == NULL) {
 		fuse_reply_err(req, ENOENT);
@@ -359,6 +358,7 @@ static void cfs_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
 	if (tailpacked && start_block > end_block) {
 		const uint8_t *block_data =
 			((uint8_t *)parent_cino) + isize + xattr_size;
+		int cmp;
 		if (cfs_lookup_block(req, block_data, file_size % EROFS_BLKSIZ,
 				     name, &cmp))
 			return;
