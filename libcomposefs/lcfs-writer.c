@@ -627,6 +627,31 @@ void lcfs_node_set_fsverity_digest(struct lcfs_node_s *node,
 	memcpy(node->digest, digest, LCFS_DIGEST_SIZE);
 }
 
+int lcfs_node_set_content(struct lcfs_node_s *node, const uint8_t *data,
+			  size_t data_size)
+{
+	uint8_t *dup = NULL;
+
+	if (data && data_size != 0) {
+		dup = malloc(data_size);
+		if (dup == NULL) {
+			errno = ENOMEM;
+			return -1;
+		}
+		memcpy(dup, data, data_size);
+	}
+	free(node->content);
+	node->content = dup;
+	node->inode.st_size = data_size;
+
+	return 0;
+}
+
+const uint8_t *lcfs_node_get_content(struct lcfs_node_s *node)
+{
+	return node->content;
+}
+
 const char *lcfs_node_get_name(struct lcfs_node_s *node)
 {
 	return node->name;
@@ -699,8 +724,14 @@ uint64_t lcfs_node_get_size(struct lcfs_node_s *node)
 	return node->inode.st_size;
 }
 
+/* Clears content if size changes */
 void lcfs_node_set_size(struct lcfs_node_s *node, uint64_t size)
 {
+	if (size == node->inode.st_size)
+		return;
+
+	free(node->content);
+	node->content = NULL;
 	node->inode.st_size = size;
 }
 
@@ -824,6 +855,7 @@ void lcfs_node_unref(struct lcfs_node_s *node)
 
 	free(node->name);
 	free(node->payload);
+	free(node->content);
 
 	for (i = 0; i < node->n_xattrs; i++) {
 		free(node->xattrs[i].key);
@@ -872,6 +904,13 @@ struct lcfs_node_s *lcfs_node_clone(struct lcfs_node_s *node)
 		new->payload = strdup(node->payload);
 		if (new->payload == NULL)
 			goto fail;
+	}
+
+	if (node->content) {
+		new->content = malloc(node->inode.st_size);
+		if (new->content == NULL)
+			goto fail;
+		memcpy(new->content, node->content, node->inode.st_size);
 	}
 
 	if (node->n_xattrs > 0) {

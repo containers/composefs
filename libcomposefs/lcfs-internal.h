@@ -98,6 +98,8 @@ struct lcfs_node_s {
 	char *name;
 	char *payload; /* backing file or symlink target */
 
+	uint8_t *content;
+
 	struct lcfs_xattr_s *xattrs;
 	size_t n_xattrs;
 

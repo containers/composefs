@@ -23,6 +23,7 @@
 #include "lcfs-writer.h"
 #include "lcfs-fsverity.h"
 #include "lcfs-erofs.h"
+#include "lcfs-utils.h"
 #include "hash.h"
 
 #include <errno.h>
@@ -517,12 +518,21 @@ static void compute_erofs_inode_size(struct lcfs_node_s *node)
 		node->erofs_n_blocks = 0;
 		node->erofs_tailsize = strlen(node->payload);
 	} else if (type == S_IFREG && file_size > 0) {
-		uint32_t chunkbits = compute_erofs_chunk_bitsize(node);
-		uint64_t chunksize = 1ULL << chunkbits;
-		uint32_t chunk_count = DIV_ROUND_UP(file_size, chunksize);
+		if (node->content != NULL) {
+			node->erofs_n_blocks = file_size / EROFS_BLKSIZ;
+			node->erofs_tailsize = file_size % EROFS_BLKSIZ;
+			if (node->erofs_tailsize > EROFS_BLKSIZ / 2) {
+				node->erofs_n_blocks++;
+				node->erofs_tailsize = 0;
+			}
+		} else {
+			uint32_t chunkbits = compute_erofs_chunk_bitsize(node);
+			uint64_t chunksize = 1ULL << chunkbits;
+			uint32_t chunk_count = DIV_ROUND_UP(file_size, chunksize);
 
-		node->erofs_n_blocks = 0;
-		node->erofs_tailsize = chunk_count * sizeof(uint32_t);
+			node->erofs_n_blocks = 0;
+			node->erofs_tailsize = chunk_count * sizeof(uint32_t);
+		}
 	} else {
 		node->erofs_n_blocks = 0;
 		node->erofs_tailsize = 0;
@@ -823,7 +833,7 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 	} else if (type == S_IFREG) {
 		size = node->inode.st_size;
 
-		if (size > 0) {
+		if (size > 0 && node->content == NULL) {
 			uint32_t chunkbits = compute_erofs_chunk_bitsize(node);
 			uint64_t chunksize = 1ULL << chunkbits;
 
@@ -889,6 +899,12 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 		} else if (type == S_IFCHR || type == S_IFBLK) {
 			i.i_u.rdev = lcfs_u32_to_file(node->inode.st_rdev);
 		} else if (type == S_IFREG) {
+			if (node->erofs_n_blocks > 0) {
+				i.i_u.raw_blkaddr = lcfs_u32_to_file(
+					ctx_erofs->current_end / EROFS_BLKSIZ);
+				ctx_erofs->current_end +=
+					EROFS_BLKSIZ * node->erofs_n_blocks;
+			}
 			if (datalayout == EROFS_INODE_CHUNK_BASED) {
 				i.i_u.c.format = lcfs_u16_to_file(chunk_format);
 			}
@@ -944,11 +960,24 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 		if (ret < 0)
 			return ret;
 	} else if (type == S_IFREG) {
-		for (size_t i = 0; i < chunk_count; i++) {
-			uint32_t empty_chunk = 0xFFFFFFFF;
-			ret = lcfs_write(ctx, &empty_chunk, sizeof(empty_chunk));
-			if (ret < 0)
-				return ret;
+		if (node->content != NULL) {
+			if (node->erofs_tailsize) {
+				uint64_t file_size = node->inode.st_size;
+				ret = lcfs_write(ctx,
+						 node->content + file_size -
+							 node->erofs_tailsize,
+						 node->erofs_tailsize);
+				if (ret < 0)
+					return ret;
+			}
+		} else {
+			for (size_t i = 0; i < chunk_count; i++) {
+				uint32_t empty_chunk = 0xFFFFFFFF;
+				ret = lcfs_write(ctx, &empty_chunk,
+						 sizeof(empty_chunk));
+				if (ret < 0)
+					return ret;
+			}
 		}
 	}
 
@@ -976,13 +1005,40 @@ static int write_erofs_inodes(struct lcfs_ctx_s *ctx)
 	return 0;
 }
 
-static int write_erofs_dirent_blocks(struct lcfs_ctx_s *ctx)
+/* Writes the non-tailpacked file data, if any */
+static int write_erofs_file_content(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
+{
+	int type = node->inode.st_mode & S_IFMT;
+	off_t size = node->inode.st_size;
+
+	if (type != S_IFREG || node->erofs_n_blocks == 0)
+		return 0;
+
+	assert(node->content != NULL);
+
+	for (size_t i = 0; i < node->erofs_n_blocks; i++) {
+		off_t offset = i * EROFS_BLKSIZ;
+		off_t len = min(size - offset, EROFS_BLKSIZ);
+		int ret;
+
+		ret = lcfs_write(ctx, node->content + offset, len);
+		if (ret < 0)
+			return ret;
+	}
+
+	return lcfs_write_align(ctx, EROFS_BLKSIZ);
+}
+
+static int write_erofs_data_blocks(struct lcfs_ctx_s *ctx)
 {
 	struct lcfs_node_s *node;
 	int ret;
 
 	for (node = ctx->root; node != NULL; node = node->next) {
 		ret = write_erofs_dentries(ctx, node, true, false);
+		if (ret < 0)
+			return ret;
+		ret = write_erofs_file_content(ctx, node);
 		if (ret < 0)
 			return ret;
 	}
@@ -1042,7 +1098,7 @@ static int add_overlayfs_xattrs(struct lcfs_node_s *node)
 		}
 	}
 
-	if (type == S_IFREG && node->inode.st_size > 0) {
+	if (type == S_IFREG && node->inode.st_size > 0 && node->content == NULL) {
 		uint8_t xattr_data[4 + LCFS_DIGEST_SIZE];
 		size_t xattr_len = 0;
 
@@ -1060,7 +1116,7 @@ static int add_overlayfs_xattrs(struct lcfs_node_s *node)
 		if (ret < 0)
 			return ret;
 
-		if (strlen(node->payload) > 0) {
+		if (node->payload && strlen(node->payload) > 0) {
 			char *path = maybe_join_path("/", node->payload);
 			if (path == NULL) {
 				errno = ENOMEM;
@@ -1351,7 +1407,7 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 
 	assert(data_block_start == (uint64_t)ctx->bytes_written);
 
-	ret = write_erofs_dirent_blocks(ctx);
+	ret = write_erofs_data_blocks(ctx);
 	if (ret < 0)
 		return ret;
 
