@@ -540,6 +540,30 @@ int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node, int fd)
 	return lcfs_node_set_fsverity_from_content(node, &_fd, fsverity_read_cb);
 }
 
+static int read_content(int fd, size_t size, uint8_t *buf)
+{
+	int bytes_read;
+
+	while (size > 0) {
+		do
+			bytes_read = read(fd, buf, size);
+		while (bytes_read < 0 && errno == EINTR);
+
+		if (bytes_read == 0)
+			break;
+
+		size -= bytes_read;
+		buf += bytes_read;
+	}
+
+	if (size > 0) {
+		errno = ENODATA;
+		return -1;
+	}
+
+	return 0;
+}
+
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 					     int buildflags)
 {
@@ -548,7 +572,8 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 	int r;
 
 	if (buildflags & ~(LCFS_BUILD_SKIP_XATTRS | LCFS_BUILD_USE_EPOCH |
-			   LCFS_BUILD_SKIP_DEVICES | LCFS_BUILD_COMPUTE_DIGEST)) {
+			   LCFS_BUILD_SKIP_DEVICES | LCFS_BUILD_COMPUTE_DIGEST |
+			   LCFS_BUILD_NO_INLINE)) {
 		errno = EINVAL;
 		return NULL;
 	}
@@ -568,17 +593,42 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 	ret->inode.st_size = sb.st_size;
 
 	if ((sb.st_mode & S_IFMT) == S_IFREG) {
-		if (sb.st_size != 0 && (buildflags & LCFS_BUILD_COMPUTE_DIGEST) != 0) {
-			int fd = openat(dirfd, fname, O_RDONLY | O_CLOEXEC);
+		bool compute_digest = (buildflags & LCFS_BUILD_COMPUTE_DIGEST) != 0;
+		bool no_inline = (buildflags & LCFS_BUILD_NO_INLINE) != 0;
+		bool is_zerosized = sb.st_size == 0;
+		bool do_digest = !is_zerosized && compute_digest;
+		bool do_inline = !is_zerosized && !no_inline &&
+				 sb.st_size <= LCFS_BUILD_INLINE_FILE_SIZE_LIMIT;
+
+		if (do_digest || do_inline) {
+			cleanup_fd int fd =
+				openat(dirfd, fname, O_RDONLY | O_CLOEXEC);
 			if (fd < 0) {
 				lcfs_node_unref(ret);
 				return NULL;
 			}
-			r = lcfs_node_set_fsverity_from_fd(ret, fd);
-			close(fd);
-			if (r < 0) {
-				lcfs_node_unref(ret);
-				return NULL;
+			if (do_digest) {
+				r = lcfs_node_set_fsverity_from_fd(ret, fd);
+				if (r < 0) {
+					lcfs_node_unref(ret);
+					return NULL;
+				}
+				/* In case we re-read below */
+				lseek(fd, 0, SEEK_SET);
+			}
+			if (do_inline) {
+				uint8_t buf[LCFS_BUILD_INLINE_FILE_SIZE_LIMIT];
+
+				r = read_content(fd, sb.st_size, buf);
+				if (r < 0) {
+					lcfs_node_unref(ret);
+					return NULL;
+				}
+				r = lcfs_node_set_content(ret, buf, sb.st_size);
+				if (r < 0) {
+					lcfs_node_unref(ret);
+					return NULL;
+				}
 			}
 		}
 	}

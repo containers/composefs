@@ -323,7 +323,8 @@ static int fill_payload(struct lcfs_node_s *node, const char *path, size_t len,
 		ret = lcfs_node_set_payload(node, target);
 		if (ret < 0)
 			return ret;
-	} else if ((lcfs_node_get_mode(node) & S_IFMT) == S_IFREG) {
+	} else if ((lcfs_node_get_mode(node) & S_IFMT) == S_IFREG &&
+		   lcfs_node_get_content(node) == NULL) {
 		const uint8_t *digest = NULL;
 
 		if (by_digest)

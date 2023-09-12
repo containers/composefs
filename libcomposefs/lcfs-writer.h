@@ -34,6 +34,7 @@ enum {
 	LCFS_BUILD_USE_EPOCH = (1 << 1),
 	LCFS_BUILD_SKIP_DEVICES = (1 << 2),
 	LCFS_BUILD_COMPUTE_DIGEST = (1 << 3),
+	LCFS_BUILD_NO_INLINE = (1 << 4),
 };
 
 enum lcfs_format_t {
