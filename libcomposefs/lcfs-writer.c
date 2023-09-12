@@ -601,11 +601,13 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 
 int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload)
 {
-	node->payload = strdup(payload);
-	if (node->payload == NULL) {
+	char *dup = strdup(payload);
+	if (dup == NULL) {
 		errno = ENOMEM;
 		return -1;
 	}
+	free(node->payload);
+	node->payload = dup;
 
 	return 0;
 }
