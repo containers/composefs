@@ -567,7 +567,7 @@ static int read_content(int fd, size_t size, uint8_t *buf)
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 					     int buildflags)
 {
-	struct lcfs_node_s *ret;
+	cleanup_node struct lcfs_node_s *ret = NULL;
 	struct stat sb;
 	int r;
 
@@ -603,16 +603,12 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 		if (do_digest || do_inline) {
 			cleanup_fd int fd =
 				openat(dirfd, fname, O_RDONLY | O_CLOEXEC);
-			if (fd < 0) {
-				lcfs_node_unref(ret);
+			if (fd < 0)
 				return NULL;
-			}
 			if (do_digest) {
 				r = lcfs_node_set_fsverity_from_fd(ret, fd);
-				if (r < 0) {
-					lcfs_node_unref(ret);
+				if (r < 0)
 					return NULL;
-				}
 				/* In case we re-read below */
 				lseek(fd, 0, SEEK_SET);
 			}
@@ -620,15 +616,11 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 				uint8_t buf[LCFS_BUILD_INLINE_FILE_SIZE_LIMIT];
 
 				r = read_content(fd, sb.st_size, buf);
-				if (r < 0) {
-					lcfs_node_unref(ret);
+				if (r < 0)
 					return NULL;
-				}
 				r = lcfs_node_set_content(ret, buf, sb.st_size);
-				if (r < 0) {
-					lcfs_node_unref(ret);
+				if (r < 0)
 					return NULL;
-				}
 			}
 		}
 	}
@@ -640,13 +632,11 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 
 	if ((buildflags & LCFS_BUILD_SKIP_XATTRS) == 0) {
 		r = read_xattrs(ret, dirfd, fname);
-		if (r < 0) {
-			lcfs_node_unref(ret);
+		if (r < 0)
 			return NULL;
-		}
 	}
 
-	return ret;
+	return steal_pointer(&ret);
 }
 
 int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload)
@@ -939,7 +929,7 @@ static void lcfs_node_destroy(struct lcfs_node_s *node)
 
 struct lcfs_node_s *lcfs_node_clone(struct lcfs_node_s *node)
 {
-	struct lcfs_node_s *new = lcfs_node_new();
+	cleanup_node struct lcfs_node_s *new = lcfs_node_new();
 	if (new == NULL)
 		return NULL;
 
@@ -953,20 +943,22 @@ struct lcfs_node_s *lcfs_node_clone(struct lcfs_node_s *node)
 	if (node->payload) {
 		new->payload = strdup(node->payload);
 		if (new->payload == NULL)
-			goto fail;
+			return NULL;
+		;
 	}
 
 	if (node->content) {
 		new->content = malloc(node->inode.st_size);
 		if (new->content == NULL)
-			goto fail;
+			return NULL;
+		;
 		memcpy(new->content, node->content, node->inode.st_size);
 	}
 
 	if (node->n_xattrs > 0) {
 		new->xattrs = malloc(sizeof(struct lcfs_xattr_s) * node->n_xattrs);
 		if (new->xattrs == NULL)
-			goto fail;
+			return NULL;
 		for (size_t i = 0; i < node->n_xattrs; i++) {
 			char *key = strdup(node->xattrs[i].key);
 			char *value = memdup(node->xattrs[i].value,
@@ -974,7 +966,7 @@ struct lcfs_node_s *lcfs_node_clone(struct lcfs_node_s *node)
 			if (key == NULL || value == NULL) {
 				free(key);
 				free(value);
-				goto fail;
+				return NULL;
 			}
 			new->xattrs[i].key = key;
 			new->xattrs[i].value = value;
@@ -987,11 +979,7 @@ struct lcfs_node_s *lcfs_node_clone(struct lcfs_node_s *node)
 	memcpy(new->digest, node->digest, LCFS_DIGEST_SIZE);
 	new->inode = node->inode;
 
-	return new;
-
-fail:
-	lcfs_node_unref(new);
-	return NULL;
+	return steal_pointer(&new);
 }
 
 struct lcfs_node_mapping_s {
@@ -1008,7 +996,7 @@ struct lcfs_clone_data {
 static struct lcfs_node_s *_lcfs_node_clone_deep(struct lcfs_node_s *node,
 						 struct lcfs_clone_data *data)
 {
-	struct lcfs_node_s *new = lcfs_node_clone(node);
+	cleanup_node struct lcfs_node_s *new = lcfs_node_clone(node);
 	if (new == NULL)
 		return NULL;
 
@@ -1021,7 +1009,7 @@ static struct lcfs_node_s *_lcfs_node_clone_deep(struct lcfs_node_s *node,
 					   sizeof(struct lcfs_node_mapping_s),
 					   data->allocated_mappings);
 		if (new_mapping == NULL)
-			goto fail;
+			return NULL;
 		data->mapping = new_mapping;
 	}
 
@@ -1033,17 +1021,13 @@ static struct lcfs_node_s *_lcfs_node_clone_deep(struct lcfs_node_s *node,
 		struct lcfs_node_s *child = node->children[i];
 		struct lcfs_node_s *new_child = _lcfs_node_clone_deep(child, data);
 		if (new_child == NULL)
-			goto fail;
+			return NULL;
 
 		if (lcfs_node_add_child(new, new_child, child->name) < 0)
-			goto fail;
+			return NULL;
 	}
 
-	return new;
-
-fail:
-	lcfs_node_unref(new);
-	return NULL;
+	return steal_pointer(&new);
 }
 
 /* Rewrite all hardlinks according to mapping */
