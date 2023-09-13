@@ -1,0 +1,47 @@
+#!/usr/bin/python3
+
+import os
+import sys
+import shlex
+import hashlib
+import stat
+import argparse
+
+def log_error(error):
+    print("Readdir error: " + error)
+
+def dumpfile(file, root):
+    rel = os.path.relpath(file, root)
+    s = os.lstat(file)
+    nlink = s.st_nlink;
+    if args.no_nlink:
+        nlink = 1
+    print(f"{shlex.quote(rel)} {s.st_mode} {nlink} {s.st_uid}:{s.st_gid} {s.st_rdev} {s.st_mtime_ns}",end="")
+    if stat.S_ISREG(s.st_mode):
+        digest = hashlib.sha256(open(file,'rb').read()).hexdigest()
+        print(f" {s.st_size} sha256:{digest}",end="")
+    elif stat.S_ISLNK(s.st_mode):
+        link = os.readlink(file)
+        print(f" ->{shlex.quote(link)}",end="")
+
+    for attr in sorted(os.listxattr(file, follow_symlinks=False)):
+        v = os.getxattr(file, attr, follow_symlinks=False)
+        print(f" {attr}={v}", end="")
+
+    print()
+
+
+
+def dumpdir(root):
+    dumpfile(root, root)
+    for parent, dirs, files in os.walk(root, topdown=True, onerror=log_error):
+        for file in sorted(dirs + files):
+            dumpfile(os.path.join(parent, file), root)
+
+argParser = argparse.ArgumentParser()
+argParser.add_argument("--no-nlink", action='store_true')
+argParser.add_argument('path')
+
+args = argParser.parse_args()
+
+dumpdir(args.path)

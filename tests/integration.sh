@@ -4,11 +4,7 @@
 # the output of ls -lR (without hardlink counts).
 set -xeuo pipefail
 
-# ls -l but without hardlinks
-nonhardlink_ls() {
-    ls "$@" | sed -e 's,^\([^ ]*\)  *\([0-9][0-9]*\)\(.*\)$,\1\3,'
-}
-
+orig=$(pwd)
 cfsroot=${cfsroot:-/composefs}
 rm ${cfsroot}/tmp -rf
 mkdir -p ${cfsroot}/{objects,roots,tmp}
@@ -22,13 +18,18 @@ test "$prev_digest" = "$new_digest"
 
 mkdir -p mnt
 mount.composefs -o basedir=${cfsroot}/objects ${cfsroot}/roots/test.cfs mnt
-(cd ${testsrc} && nonhardlink_ls -lR .) > src-ls.txt
-(cd mnt && nonhardlink_ls -lR .) > mnt-ls.txt
+$orig/tests/dumpdir --no-nlink ${testsrc} > src-dump.txt
+$orig/tests/dumpdir --no-nlink mnt > mnt-dump.txt
 failed=
-if ! diff -u src-ls.txt mnt-ls.txt; then
+if ! diff -u src-dump.txt mnt-dump.txt; then
     failed=1
 fi
-umount mnt
 if test -n "${failed}"; then
+    umount mnt
     exit 1
 fi
+
+new_digest=$(mkcomposefs --by-digest --print-digest-only mnt)
+test "$prev_digest" = "$new_digest"
+
+umount mnt
