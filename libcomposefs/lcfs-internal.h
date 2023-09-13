@@ -150,6 +150,9 @@ char *maybe_join_path(const char *a, const char *b);
 struct lcfs_node_s *follow_links(struct lcfs_node_s *node);
 int node_get_dtype(struct lcfs_node_s *node);
 
+int lcfs_node_rename_xattr(struct lcfs_node_s *node, size_t index,
+			   const char *new_name);
+
 /* lcfs-writer-erofs.c */
 
 int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx);

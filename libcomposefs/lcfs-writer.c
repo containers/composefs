@@ -1205,3 +1205,27 @@ int lcfs_node_set_xattr(struct lcfs_node_s *node, const char *name,
 
 	return 0;
 }
+
+/* This is an internal function.
+ * Be careful to not cause duplicates if new_name already exist */
+int lcfs_node_rename_xattr(struct lcfs_node_s *node, size_t index, const char *new_name)
+{
+	struct lcfs_xattr_s *xattr;
+	cleanup_free char *dup = NULL;
+
+	dup = strdup(new_name);
+	if (dup == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	if (index >= node->n_xattrs) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	xattr = &node->xattrs[index];
+	free(xattr->key);
+	xattr->key = steal_pointer(&dup);
+	return 0;
+}
