@@ -34,6 +34,7 @@ enum {
 	LCFS_BUILD_USE_EPOCH = (1 << 1),
 	LCFS_BUILD_SKIP_DEVICES = (1 << 2),
 	LCFS_BUILD_COMPUTE_DIGEST = (1 << 3),
+	LCFS_BUILD_NO_INLINE = (1 << 4),
 };
 
 enum lcfs_format_t {
@@ -77,6 +78,10 @@ LCFS_EXTERN const char *lcfs_node_get_xattr_name(struct lcfs_node_s *node,
 						 size_t index);
 
 LCFS_EXTERN int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload);
+
+LCFS_EXTERN int lcfs_node_set_content(struct lcfs_node_s *node,
+				      const uint8_t *data, size_t data_size);
+LCFS_EXTERN const uint8_t *lcfs_node_get_content(struct lcfs_node_s *node);
 
 LCFS_EXTERN struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node,
 						       const char *name);
