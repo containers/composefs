@@ -24,8 +24,9 @@
 #include <fuse_lowlevel.h>
 #include <sys/mman.h>
 
-#include "libcomposefs/lcfs-erofs.h"
+#include "libcomposefs/lcfs-erofs-internal.h"
 #include "libcomposefs/lcfs-internal.h"
+#include "libcomposefs/lcfs-utils.h"
 
 /* TODO:
  *  Do we want to user ther negative_timeout=T option?
@@ -33,16 +34,6 @@
 
 #define CFS_ENTRY_TIMEOUT 3600.0
 #define CFS_ATTR_TIMEOUT 3600.0
-
-#define ALIGN_TO(_offset, _align_size)                                         \
-	(((_offset) + _align_size - 1) & ~(_align_size - 1))
-
-/* Note: These only do power of 2 */
-#define __round_mask(x, y) ((__typeof__(x))((y)-1))
-#define round_up(x, y) ((((x)-1) | __round_mask(x, y)) + 1)
-#define round_down(x, y) ((x) & ~__round_mask(x, y))
-
-#include "libcomposefs/erofs_fs_wrapper.h"
 
 const uint8_t *erofs_data;
 size_t erofs_data_size;
@@ -81,12 +72,6 @@ static const struct fuse_opt cfs_opts[] = {
 	FUSE_OPT_END
 };
 
-typedef union {
-	__le16 i_format;
-	struct erofs_inode_compact compact;
-	struct erofs_inode_extended extended;
-} erofs_inode;
-
 static uint64_t cfs_nid_from_ino(fuse_ino_t ino)
 {
 	if (ino == FUSE_ROOT_ID) {
@@ -110,28 +95,6 @@ static const erofs_inode *cfs_get_erofs_inode(fuse_ino_t ino)
 	/* TODO: Add bounds check */
 
 	return (const erofs_inode *)(erofs_metadata + (nid << EROFS_ISLOTBITS));
-}
-
-static uint16_t erofs_inode_version(const erofs_inode *cino)
-{
-	uint16_t i_format = lcfs_u16_from_file(cino->i_format);
-	return (i_format >> EROFS_I_VERSION_BIT) & EROFS_I_VERSION_MASK;
-}
-
-static bool erofs_inode_is_compact(const erofs_inode *cino)
-{
-	return erofs_inode_version(cino) == 0;
-}
-
-static uint16_t erofs_inode_datalayout(const erofs_inode *cino)
-{
-	uint16_t i_format = lcfs_u16_from_file(cino->i_format);
-	return (i_format >> EROFS_I_DATALAYOUT_BIT) & EROFS_I_DATALAYOUT_MASK;
-}
-
-static bool erofs_inode_is_tailpacked(const erofs_inode *cino)
-{
-	return erofs_inode_datalayout(cino) == EROFS_INODE_FLAT_INLINE;
 }
 
 static int cfs_stat(fuse_ino_t ino, const erofs_inode *cino, struct stat *stbuf)
@@ -210,8 +173,6 @@ static void erofs_inode_get_info(const erofs_inode *cino, uint32_t *mode,
 		*isize = sizeof(struct erofs_inode_extended);
 	}
 }
-
-#define min(a, b) (((a) < (b)) ? (a) : (b))
 
 /* This is essentially strcmp() for non-null-terminated strings */
 static inline int memcmp2(const void *a, const size_t a_size, const void *b,
@@ -684,44 +645,6 @@ static void cfs_init(void *userdata, struct fuse_conn_info *conn)
 		conn->want |= FUSE_CAP_SPLICE_READ;
 }
 
-const char *erofs_xattr_prefixes[] = {
-	"",
-	"user.",
-	"system.posix_acl_access",
-	"system.posix_acl_default",
-	"trusted.",
-	"lustre.",
-	"security.",
-};
-
-#define EROFS_N_PREFIXES (sizeof(erofs_xattr_prefixes) / sizeof(char *))
-
-static bool is_acl_xattr(int prefix, const char *name, size_t name_len)
-{
-	const char *const nfs_acl = "system.nfs4_acl";
-
-	if ((prefix == EROFS_XATTR_INDEX_POSIX_ACL_ACCESS ||
-	     prefix == EROFS_XATTR_INDEX_POSIX_ACL_DEFAULT) &&
-	    name_len == 0)
-		return true;
-	if (prefix == 0 && name_len == strlen(nfs_acl) &&
-	    memcmp(name, nfs_acl, strlen(nfs_acl)) == 0)
-		return true;
-	return false;
-}
-
-static int erofs_get_xattr_prefix(const char *str)
-{
-	for (int i = 1; i < EROFS_N_PREFIXES; i++) {
-		const char *prefix = erofs_xattr_prefixes[i];
-		if (strlen(str) >= strlen(prefix) &&
-		    memcmp(str, prefix, strlen(prefix)) == 0) {
-			return i;
-		}
-	}
-	return 0;
-}
-
 #define OVERLAY_PREFIX "overlay."
 
 static int cfs_rewrite_xattr_prefix_from_image(int name_index, const char *name,
@@ -978,7 +901,7 @@ static void cfs_getxattr(fuse_req_t req, fuse_ino_t ino, const char *name,
 
 	/* When acls are not used, send EOPTNOTSUPP, as this informs
 	   userspace to stop constantly looking for acls */
-	if (!erofs_use_acl && is_acl_xattr(name_prefix, name, name_len)) {
+	if (!erofs_use_acl && erofs_is_acl_xattr(name_prefix, name, name_len)) {
 		fuse_reply_err(req, EOPNOTSUPP);
 		return;
 	}

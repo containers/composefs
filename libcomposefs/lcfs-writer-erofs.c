@@ -22,7 +22,7 @@
 #include "lcfs-utils.h"
 #include "lcfs-writer.h"
 #include "lcfs-fsverity.h"
-#include "lcfs-erofs.h"
+#include "lcfs-erofs-internal.h"
 #include "lcfs-utils.h"
 #include "hash.h"
 
@@ -186,8 +186,6 @@ struct lcfs_ctx_s *lcfs_ctx_erofs_new(void)
 
 	return &ret->base;
 }
-
-#include "erofs_fs_wrapper.h"
 
 static int erofs_make_file_type(int regular)
 {
