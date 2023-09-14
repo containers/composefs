@@ -1,5 +1,5 @@
 TEST_ASSETS_SMALL = \
-	config.json.gz config-with-hard-link.json.gz
+	config.json.gz config-with-hard-link.json.gz special.json
 
 TEST_ASSETS = ${TEST_ASSETS_SMALL} \
 	cs9-x86_64-developer.json.gz cs9-x86_64-minimal.json.gz	\
