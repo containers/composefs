@@ -405,6 +405,7 @@ static int fill_file(const char *typ, struct lcfs_node_s *root,
 		     struct lcfs_node_s *node, yajl_val entry)
 {
 	const char *payload = NULL;
+	const char *content = NULL;
 	char payload_buffer[128];
 	uint16_t min = 0, maj = 0;
 	mode_t mode = 0;
@@ -520,6 +521,35 @@ static int fill_file(const char *typ, struct lcfs_node_s *root,
 		r = lcfs_node_set_payload(node, payload);
 		if (r < 0) {
 			error(0, 0, "set_payload");
+			return -1;
+		}
+	}
+
+	/* custom extension to the CRFS format.  */
+	v = get_child(entry, "x-content", yajl_t_string);
+	if (v)
+		content = YAJL_GET_STRING(v);
+	if (content) {
+		int r;
+		size_t buf_size = strlen(content); /* Enough to fit base64 decoded value */
+		size_t written;
+		cleanup_free uint8_t *buf = malloc(buf_size);
+
+		if (buf == NULL) {
+			error(0, 0, "malloc");
+			return -1;
+		}
+
+		r = base64_decode(content, strlen(content), (char *)buf,
+				  buf_size, &written);
+		if (r < 0) {
+			error(0, 0, "x-content value is not valid b64");
+			return -1;
+		}
+
+		r = lcfs_node_set_content(node, buf, written);
+		if (r < 0) {
+			error(0, 0, "set_content");
 			return -1;
 		}
 	}
