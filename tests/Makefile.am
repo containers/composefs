@@ -6,12 +6,15 @@ TEST_ASSETS = ${TEST_ASSETS_SMALL} \
 	f36-x86_64-silverblue.json.gz
 
 if ENABLE_VALGRIND
-WRITER_JSON_PREFIX=libtool --mode=execute ${VALGRIND} --quiet --leak-check=yes --error-exitcode=42
+VALGRIND_PREFIX=libtool --mode=execute ${VALGRIND} --quiet --leak-check=yes --error-exitcode=42
 endif
 
 EXTRA_DIST = test-checksums.sh $(patsubst %,assets/%,${TEST_ASSETS_SMALL}) $(patsubst %,assets/%.sha256_erofs,${TEST_ASSETS_SMALL})
 
 check-checksums:
-	$(srcdir)/test-checksums.sh "${WRITER_JSON_PREFIX} $(builddir)/../tools/" "$(srcdir)/assets" "${TEST_ASSETS}"
+	$(srcdir)/test-checksums.sh "${VALGRIND_PREFIX} $(builddir)/../tools/" "$(srcdir)/assets" "${TEST_ASSETS}"
 
-check: check-checksums
+check-units:
+	$(srcdir)/test-units.sh "${VALGRIND_PREFIX} $(builddir)/../tools/"
+
+check: check-units check-checksums
