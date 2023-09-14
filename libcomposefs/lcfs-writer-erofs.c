@@ -1116,10 +1116,18 @@ static int add_overlayfs_xattrs(struct lcfs_node_s *node)
 					  "", 0);
 		if (ret < 0)
 			return ret;
+		ret = lcfs_node_set_xattr(node, OVERLAY_XATTR_USERXATTR_WHITEOUT,
+					  "", 0);
+		if (ret < 0)
+			return ret;
 
 		/* Mark parent dir containing whiteouts */
 		ret = lcfs_node_set_xattr(parent,
 					  OVERLAY_XATTR_ESCAPED_WHITEOUTS, "", 0);
+		if (ret < 0)
+			return ret;
+		ret = lcfs_node_set_xattr(parent, OVERLAY_XATTR_USERXATTR_WHITEOUTS,
+					  "", 0);
 		if (ret < 0)
 			return ret;
 	}
