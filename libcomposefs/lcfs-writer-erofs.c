@@ -256,11 +256,6 @@ static int xattrs_ht_sort(const void *d1, const void *d2)
 	return memcmp(v2->xattr->value, v1->xattr->value, v1->xattr->value_len);
 }
 
-static bool str_has_prefix(const char *str, const char *prefix)
-{
-	return strncmp(str, prefix, strlen(prefix)) == 0;
-}
-
 static uint8_t xattr_erofs_entry_index(struct lcfs_xattr_s *xattr, char **rest)
 {
 	char *key = xattr->key;
@@ -1052,18 +1047,6 @@ static int write_erofs_shared_xattrs(struct lcfs_ctx_s *ctx)
 	}
 
 	return 0;
-}
-
-static char *str_join(const char *a, const char *b)
-{
-	size_t a_len = strlen(a);
-	size_t b_len = strlen(b);
-	char *res = malloc(a_len + b_len + 1);
-	if (res) {
-		memcpy(res, a, a_len);
-		memcpy(res + a_len, b, b_len + 1);
-	}
-	return res;
 }
 
 static int add_overlayfs_xattrs(struct lcfs_node_s *node)

@@ -61,17 +61,6 @@ char *maybe_join_path(const char *a, const char *b)
 	return res;
 }
 
-static char *memdup(const char *s, size_t len)
-{
-	char *s2 = malloc(len);
-	if (s2 == NULL) {
-		errno = ENOMEM;
-		return NULL;
-	}
-	memcpy(s2, s, len);
-	return s2;
-}
-
 size_t hash_memory(const char *string, size_t len, size_t n_buckets)
 {
 	size_t i, value = 0;
