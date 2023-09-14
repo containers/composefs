@@ -16,7 +16,7 @@ def dumpfile(file, root):
     nlink = s.st_nlink;
     if args.no_nlink:
         nlink = 1
-    print(f"{shlex.quote(rel)} {s.st_mode} {nlink} {s.st_uid}:{s.st_gid} {s.st_rdev} {s.st_mtime_ns}",end="")
+    print(f"{shlex.quote(rel)} {oct(s.st_mode)} {nlink} {s.st_uid}:{s.st_gid} {s.st_rdev} {s.st_mtime_ns}",end="")
     if stat.S_ISREG(s.st_mode):
         digest = hashlib.sha256(open(file,'rb').read()).hexdigest()
         print(f" {s.st_size} sha256:{digest}",end="")
