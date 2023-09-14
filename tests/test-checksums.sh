@@ -4,6 +4,11 @@ BINDIR="$1"
 ASSET_DIR="$2"
 TEST_ASSETS="$3"
 
+has_fsck=n
+if which fsck.erofs &>/dev/null; then
+    has_fsck=y
+fi
+
 set -e
 tmpfile=$(mktemp /tmp/lcfs-test.XXXXXX)
 tmpfile2=$(mktemp /tmp/lcfs-test.XXXXXX)
@@ -24,6 +29,11 @@ for format in erofs ; do
 
         $CAT $ASSET_DIR/$file | ${BINDIR}/composefs-from-json --format=$format --out=$tmpfile -
         SHA=$(sha256sum $tmpfile | awk "{print \$1}")
+
+        # Run fsck.erofs to make sure we're not generating anything weird
+        if [ $has_fsck == y ]; then
+            fsck.erofs $tmpfile
+        fi
 
         if [ $SHA != $EXPECTED_SHA ]; then
             echo Invalid $format checksum of file generated from $file: $SHA, expected $EXPECTED_SHA
