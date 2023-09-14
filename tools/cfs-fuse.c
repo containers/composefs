@@ -645,15 +645,16 @@ static void cfs_init(void *userdata, struct fuse_conn_info *conn)
 		conn->want |= FUSE_CAP_SPLICE_READ;
 }
 
-#define OVERLAY_PREFIX "overlay."
+#define OVERLAY_XATTR_PARTIAL_PREFIX "overlay."
 
 static int cfs_rewrite_xattr_prefix_from_image(int name_index, const char *name,
 					       size_t name_len)
 {
 	/* We rewrite trusted.overlay.* to user.overlay.* */
 	if (name_index == EROFS_XATTR_INDEX_TRUSTED &&
-	    name_len > strlen(OVERLAY_PREFIX) &&
-	    memcmp(name, OVERLAY_PREFIX, strlen(OVERLAY_PREFIX)) == 0)
+	    name_len > strlen(OVERLAY_XATTR_PARTIAL_PREFIX) &&
+	    memcmp(name, OVERLAY_XATTR_PARTIAL_PREFIX,
+		   strlen(OVERLAY_XATTR_PARTIAL_PREFIX)) == 0)
 		return EROFS_XATTR_INDEX_USER;
 
 	return name_index;
@@ -664,8 +665,9 @@ static int cfs_rewrite_xattr_prefix_to_image(int name_index, const char *name,
 {
 	/* We rewrite trusted.overlay.* to user.overlay.* */
 	if (name_index == EROFS_XATTR_INDEX_USER &&
-	    name_len > strlen(OVERLAY_PREFIX) &&
-	    memcmp(name, OVERLAY_PREFIX, strlen(OVERLAY_PREFIX)) == 0)
+	    name_len > strlen(OVERLAY_XATTR_PARTIAL_PREFIX) &&
+	    memcmp(name, OVERLAY_XATTR_PARTIAL_PREFIX,
+		   strlen(OVERLAY_XATTR_PARTIAL_PREFIX)) == 0)
 		return EROFS_XATTR_INDEX_TRUSTED;
 
 	return name_index;

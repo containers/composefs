@@ -29,6 +29,28 @@
  */
 #define LCFS_BUILD_INLINE_FILE_SIZE_LIMIT 64
 
+#define OVERLAY_XATTR_USER_PREFIX "user."
+#define OVERLAY_XATTR_TRUSTED_PREFIX "trusted."
+#define OVERLAY_XATTR_PARTIAL_PREFIX "overlay."
+#define OVERLAY_XATTR_PREFIX                                                   \
+	OVERLAY_XATTR_TRUSTED_PREFIX OVERLAY_XATTR_PARTIAL_PREFIX
+#define OVERLAY_XATTR_USERXATTR_PREFIX                                         \
+	OVERLAY_XATTR_USER_PREFIX OVERLAY_XATTR_PARTIAL_PREFIX
+#define OVERLAY_XATTR_ESCAPE_PREFIX OVERLAY_XATTR_PREFIX "overlay."
+#define OVERLAY_XATTR_METACOPY OVERLAY_XATTR_PREFIX "metacopy"
+#define OVERLAY_XATTR_REDIRECT OVERLAY_XATTR_PREFIX "redirect"
+#define OVERLAY_XATTR_WHITEOUT OVERLAY_XATTR_PREFIX "whiteout"
+#define OVERLAY_XATTR_WHITEOUTS OVERLAY_XATTR_PREFIX "whiteouts"
+#define OVERLAY_XATTR_OPAQUE OVERLAY_XATTR_PREFIX "opaque"
+
+#define OVERLAY_XATTR_ESCAPED_WHITEOUT OVERLAY_XATTR_ESCAPE_PREFIX "whiteout"
+#define OVERLAY_XATTR_ESCAPED_WHITEOUTS OVERLAY_XATTR_ESCAPE_PREFIX "whiteouts"
+
+#define OVERLAY_XATTR_USERXATTR_WHITEOUT                                       \
+	OVERLAY_XATTR_USERXATTR_PREFIX "whiteout"
+#define OVERLAY_XATTR_USERXATTR_WHITEOUTS                                      \
+	OVERLAY_XATTR_USERXATTR_PREFIX "whiteouts"
+
 #define ALIGN_TO(_offset, _align_size)                                         \
 	(((_offset) + _align_size - 1) & ~(_align_size - 1))
 

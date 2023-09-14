@@ -1058,10 +1058,10 @@ static int add_overlayfs_xattrs(struct lcfs_node_s *node)
 	for (size_t i = 0; i < lcfs_node_get_n_xattr(node); i++) {
 		const char *name = lcfs_node_get_xattr_name(node, i);
 
-		if (str_has_prefix(name, "trusted.overlay.")) {
+		if (str_has_prefix(name, OVERLAY_XATTR_PREFIX)) {
 			cleanup_free char *renamed =
-				str_join("trusted.overlay.overlay.",
-					 name + strlen("trusted.overlay."));
+				str_join(OVERLAY_XATTR_ESCAPE_PREFIX,
+					 name + strlen(OVERLAY_XATTR_PREFIX));
 			if (renamed == NULL) {
 				errno = ENOMEM;
 				return -1;
@@ -1087,7 +1087,7 @@ static int add_overlayfs_xattrs(struct lcfs_node_s *node)
 			memcpy(xattr_data + 4, node->digest, LCFS_DIGEST_SIZE);
 		}
 
-		ret = lcfs_node_set_xattr(node, "trusted.overlay.metacopy",
+		ret = lcfs_node_set_xattr(node, OVERLAY_XATTR_METACOPY,
 					  (const char *)xattr_data, xattr_len);
 		if (ret < 0)
 			return ret;
@@ -1098,7 +1098,7 @@ static int add_overlayfs_xattrs(struct lcfs_node_s *node)
 				errno = ENOMEM;
 				return -1;
 			}
-			ret = lcfs_node_set_xattr(node, "trusted.overlay.redirect",
+			ret = lcfs_node_set_xattr(node, OVERLAY_XATTR_REDIRECT,
 						  path, strlen(path));
 			free(path);
 			if (ret < 0)
@@ -1112,14 +1112,14 @@ static int add_overlayfs_xattrs(struct lcfs_node_s *node)
 
 		lcfs_node_set_mode(node,
 				   S_IFREG | (lcfs_node_get_mode(node) & ~S_IFMT));
-		ret = lcfs_node_set_xattr(node, "trusted.overlay.overlay.whiteout",
+		ret = lcfs_node_set_xattr(node, OVERLAY_XATTR_ESCAPED_WHITEOUT,
 					  "", 0);
 		if (ret < 0)
 			return ret;
 
 		/* Mark parent dir containing whiteouts */
-		ret = lcfs_node_set_xattr(
-			parent, "trusted.overlay.overlay.whiteouts", "", 0);
+		ret = lcfs_node_set_xattr(parent,
+					  OVERLAY_XATTR_ESCAPED_WHITEOUTS, "", 0);
 		if (ret < 0)
 			return ret;
 	}
@@ -1244,7 +1244,7 @@ static int set_overlay_opaque(struct lcfs_node_s *node)
 {
 	int ret;
 
-	ret = lcfs_node_set_xattr(node, "trusted.overlay.opaque", "y", 1);
+	ret = lcfs_node_set_xattr(node, OVERLAY_XATTR_OPAQUE, "y", 1);
 	if (ret < 0)
 		return ret;
 
