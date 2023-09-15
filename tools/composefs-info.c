@@ -231,7 +231,9 @@ static void print_objects(struct lcfs_node_s *node)
 	get_objects(node, ht);
 
 	size_t n_objects = hash_get_n_entries(ht);
-	char **objects = calloc(n_objects, sizeof(char *));
+	cleanup_free char **objects = calloc(n_objects, sizeof(char *));
+	if (objects == NULL)
+		errx(EXIT_FAILURE, "Out of memory");
 
 	hash_get_entries(ht, (void **)objects, n_objects);
 
