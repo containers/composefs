@@ -8,6 +8,7 @@ libcomposefs_la_SOURCES = \
                         $(COMPOSEFSDIR)/hash.h \
                         $(COMPOSEFSDIR)/lcfs-internal.h \
                         $(COMPOSEFSDIR)/lcfs-erofs.h \
+                        $(COMPOSEFSDIR)/lcfs-erofs-internal.h \
                         $(COMPOSEFSDIR)/lcfs-fsverity.c \
                         $(COMPOSEFSDIR)/lcfs-fsverity.h \
                         $(COMPOSEFSDIR)/lcfs-writer-erofs.c \

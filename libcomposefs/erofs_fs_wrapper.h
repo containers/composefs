@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <linux/types.h>
 
 #define __packed                        __attribute__((__packed__))
@@ -32,6 +33,14 @@ static inline __u64 le64_to_cpu(__u64 val)
 {
 	return le64toh(val);
 }
+
+/* Note: These only do power of 2 */
+#define __round_mask(x, y) ((__typeof__(x))((y)-1))
+#define round_up(x, y) ((((x)-1) | __round_mask(x, y)) + 1)
+#define round_down(x, y) ((x) & ~__round_mask(x, y))
+
+#define ALIGN_TO(_offset, _align_size)                                         \
+	(((_offset) + _align_size - 1) & ~(_align_size - 1))
 
 #define BIT(nr)  (((uint64_t) 1) << (nr))
 #define BUILD_BUG_ON(condition) ((void)sizeof(char[1 - 2 * !!(condition)]))

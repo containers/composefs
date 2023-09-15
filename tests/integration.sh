@@ -16,6 +16,10 @@ prev_digest=$(cat digest.txt)
 new_digest=$(mkcomposefs --by-digest --print-digest-only ${testsrc})
 test "$prev_digest" = "$new_digest"
 
+if which fsck.erofs &>/dev/null; then
+    fsck.erofs ${cfsroot}/roots/test.cfs
+fi
+
 mkdir -p mnt
 mount.composefs -o basedir=${cfsroot}/objects ${cfsroot}/roots/test.cfs mnt
 $orig/tests/dumpdir --no-nlink ${testsrc} > src-dump.txt

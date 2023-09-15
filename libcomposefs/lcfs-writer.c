@@ -34,6 +34,7 @@
 #include <sys/xattr.h>
 #include <sys/param.h>
 #include <assert.h>
+#include <sys/mman.h>
 
 static void lcfs_node_remove_all_children(struct lcfs_node_s *node);
 static void lcfs_node_destroy(struct lcfs_node_s *node);
@@ -59,17 +60,6 @@ char *maybe_join_path(const char *a, const char *b)
 		}
 	}
 	return res;
-}
-
-static char *memdup(const char *s, size_t len)
-{
-	char *s2 = malloc(len);
-	if (s2 == NULL) {
-		errno = ENOMEM;
-		return NULL;
-	}
-	memcpy(s2, s, len);
-	return s2;
 }
 
 size_t hash_memory(const char *string, size_t len, size_t n_buckets)
@@ -567,7 +557,7 @@ static int read_content(int fd, size_t size, uint8_t *buf)
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 					     int buildflags)
 {
-	struct lcfs_node_s *ret;
+	cleanup_node struct lcfs_node_s *ret = NULL;
 	struct stat sb;
 	int r;
 
@@ -603,16 +593,12 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 		if (do_digest || do_inline) {
 			cleanup_fd int fd =
 				openat(dirfd, fname, O_RDONLY | O_CLOEXEC);
-			if (fd < 0) {
-				lcfs_node_unref(ret);
+			if (fd < 0)
 				return NULL;
-			}
 			if (do_digest) {
 				r = lcfs_node_set_fsverity_from_fd(ret, fd);
-				if (r < 0) {
-					lcfs_node_unref(ret);
+				if (r < 0)
 					return NULL;
-				}
 				/* In case we re-read below */
 				lseek(fd, 0, SEEK_SET);
 			}
@@ -620,15 +606,11 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 				uint8_t buf[LCFS_BUILD_INLINE_FILE_SIZE_LIMIT];
 
 				r = read_content(fd, sb.st_size, buf);
-				if (r < 0) {
-					lcfs_node_unref(ret);
+				if (r < 0)
 					return NULL;
-				}
 				r = lcfs_node_set_content(ret, buf, sb.st_size);
-				if (r < 0) {
-					lcfs_node_unref(ret);
+				if (r < 0)
 					return NULL;
-				}
 			}
 		}
 	}
@@ -640,13 +622,45 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 
 	if ((buildflags & LCFS_BUILD_SKIP_XATTRS) == 0) {
 		r = read_xattrs(ret, dirfd, fname);
-		if (r < 0) {
-			lcfs_node_unref(ret);
+		if (r < 0)
 			return NULL;
-		}
 	}
 
-	return ret;
+	return steal_pointer(&ret);
+}
+
+struct lcfs_node_s *lcfs_load_node_from_fd(int fd)
+{
+	struct lcfs_node_s *node;
+	uint8_t *image_data;
+	size_t image_data_size;
+	struct stat s;
+	int errsv;
+	int r;
+
+	r = fstat(fd, &s);
+	if (r < 0) {
+		return NULL;
+	}
+
+	image_data_size = s.st_size;
+
+	image_data = mmap(0, image_data_size, PROT_READ, MAP_PRIVATE, fd, 0);
+	if (image_data == MAP_FAILED) {
+		return NULL;
+	}
+
+	node = lcfs_load_node_from_image(image_data, image_data_size);
+	if (node == NULL) {
+		errsv = errno;
+		munmap(image_data, image_data_size);
+		errno = errsv;
+		return NULL;
+	}
+
+	munmap(image_data, image_data_size);
+
+	return node;
 }
 
 int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload)
@@ -660,6 +674,11 @@ int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload)
 	node->payload = dup;
 
 	return 0;
+}
+
+const char *lcfs_node_get_payload(struct lcfs_node_s *node)
+{
+	return node->payload;
 }
 
 const uint8_t *lcfs_node_get_fsverity_digest(struct lcfs_node_s *node)
@@ -823,6 +842,11 @@ void lcfs_node_make_hardlink(struct lcfs_node_s *node, struct lcfs_node_s *targe
 	target->inode.st_nlink++;
 }
 
+struct lcfs_node_s *lcfs_node_get_hardlink_target(struct lcfs_node_s *node)
+{
+	return node->link_to;
+}
+
 int lcfs_node_add_child(struct lcfs_node_s *parent, struct lcfs_node_s *child,
 			const char *name)
 {
@@ -939,7 +963,7 @@ static void lcfs_node_destroy(struct lcfs_node_s *node)
 
 struct lcfs_node_s *lcfs_node_clone(struct lcfs_node_s *node)
 {
-	struct lcfs_node_s *new = lcfs_node_new();
+	cleanup_node struct lcfs_node_s *new = lcfs_node_new();
 	if (new == NULL)
 		return NULL;
 
@@ -953,20 +977,22 @@ struct lcfs_node_s *lcfs_node_clone(struct lcfs_node_s *node)
 	if (node->payload) {
 		new->payload = strdup(node->payload);
 		if (new->payload == NULL)
-			goto fail;
+			return NULL;
+		;
 	}
 
 	if (node->content) {
 		new->content = malloc(node->inode.st_size);
 		if (new->content == NULL)
-			goto fail;
+			return NULL;
+		;
 		memcpy(new->content, node->content, node->inode.st_size);
 	}
 
 	if (node->n_xattrs > 0) {
 		new->xattrs = malloc(sizeof(struct lcfs_xattr_s) * node->n_xattrs);
 		if (new->xattrs == NULL)
-			goto fail;
+			return NULL;
 		for (size_t i = 0; i < node->n_xattrs; i++) {
 			char *key = strdup(node->xattrs[i].key);
 			char *value = memdup(node->xattrs[i].value,
@@ -974,7 +1000,7 @@ struct lcfs_node_s *lcfs_node_clone(struct lcfs_node_s *node)
 			if (key == NULL || value == NULL) {
 				free(key);
 				free(value);
-				goto fail;
+				return NULL;
 			}
 			new->xattrs[i].key = key;
 			new->xattrs[i].value = value;
@@ -987,11 +1013,7 @@ struct lcfs_node_s *lcfs_node_clone(struct lcfs_node_s *node)
 	memcpy(new->digest, node->digest, LCFS_DIGEST_SIZE);
 	new->inode = node->inode;
 
-	return new;
-
-fail:
-	lcfs_node_unref(new);
-	return NULL;
+	return steal_pointer(&new);
 }
 
 struct lcfs_node_mapping_s {
@@ -1008,7 +1030,7 @@ struct lcfs_clone_data {
 static struct lcfs_node_s *_lcfs_node_clone_deep(struct lcfs_node_s *node,
 						 struct lcfs_clone_data *data)
 {
-	struct lcfs_node_s *new = lcfs_node_clone(node);
+	cleanup_node struct lcfs_node_s *new = lcfs_node_clone(node);
 	if (new == NULL)
 		return NULL;
 
@@ -1021,7 +1043,7 @@ static struct lcfs_node_s *_lcfs_node_clone_deep(struct lcfs_node_s *node,
 					   sizeof(struct lcfs_node_mapping_s),
 					   data->allocated_mappings);
 		if (new_mapping == NULL)
-			goto fail;
+			return NULL;
 		data->mapping = new_mapping;
 	}
 
@@ -1033,17 +1055,13 @@ static struct lcfs_node_s *_lcfs_node_clone_deep(struct lcfs_node_s *node,
 		struct lcfs_node_s *child = node->children[i];
 		struct lcfs_node_s *new_child = _lcfs_node_clone_deep(child, data);
 		if (new_child == NULL)
-			goto fail;
+			return NULL;
 
 		if (lcfs_node_add_child(new, new_child, child->name) < 0)
-			goto fail;
+			return NULL;
 	}
 
-	return new;
-
-fail:
-	lcfs_node_unref(new);
-	return NULL;
+	return steal_pointer(&new);
 }
 
 /* Rewrite all hardlinks according to mapping */

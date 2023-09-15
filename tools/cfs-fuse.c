@@ -24,8 +24,9 @@
 #include <fuse_lowlevel.h>
 #include <sys/mman.h>
 
-#include "libcomposefs/lcfs-erofs.h"
+#include "libcomposefs/lcfs-erofs-internal.h"
 #include "libcomposefs/lcfs-internal.h"
+#include "libcomposefs/lcfs-utils.h"
 
 /* TODO:
  *  Do we want to user ther negative_timeout=T option?
@@ -33,16 +34,6 @@
 
 #define CFS_ENTRY_TIMEOUT 3600.0
 #define CFS_ATTR_TIMEOUT 3600.0
-
-#define ALIGN_TO(_offset, _align_size)                                         \
-	(((_offset) + _align_size - 1) & ~(_align_size - 1))
-
-/* Note: These only do power of 2 */
-#define __round_mask(x, y) ((__typeof__(x))((y)-1))
-#define round_up(x, y) ((((x)-1) | __round_mask(x, y)) + 1)
-#define round_down(x, y) ((x) & ~__round_mask(x, y))
-
-#include "libcomposefs/erofs_fs_wrapper.h"
 
 const uint8_t *erofs_data;
 size_t erofs_data_size;
@@ -81,12 +72,6 @@ static const struct fuse_opt cfs_opts[] = {
 	FUSE_OPT_END
 };
 
-typedef union {
-	__le16 i_format;
-	struct erofs_inode_compact compact;
-	struct erofs_inode_extended extended;
-} erofs_inode;
-
 static uint64_t cfs_nid_from_ino(fuse_ino_t ino)
 {
 	if (ino == FUSE_ROOT_ID) {
@@ -110,28 +95,6 @@ static const erofs_inode *cfs_get_erofs_inode(fuse_ino_t ino)
 	/* TODO: Add bounds check */
 
 	return (const erofs_inode *)(erofs_metadata + (nid << EROFS_ISLOTBITS));
-}
-
-static uint16_t erofs_inode_version(const erofs_inode *cino)
-{
-	uint16_t i_format = lcfs_u16_from_file(cino->i_format);
-	return (i_format >> EROFS_I_VERSION_BIT) & EROFS_I_VERSION_MASK;
-}
-
-static bool erofs_inode_is_compact(const erofs_inode *cino)
-{
-	return erofs_inode_version(cino) == 0;
-}
-
-static uint16_t erofs_inode_datalayout(const erofs_inode *cino)
-{
-	uint16_t i_format = lcfs_u16_from_file(cino->i_format);
-	return (i_format >> EROFS_I_DATALAYOUT_BIT) & EROFS_I_DATALAYOUT_MASK;
-}
-
-static bool erofs_inode_is_tailpacked(const erofs_inode *cino)
-{
-	return erofs_inode_datalayout(cino) == EROFS_INODE_FLAT_INLINE;
 }
 
 static int cfs_stat(fuse_ino_t ino, const erofs_inode *cino, struct stat *stbuf)
@@ -210,8 +173,6 @@ static void erofs_inode_get_info(const erofs_inode *cino, uint32_t *mode,
 		*isize = sizeof(struct erofs_inode_extended);
 	}
 }
-
-#define min(a, b) (((a) < (b)) ? (a) : (b))
 
 /* This is essentially strcmp() for non-null-terminated strings */
 static inline int memcmp2(const void *a, const size_t a_size, const void *b,
@@ -298,10 +259,12 @@ static void cfs_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
 	size_t xattr_size;
 	size_t isize;
 	uint64_t n_blocks;
-	uint64_t last_block;
+	uint64_t last_oob_block;
 	bool tailpacked;
+	size_t tail_size;
+	const uint8_t *tail_data;
+	const uint8_t *oob_data;
 	int start_block, end_block;
-	int cmp;
 
 	if (parent_cino == NULL) {
 		fuse_reply_err(req, ENOENT);
@@ -316,26 +279,25 @@ static void cfs_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
 		return;
 	}
 
-	xattr_size = 0;
-	if (xattr_icount > 0)
-		xattr_size = sizeof(struct erofs_xattr_ibody_header) +
-			     (xattr_icount - 1) * 4;
+	xattr_size = erofs_xattr_inode_size(xattr_icount);
 
 	tailpacked = erofs_inode_is_tailpacked(parent_cino);
+	tail_size = tailpacked ? file_size % EROFS_BLKSIZ : 0;
+	tail_data = ((uint8_t *)parent_cino) + isize + xattr_size;
 	n_blocks = round_up(file_size, EROFS_BLKSIZ) / EROFS_BLKSIZ;
-	last_block = tailpacked ? n_blocks - 1 : n_blocks;
+	last_oob_block = tailpacked ? n_blocks - 1 : n_blocks;
+	oob_data = erofs_data + raw_blkaddr * EROFS_BLKSIZ;
 
 	/* First read the out-of-band blocks */
 	start_block = 0;
-	end_block = last_block - 1;
+	end_block = last_oob_block - 1;
 	while (start_block <= end_block) {
 		int mid_block = start_block + (end_block - start_block) / 2;
-		const uint8_t *block_data =
-			erofs_data + ((raw_blkaddr + mid_block) * EROFS_BLKSIZ);
+		const uint8_t *block_data = oob_data + mid_block * EROFS_BLKSIZ;
 		size_t block_size = EROFS_BLKSIZ;
 		int cmp;
 
-		if (!tailpacked && mid_block + 1 == last_block) {
+		if (!tailpacked && mid_block + 1 == last_oob_block) {
 			block_size = file_size % EROFS_BLKSIZ;
 			if (block_size == 0) {
 				block_size = EROFS_BLKSIZ;
@@ -357,10 +319,8 @@ static void cfs_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
 	}
 
 	if (tailpacked && start_block > end_block) {
-		const uint8_t *block_data =
-			((uint8_t *)parent_cino) + isize + xattr_size;
-		if (cfs_lookup_block(req, block_data, file_size % EROFS_BLKSIZ,
-				     name, &cmp))
+		int cmp;
+		if (cfs_lookup_block(req, tail_data, tail_size, name, &cmp))
 			return;
 	}
 
@@ -510,9 +470,12 @@ static void _cfs_readdir(fuse_req_t req, fuse_ino_t ino, size_t max_size,
 	size_t xattr_size;
 	size_t isize;
 	uint64_t n_blocks;
-	uint64_t last_block;
+	uint64_t last_oob_block;
 	size_t first_block;
 	bool tailpacked;
+	size_t tail_size;
+	const uint8_t *tail_data;
+	const uint8_t *oob_data;
 	uint32_t raw_blkaddr;
 	uint8_t bufdata[max_size];
 	bool done;
@@ -526,15 +489,15 @@ static void _cfs_readdir(fuse_req_t req, fuse_ino_t ino, size_t max_size,
 	erofs_inode_get_info(cino, &mode, &file_size, &xattr_icount,
 			     &raw_blkaddr, &isize);
 
-	xattr_size = 0;
-	if (xattr_icount > 0)
-		xattr_size = sizeof(struct erofs_xattr_ibody_header) +
-			     (xattr_icount - 1) * 4;
+	xattr_size = erofs_xattr_inode_size(xattr_icount);
 
 	tailpacked = erofs_inode_is_tailpacked(cino);
+	tail_size = tailpacked ? file_size % EROFS_BLKSIZ : 0;
+	tail_data = ((uint8_t *)cino) + isize + xattr_size;
 	n_blocks = round_up(file_size, EROFS_BLKSIZ) / EROFS_BLKSIZ;
-	last_block = tailpacked ? n_blocks - 1 : n_blocks;
+	last_oob_block = tailpacked ? n_blocks - 1 : n_blocks;
 	first_block = buf.offset / EROFS_BLKSIZ;
+	oob_data = erofs_data + raw_blkaddr * EROFS_BLKSIZ;
 
 	if (first_block >= n_blocks) {
 		goto out;
@@ -542,11 +505,11 @@ static void _cfs_readdir(fuse_req_t req, fuse_ino_t ino, size_t max_size,
 
 	/* First read the out-of-band blocks */
 	done = false;
-	for (uint64_t block = first_block; block < last_block; block++) {
+	for (uint64_t block = first_block; block < last_oob_block; block++) {
 		size_t block_start = block * EROFS_BLKSIZ;
 		size_t block_size = EROFS_BLKSIZ;
 
-		if (!tailpacked && block + 1 == last_block) {
+		if (!tailpacked && block + 1 == last_oob_block) {
 			block_size = file_size % EROFS_BLKSIZ;
 			if (block_size == 0) {
 				block_size = EROFS_BLKSIZ;
@@ -555,8 +518,7 @@ static void _cfs_readdir(fuse_req_t req, fuse_ino_t ino, size_t max_size,
 
 		if (buf.offset >= block_start &&
 		    buf.offset < block_start + block_size) {
-			const uint8_t *block_data =
-				erofs_data + raw_blkaddr * EROFS_BLKSIZ + block_start;
+			const uint8_t *block_data = oob_data + block_start;
 			if (cfs_readdir_block(req, &buf, block_data, block_size,
 					      block_start, use_plus)) {
 				done = true;
@@ -566,14 +528,10 @@ static void _cfs_readdir(fuse_req_t req, fuse_ino_t ino, size_t max_size,
 	}
 
 	if (!done && tailpacked) {
-		size_t block_start = last_block * EROFS_BLKSIZ;
-		size_t block_size = file_size % EROFS_BLKSIZ;
+		size_t block_start = last_oob_block * EROFS_BLKSIZ;
 
-		if (buf.offset >= block_start &&
-		    buf.offset < block_start + block_size) {
-			const uint8_t *block_data =
-				((uint8_t *)cino) + isize + xattr_size;
-			cfs_readdir_block(req, &buf, block_data, block_size,
+		if (buf.offset >= block_start && buf.offset < block_start + tail_size) {
+			cfs_readdir_block(req, &buf, tail_data, tail_size,
 					  block_start, use_plus);
 		}
 	}
@@ -648,10 +606,7 @@ static void cfs_readlink(fuse_req_t req, fuse_ino_t ino)
 		return;
 	}
 
-	xattr_size = 0;
-	if (xattr_icount > 0)
-		xattr_size = sizeof(struct erofs_xattr_ibody_header) +
-			     (xattr_icount - 1) * 4;
+	xattr_size = erofs_xattr_inode_size(xattr_icount);
 
 	tailpacked = erofs_inode_is_tailpacked(cino);
 	if (!tailpacked) {
@@ -684,53 +639,16 @@ static void cfs_init(void *userdata, struct fuse_conn_info *conn)
 		conn->want |= FUSE_CAP_SPLICE_READ;
 }
 
-const char *erofs_xattr_prefixes[] = {
-	"",
-	"user.",
-	"system.posix_acl_access",
-	"system.posix_acl_default",
-	"trusted.",
-	"lustre.",
-	"security.",
-};
-
-#define EROFS_N_PREFIXES (sizeof(erofs_xattr_prefixes) / sizeof(char *))
-
-static bool is_acl_xattr(int prefix, const char *name, size_t name_len)
-{
-	const char *const nfs_acl = "system.nfs4_acl";
-
-	if ((prefix == EROFS_XATTR_INDEX_POSIX_ACL_ACCESS ||
-	     prefix == EROFS_XATTR_INDEX_POSIX_ACL_DEFAULT) &&
-	    name_len == 0)
-		return true;
-	if (prefix == 0 && name_len == strlen(nfs_acl) &&
-	    memcmp(name, nfs_acl, strlen(nfs_acl)) == 0)
-		return true;
-	return false;
-}
-
-static int erofs_get_xattr_prefix(const char *str)
-{
-	for (int i = 1; i < EROFS_N_PREFIXES; i++) {
-		const char *prefix = erofs_xattr_prefixes[i];
-		if (strlen(str) >= strlen(prefix) &&
-		    memcmp(str, prefix, strlen(prefix)) == 0) {
-			return i;
-		}
-	}
-	return 0;
-}
-
-#define OVERLAY_PREFIX "overlay."
+#define OVERLAY_XATTR_PARTIAL_PREFIX "overlay."
 
 static int cfs_rewrite_xattr_prefix_from_image(int name_index, const char *name,
 					       size_t name_len)
 {
 	/* We rewrite trusted.overlay.* to user.overlay.* */
 	if (name_index == EROFS_XATTR_INDEX_TRUSTED &&
-	    name_len > strlen(OVERLAY_PREFIX) &&
-	    memcmp(name, OVERLAY_PREFIX, strlen(OVERLAY_PREFIX)) == 0)
+	    name_len > strlen(OVERLAY_XATTR_PARTIAL_PREFIX) &&
+	    memcmp(name, OVERLAY_XATTR_PARTIAL_PREFIX,
+		   strlen(OVERLAY_XATTR_PARTIAL_PREFIX)) == 0)
 		return EROFS_XATTR_INDEX_USER;
 
 	return name_index;
@@ -741,8 +659,9 @@ static int cfs_rewrite_xattr_prefix_to_image(int name_index, const char *name,
 {
 	/* We rewrite trusted.overlay.* to user.overlay.* */
 	if (name_index == EROFS_XATTR_INDEX_USER &&
-	    name_len > strlen(OVERLAY_PREFIX) &&
-	    memcmp(name, OVERLAY_PREFIX, strlen(OVERLAY_PREFIX)) == 0)
+	    name_len > strlen(OVERLAY_XATTR_PARTIAL_PREFIX) &&
+	    memcmp(name, OVERLAY_XATTR_PARTIAL_PREFIX,
+		   strlen(OVERLAY_XATTR_PARTIAL_PREFIX)) == 0)
 		return EROFS_XATTR_INDEX_TRUSTED;
 
 	return name_index;
@@ -815,10 +734,7 @@ static void cfs_listxattr(fuse_req_t req, fuse_ino_t ino, size_t max_size)
 		return;
 	}
 
-	xattr_size = 0;
-	if (xattr_icount > 0)
-		xattr_size = sizeof(struct erofs_xattr_ibody_header) +
-			     (xattr_icount - 1) * 4;
+	xattr_size = erofs_xattr_inode_size(xattr_icount);
 
 	xattrs_start = ((uint8_t *)cino) + isize;
 	xattrs_end = ((uint8_t *)cino) + isize + xattr_size;
@@ -900,10 +816,7 @@ static const char *do_getxattr(const erofs_inode *cino, int name_prefix,
 		return NULL;
 	}
 
-	xattr_size = 0;
-	if (xattr_icount > 0)
-		xattr_size = sizeof(struct erofs_xattr_ibody_header) +
-			     (xattr_icount - 1) * 4;
+	xattr_size = erofs_xattr_inode_size(xattr_icount);
 
 	xattrs_start = ((uint8_t *)cino) + isize;
 	xattrs_end = ((uint8_t *)cino) + isize + xattr_size;
@@ -978,7 +891,7 @@ static void cfs_getxattr(fuse_req_t req, fuse_ino_t ino, const char *name,
 
 	/* When acls are not used, send EOPTNOTSUPP, as this informs
 	   userspace to stop constantly looking for acls */
-	if (!erofs_use_acl && is_acl_xattr(name_prefix, name, name_len)) {
+	if (!erofs_use_acl && erofs_is_acl_xattr(name_prefix, name, name_len)) {
 		fuse_reply_err(req, EOPNOTSUPP);
 		return;
 	}
@@ -1048,16 +961,72 @@ static void cfs_release(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *f
 	fuse_reply_err(req, 0);
 }
 
+static void cfs_read_inline(fuse_req_t req, fuse_ino_t ino, size_t size,
+			    off_t offset, struct fuse_file_info *fi)
+{
+	const erofs_inode *cino = cfs_get_erofs_inode(ino);
+	uint32_t mode;
+	uint64_t file_size;
+	uint16_t xattr_icount;
+	size_t xattr_size;
+	size_t isize;
+	uint64_t n_blocks;
+	uint64_t last_oob_block;
+	bool tailpacked;
+	size_t tail_size;
+	uint32_t raw_blkaddr;
+	off_t oob_size;
+	const uint8_t *tail_data;
+	const uint8_t *oob_data;
+	struct iovec iov[2];
+	int i;
+
+	if (!erofs_inode_is_flat(cino)) {
+		fuse_reply_err(req, ENXIO);
+		return;
+	}
+
+	erofs_inode_get_info(cino, &mode, &file_size, &xattr_icount,
+			     &raw_blkaddr, &isize);
+
+	xattr_size = erofs_xattr_inode_size(xattr_icount);
+
+	tailpacked = erofs_inode_is_tailpacked(cino);
+	tail_size = tailpacked ? file_size % EROFS_BLKSIZ : 0;
+	tail_data = ((uint8_t *)cino) + isize + xattr_size;
+
+	n_blocks = round_up(file_size, EROFS_BLKSIZ) / EROFS_BLKSIZ;
+	last_oob_block = tailpacked ? n_blocks - 1 : n_blocks;
+
+	oob_data = erofs_data + raw_blkaddr * EROFS_BLKSIZ;
+	oob_size = tailpacked ? last_oob_block * EROFS_BLKSIZ : file_size;
+
+	i = 0;
+	if (offset < oob_size) {
+		size_t oob_send = min(size, oob_size);
+		iov[i].iov_base = (uint8_t *)oob_data;
+		iov[i++].iov_len = oob_send;
+		size -= oob_send;
+	}
+
+	if (size > 0 && tail_size > 0) {
+		size_t tail_send = min(size, tail_size);
+		iov[i].iov_base = (uint8_t *)tail_data;
+		iov[i++].iov_len = tail_send;
+		size -= tail_send;
+	}
+
+	fuse_reply_iov(req, iov, i);
+}
+
 static void cfs_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t offset,
 		     struct fuse_file_info *fi)
 {
 	struct fuse_bufvec buf = FUSE_BUFVEC_INIT(size);
 	int fd = fi->fh;
-	char c;
 
 	if (fd < 0) {
-		c = 0;
-		fuse_reply_buf(req, &c, 0);
+		cfs_read_inline(req, ino, size, offset, fi);
 	} else {
 		buf.buf[0].flags = FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK;
 		buf.buf[0].fd = fd;

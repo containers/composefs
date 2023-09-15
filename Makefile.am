@@ -1,4 +1,4 @@
-SUBDIRS=libcomposefs tools
+SUBDIRS=libcomposefs tools tests
 
 EXTRA_DIST=\
 	composefs.pc.in \
