@@ -376,13 +376,15 @@ int lcfs_write_to(struct lcfs_node_s *root, struct lcfs_write_options_s *options
 	return 0;
 }
 
-static int read_xattrs(struct lcfs_node_s *ret, int dirfd, const char *fname)
+static int read_xattrs(struct lcfs_node_s *ret, int dirfd, const char *fname,
+		       int buildflags)
 {
 	char path[PATH_MAX];
 	ssize_t list_size;
 	cleanup_free char *list = NULL;
 	ssize_t r = 0;
 	cleanup_fd int fd = -1;
+	bool user_xattr = (buildflags & LCFS_BUILD_USER_XATTRS) != 0;
 
 	fd = openat(dirfd, fname, O_PATH | O_NOFOLLOW | O_CLOEXEC, 0);
 	if (fd < 0)
@@ -408,6 +410,9 @@ static int read_xattrs(struct lcfs_node_s *ret, int dirfd, const char *fname)
 	for (const char *it = list; it < list + list_size; it += strlen(it) + 1) {
 		ssize_t value_size;
 		cleanup_free char *value = NULL;
+
+		if (user_xattr && !str_has_prefix(it, "user."))
+			continue;
 
 		value_size = getxattr(path, it, NULL, 0);
 		if (value_size < 0) {
@@ -563,7 +568,14 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 
 	if (buildflags & ~(LCFS_BUILD_SKIP_XATTRS | LCFS_BUILD_USE_EPOCH |
 			   LCFS_BUILD_SKIP_DEVICES | LCFS_BUILD_COMPUTE_DIGEST |
-			   LCFS_BUILD_NO_INLINE)) {
+			   LCFS_BUILD_NO_INLINE | LCFS_BUILD_USER_XATTRS)) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	if ((buildflags & LCFS_BUILD_SKIP_XATTRS) &&
+	    (buildflags & LCFS_BUILD_USER_XATTRS)) {
+		/* These conflict */
 		errno = EINVAL;
 		return NULL;
 	}
@@ -621,7 +633,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 	}
 
 	if ((buildflags & LCFS_BUILD_SKIP_XATTRS) == 0) {
-		r = read_xattrs(ret, dirfd, fname);
+		r = read_xattrs(ret, dirfd, fname, buildflags);
 		if (r < 0)
 			return NULL;
 	}
