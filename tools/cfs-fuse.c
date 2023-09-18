@@ -152,6 +152,11 @@ static int cfs_stat(fuse_ino_t ino, const erofs_inode *cino, struct stat *stbuf)
 			stbuf->st_rdev = lcfs_u32_from_file(e->i_u.rdev);
 	}
 
+	stbuf->st_atim.tv_sec = stbuf->st_mtim.tv_sec;
+	stbuf->st_atim.tv_nsec = stbuf->st_mtim.tv_nsec;
+	stbuf->st_ctim.tv_sec = stbuf->st_mtim.tv_sec;
+	stbuf->st_ctim.tv_nsec = stbuf->st_mtim.tv_nsec;
+
 	return 0;
 }
 
