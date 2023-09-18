@@ -144,7 +144,7 @@ static int cfs_stat(fuse_ino_t ino, const erofs_inode *cino, struct stat *stbuf)
 		stbuf->st_uid = lcfs_u32_from_file(e->i_uid);
 		stbuf->st_gid = lcfs_u32_from_file(e->i_gid);
 		stbuf->st_mtim.tv_sec = lcfs_u64_from_file(e->i_mtime);
-		stbuf->st_mtim.tv_nsec = lcfs_u32_from_file(e->i_mtime);
+		stbuf->st_mtim.tv_nsec = lcfs_u32_from_file(e->i_mtime_nsec);
 		stbuf->st_nlink = lcfs_u32_from_file(e->i_nlink);
 
 		int type = stbuf->st_mode & S_IFMT;
