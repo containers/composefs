@@ -23,6 +23,7 @@
 #include <linux/fsverity.h>
 #include <fuse_lowlevel.h>
 #include <sys/mman.h>
+#include <sys/sysmacros.h>
 
 #include "libcomposefs/lcfs-erofs-internal.h"
 #include "libcomposefs/lcfs-internal.h"
@@ -95,6 +96,24 @@ static const erofs_inode *cfs_get_erofs_inode(fuse_ino_t ino)
 	/* TODO: Add bounds check */
 
 	return (const erofs_inode *)(erofs_metadata + (nid << EROFS_ISLOTBITS));
+}
+
+static int erofs_inode_is_whiteout(const erofs_inode *cino)
+{
+	mode_t mode;
+	dev_t rdev;
+	if (erofs_inode_is_compact(cino)) {
+		const struct erofs_inode_compact *c = &cino->compact;
+		mode = lcfs_u16_from_file(c->i_mode);
+		rdev = lcfs_u32_from_file(c->i_u.rdev);
+	} else {
+		const struct erofs_inode_extended *e = &cino->extended;
+		mode = lcfs_u16_from_file(e->i_mode);
+		rdev = lcfs_u32_from_file(e->i_u.rdev);
+	}
+
+	int type = mode & S_IFMT;
+	return (type == S_IFCHR || type == S_IFBLK) && rdev == makedev(0, 0);
 }
 
 static int cfs_stat(fuse_ino_t ino, const erofs_inode *cino, struct stat *stbuf)
@@ -221,13 +240,17 @@ static bool cfs_lookup_block(fuse_req_t req, const uint8_t *block,
 			const erofs_inode *child_cino = cfs_get_erofs_inode(nid);
 			struct fuse_entry_param e;
 
-			memset(&e, 0, sizeof(e));
-			e.ino = cfs_ino_from_nid(nid);
-			e.attr_timeout = CFS_ATTR_TIMEOUT;
-			e.entry_timeout = CFS_ENTRY_TIMEOUT;
-			cfs_stat(e.ino, child_cino, &e.attr);
+			if (erofs_inode_is_whiteout(child_cino)) {
+				fuse_reply_err(req, ENOENT);
+			} else {
+				memset(&e, 0, sizeof(e));
+				e.ino = cfs_ino_from_nid(nid);
+				e.attr_timeout = CFS_ATTR_TIMEOUT;
+				e.entry_timeout = CFS_ENTRY_TIMEOUT;
+				cfs_stat(e.ino, child_cino, &e.attr);
 
-			fuse_reply_entry(req, &e);
+				fuse_reply_entry(req, &e);
+			}
 
 			return true;
 		} else {
@@ -426,8 +449,13 @@ static bool cfs_readdir_block(fuse_req_t req, struct dirbuf *buf,
 		name_buf[child_name_len] = 0;
 
 		remaining_size = buf->max_size - buf->current_size;
-		if (use_plus) {
-			const erofs_inode *child_cino = cfs_get_erofs_inode(nid);
+
+		const erofs_inode *child_cino = cfs_get_erofs_inode(nid);
+		uint8_t type = dirents[i].file_type;
+		if (type == EROFS_FT_CHRDEV && erofs_inode_is_whiteout(child_cino)) {
+			/* Filtered */
+			res = 0;
+		} else if (use_plus) {
 			struct fuse_entry_param e;
 
 			memset(&e, 0, sizeof(e));
@@ -440,7 +468,6 @@ static bool cfs_readdir_block(fuse_req_t req, struct dirbuf *buf,
 				req, (char *)(buf->buf + buf->current_size),
 				remaining_size, name_buf, &e, next_offset);
 		} else {
-			uint8_t type = dirents[i].file_type;
 			memset(&stbuf, 0, sizeof(stbuf));
 			stbuf.st_ino = cfs_ino_from_nid(nid);
 			stbuf.st_mode = erofs_file_type_to_mode(type);
