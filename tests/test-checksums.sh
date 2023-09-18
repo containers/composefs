@@ -27,7 +27,7 @@ for format in erofs ; do
             CAT=cat
         fi
 
-        $CAT $ASSET_DIR/$file | ${BINDIR}/composefs-from-json --format=$format --out=$tmpfile -
+        $CAT $ASSET_DIR/$file | ${VALGRIND_PREFIX} ${BINDIR}/composefs-from-json --format=$format --out=$tmpfile -
         SHA=$(sha256sum $tmpfile | awk "{print \$1}")
 
         # Run fsck.erofs to make sure we're not generating anything weird
@@ -41,7 +41,7 @@ for format in erofs ; do
         fi
 
         # Ensure dump reproduces the same file
-        ${BINDIR}/composefs-dump $tmpfile $tmpfile2
+        ${VALGRIND_PREFIX} ${BINDIR}/composefs-dump $tmpfile $tmpfile2
         if ! cmp $tmpfile $tmpfile2; then
             echo Dump is not reproducible
             exit 1

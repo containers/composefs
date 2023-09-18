@@ -12,9 +12,9 @@ endif
 EXTRA_DIST = test-checksums.sh $(patsubst %,assets/%,${TEST_ASSETS_SMALL}) $(patsubst %,assets/%.sha256_erofs,${TEST_ASSETS_SMALL})
 
 check-checksums:
-	$(srcdir)/test-checksums.sh "${VALGRIND_PREFIX} $(builddir)/../tools/" "$(srcdir)/assets" "${TEST_ASSETS}"
+	VALGRIND_PREFIX="${VALGRIND_PREFIX}" $(srcdir)/test-checksums.sh "$(builddir)/../tools/" "$(srcdir)/assets" "${TEST_ASSETS}"
 
 check-units:
-	$(srcdir)/test-units.sh "${VALGRIND_PREFIX} $(builddir)/../tools/"
+	VALGRIND_PREFIX="${VALGRIND_PREFIX}" $(srcdir)/test-units.sh "$(builddir)/../tools/"
 
 check: check-units check-checksums

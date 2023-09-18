@@ -9,7 +9,7 @@ trap 'rm -rf -- "$workdir"' EXIT
 
 function makeimage () {
     local dir=$1
-    $BINDIR/mkcomposefs --digest-store=$dir/objects $dir/root $dir/test.cfs
+    ${VALGRIND_PREFIX} $BINDIR/mkcomposefs --digest-store=$dir/objects $dir/root $dir/test.cfs
 }
 
 function countobjects () {
