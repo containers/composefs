@@ -10,22 +10,58 @@ import argparse
 def log_error(error):
     print("Readdir error: " + error)
 
+def should_convert_whiteout(stbuf):
+    return args.whiteout and stat.S_ISCHR(stbuf.st_mode) and stbuf.st_rdev == os.makedev(0,0)
+
+def has_whiteout_child(path):
+    for f in os.listdir(path):
+        s = os.lstat(os.path.join(path, f))
+        if should_convert_whiteout(s):
+            return True
+    return False
+
 def dumpfile(file, root):
     rel = os.path.relpath(file, root)
     s = os.lstat(file)
+
+    st_mode = s.st_mode
+
+    content = None
+    xattrs = {}
+    if should_convert_whiteout(s):
+        content = b''
+        st_mode = (st_mode & ~stat.S_IFMT(st_mode)) | stat.S_IFREG
+        xattrs["trusted.overlay.overlay.whiteout"] = b''
+        xattrs["user.overlay.whiteout"] = b''
+
+    if stat.S_ISDIR(st_mode) and has_whiteout_child(file):
+        xattrs["trusted.overlay.overlay.whiteouts"] = b''
+        xattrs["user.overlay.whiteouts"] = b''
+
     nlink = s.st_nlink;
     if args.no_nlink:
         nlink = 1
-    print(f"{shlex.quote(rel)} {oct(s.st_mode)} {nlink} {s.st_uid}:{s.st_gid} {s.st_rdev} {s.st_mtime_ns}",end="")
-    if stat.S_ISREG(s.st_mode):
-        digest = hashlib.sha256(open(file,'rb').read()).hexdigest()
+    print(f"{shlex.quote(rel)} {oct(st_mode)} {nlink} {s.st_uid}:{s.st_gid} {s.st_rdev} {s.st_mtime_ns}",end="")
+    if stat.S_ISREG(st_mode):
+        if content == None:
+            content = open(file,'rb').read()
+        digest = hashlib.sha256(content).hexdigest()
         print(f" {s.st_size} sha256:{digest}",end="")
-    elif stat.S_ISLNK(s.st_mode):
+    elif stat.S_ISLNK(st_mode):
         link = os.readlink(file)
         print(f" ->{shlex.quote(link)}",end="")
 
     for attr in sorted(os.listxattr(file, follow_symlinks=False)):
         v = os.getxattr(file, attr, follow_symlinks=False)
+        xattrs[attr] = v
+
+    for attr in sorted(xattrs.keys()):
+        v = xattrs[attr]
+        if args.userxattr and not attr.startswith("user."):
+            continue
+        if args.noescaped and attr.startswith("trusted.overlay.overlay."):
+            continue
+
         print(f" {attr}={v}", end="")
 
     print()
@@ -40,6 +76,9 @@ def dumpdir(root):
 
 argParser = argparse.ArgumentParser()
 argParser.add_argument("--no-nlink", action='store_true')
+argParser.add_argument("--userxattr", action='store_true')
+argParser.add_argument("--whiteout", action='store_true')
+argParser.add_argument("--noescaped", action='store_true')
 argParser.add_argument('path')
 
 args = argParser.parse_args()
