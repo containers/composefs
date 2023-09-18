@@ -4,10 +4,9 @@ BINDIR="$1"
 ASSET_DIR="$2"
 TEST_ASSETS="$3"
 
-has_fsck=n
-if which fsck.erofs &>/dev/null; then
-    has_fsck=y
-fi
+. test-lib.sh
+
+has_fsck=$(check_erofs_fsck)
 
 set -e
 tmpfile=$(mktemp /tmp/lcfs-test.XXXXXX)

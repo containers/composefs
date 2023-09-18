@@ -71,6 +71,7 @@ def dumpfile(file, root):
 def dumpdir(root):
     dumpfile(root, root)
     for parent, dirs, files in os.walk(root, topdown=True, onerror=log_error):
+        dirs.sort()
         for file in sorted(dirs + files):
             dumpfile(os.path.join(parent, file), root)
 

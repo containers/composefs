@@ -17,4 +17,7 @@ check-checksums:
 check-units:
 	VALGRIND_PREFIX="${VALGRIND_PREFIX}" $(srcdir)/test-units.sh "$(builddir)/../tools/"
 
-check: check-units check-checksums
+check-random-fuse:
+	VALGRIND_PREFIX="${VALGRIND_PREFIX}" $(srcdir)/test-random-fuse.sh "$(builddir)/../tools/"
+
+check: check-units check-checksums check-random-fuse

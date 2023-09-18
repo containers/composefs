@@ -1,0 +1,195 @@
+#!/usr/bin/python3
+
+import argparse
+import hashlib
+import os
+import random
+import shlex
+import shutil
+import stat
+import string
+import sys
+
+adjectives = ["adorable", "adventurous", "aggressive", "agreeable", "alert", "alive", "amused", "angry", "annoyed", "annoying", "anxious", "arrogant", "ashamed", "attractive", "average", "awful", "bad", "beautiful", "better", "bewildered", "black", "bloody", "blue", "blue-eyed", "blushing", "bored", "brainy", "brave", "breakable", "bright", "busy", "calm", "careful", "cautious", "charming", "cheerful", "clean", "clear", "clever", "cloudy", "clumsy", "colorful", "combative", "comfortable", "concerned", "condemned", "confused", "cooperative", "courageous", "crazy", "creepy", "crowded", "cruel", "curious", "cute", "dangerous", "dark", "dead", "defeated", "defiant", "delightful", "depressed", "determined", "different", "difficult", "disgusted", "distinct", "disturbed", "dizzy", "doubtful", "drab", "dull", "eager", "easy", "elated", "elegant", "embarrassed", "enchanting", "encouraging", "energetic", "enthusiastic", "envious", "evil", "excited", "expensive", "exuberant", "fair", "faithful", "famous", "fancy", "fantastic", "fierce", "filthy", "fine", "foolish", "fragile", "frail", "frantic", "friendly", "frightened", "funny", "gentle", "gifted", "glamorous", "gleaming", "glorious", "good", "gorgeous", "graceful", "grieving", "grotesque", "grumpy", "handsome", "happy", "healthy", "helpful", "helpless", "hilarious", "homeless", "homely", "horrible", "hungry", "hurt", "ill", "important", "impossible", "inexpensive", "innocent", "inquisitive", "itchy", "jealous", "jittery", "jolly", "joyous", "kind", "lazy", "light", "lively", "lonely", "long", "lovely", "lucky", "magnificent", "misty", "modern", "motionless", "muddy", "mushy", "mysterious", "nasty", "naughty", "nervous", "nice", "nutty", "obedient", "obnoxious", "odd", "old-fashioned", "open", "outrageous", "outstanding", "panicky", "perfect", "plain", "pleasant", "poised", "poor", "powerful", "precious", "prickly", "proud", "putrid", "puzzled", "quaint", "real", "relieved", "repulsive", "rich", "scary", "selfish", "shiny", "shy", "silly", "sleepy", "smiling", "smoggy", "sore", "sparkling", "splendid", "spotless", "stormy", "strange", "stupid", "successful", "super", "talented", "tame", "tasty", "tender", "tense", "terrible", "thankful", "thoughtful", "thoughtless", "tired", "tough", "troubled", "ugliest", "ugly", "uninterested", "unsightly", "unusual", "upset", "uptight", "vast", "victorious", "vivacious", "wandering", "weary", "wicked", "wide-eyed", "wild", "witty", "worried", "worrisome", "wrong", "zany", "zealous"]
+
+nouns = ["apple", "air", "conditioner", "airport", "ambulance", "aircraft", "apartment", "arrow", "antlers", "apro", "alligator", "architect", "ankle", "armchair", "aunt", "ball", "bermudas", "beans", "balloon", "bear", "blouse", "bed", "bow", "bread", "black", "board", "bones", "bill", "bitterness", "boxers", "belt", "brain", "buffalo", "bird", "baby", "book", "back", "butter", "bulb", "buckles", "bat", "bank", "bag", "bra", "boots", "blazer", "bikini", "bookcase", "bookstore", "bus", "stop", "brass", "brother", "boy", "blender", "bucket", "bakery", "bow", "bridge", "boat", "car", "cow", "cap", "cooker", "cheeks", "cheese", "credenza", "carpet", "crow", "crest", "chest", "chair", "candy", "cabinet", "cat", "coffee", "children", "cookware", "chaise", "longue", "chicken", "casino", "cabin", "castle", "church", "cafe", "cinema", "choker", "cravat", "cane", "costume", "cardigan", "chocolate", "crib", "couch", "cello", "cashier", "composer", "cave", "country", "computer", "canoe", "clock", "charlie", "dog", "deer", "donkey", "desk", "desktop", "dress", "dolphin", "doctor", "dentist", "drum", "dresser", "designer", "detective", "daughter", "egg", "elephant", "earrings", "ears", "eyes", "estate", "finger", "fox", "frock", "frog", "fan", "freezer", "fish", "film", "foot", "flag", "factory", "father", "farm", "forest", "flower", "fruit", "fork", "grapes", "goat", "gown", "garlic", "ginger", "giraffe", "gauva", "grains", "gas", "station", "garage", "gloves", "glasses", "gift", "galaxy", "guitar", "grandmother", "grandfather", "governor", "girl", "guest", "hamburger", "hand", "head", "hair", "heart", "house", "horse", "hen", "horn", "hat", "hammer", "hostel", "hospital", "hotel", "heels", "herbs", "host", "jacket", "jersey", "jewelry", "jaw", "jumper", "judge", "juicer", "keyboard", "kid", "kangaroo", "koala", "knife", "lemon", "lion", "leggings", "leg", "laptop", "library", "lamb", "london", "lips", "lung", "lighter", "luggage", "lamp", "lawyer", "mouse", "monkey", "mouth", "mango", "mobile", "milk", "music", "mirror", "musician", "mother", "man", "model", "mall", "museum", "market", "moonlight", "medicine", "microscope", "newspaper", "nose", "notebook", "neck", "noodles", "nurse", "necklace", "noise", "ocean", "ostrich", "oil", "orange", "onion", "oven", "owl", "paper", "panda", "pants", "palm", "pasta", "pumpkin", "pharmacist", "potato", "parfume", "panther", "pad", "pencil", "pipe", "police", "pen", "pharmacy", "petrol", "station", "police", "station", "parrot", "plane", "pigeon", "phone", "peacock", "pencil", "pig", "pouch", "pagoda", "pyramid", "purse", "pancake", "popcorn", "piano", "physician", "photographer", "professor", "painter", "park", "plant", "parfume", "radio", "razor", "ribs", "rainbow", "ring", "rabbit", "rice", "refrigerator", "remote", "restaurant", "road", "surgeon", "scale", "shampoo", "sink", "salt", "shark", "sandals", "shoulder", "spoon", "soap", "sand", "sheep", "sari", "stomach", "stairs", "soup", "shoes", "scissors", "sparrow", "shirt", "suitcase", "stove", "stairs", "snowman", "shower", "swan", "suit", "sweater", "smoke", "skirt", "sofa", "socks", "stadium", "skyscraper", "school", "sunglasses", "sandals", "slippers", "shorts", "sandwich", "strawberry", "spaghetti", "shrimp", "saxophone", "sister", "son", "singer", "senator", "street", "supermarket", "swimming", "pool", "star", "sky", "sun", "spoon", "ship", "smile", "table", "turkey", "tie", "toes", "truck", "train", "taxi", "tiger", "trousers", "tongue", "television", "teacher", "turtle", "tablet", "train", "station", "toothpaste", "tail", "theater", "trench", "coat", "tea", "tomato", "teen", "tunnel", "temple", "town", "toothbrush", "tree", "toy", "tissue", "telephone", "underwear", "uncle", "umbrella", "vest", "voice", "veterinarian", "villa", "violin", "village", "vehicle", "vase", "wallet", "wolf", "waist", "wrist", "water", "melon", "whale", "water", "wings", "whisker", "watch", "woman", "washing", "machine", "wheelchair", "waiter", "wound", "xylophone", "zebra", "zoo"]
+
+def with_chance(chance):
+    return random.random() <= chance
+
+class Chance():
+    def __init__(self):
+        self.value = random.random()
+        self.start = 0
+
+    def with_chance(self, chance):
+        if self.start > 1:
+            print("Too many choices")
+        start = self.start
+        end = self.start + chance
+        self.start = end
+        return self.value >= start and self.value < end
+
+    # Choose one of weighted options
+    def choice(self, options):
+        for value, chance in options:
+            if self.with_chance(chance):
+                return value
+        # Default to first
+        value, chance = options[0]
+        return value
+
+def gen_dir_mode():
+    # For creation to work we want all dirs u+rwx
+    return random.choice([0o777, 0o755, 0o750, 0o700])
+
+def gen_file_mode():
+    return random.choice([0o644, 0o666, 0o755, 0o777])
+
+def gen_filename():
+    if not args.unreadable:
+        name = bytes(random.choice(adjectives) + "_" + random.choice(nouns) + str(random.randint(1,999)), "utf-8")
+        if len(name) > 255:
+            return gen_filename()
+        return name
+
+    name_len = random.randrange(1, 255)
+    name = [0] * name_len
+    for i in range(name_len):
+        c = random.randrange(1, 255)
+        while c == ord('/'):
+            c = random.randrange(1, 255)
+        name[i] = c
+    name=bytes(name)
+    if name == b'.' or name == b'..':
+        return gen_filename()
+    return name
+
+def gen_filenames():
+    c = Chance()
+    # 5% of dirs are huge
+    if c.with_chance(0.05):
+        num_files = random.randrange(0, 4096)
+    else:
+        num_files = random.randrange(0, 25)
+
+    files = []
+    for i in range(num_files):
+        files.append(gen_filename())
+
+    return list(sorted(set(files)))
+
+def gen_xattrname():
+    return random.choice(nouns) + str(random.randint(1,9))
+
+def gen_xattrdata():
+    return bytes(random.choice(adjectives) + str(random.randint(1,9)), "utf-8")
+
+
+def gen_hierarchy(root):
+    num_dirs = random.randrange(30, 50)
+    dirs = []
+    for i in range(num_dirs):
+        parent = random.choice([root] * 3 + dirs);
+        p = os.path.join(parent, gen_filename())
+        dirs.append(p)
+    # Sort and drop any (unlikely) duplicateds
+    return list(sorted(set(dirs)))
+
+def set_user_xattr(path):
+    n_xattrs = random.randrange(0, 3)
+    for i in range(n_xattrs):
+        name = "user." + gen_xattrname()
+        value = gen_xattrdata()
+        os.setxattr(path, name, value, follow_symlinks=False)
+
+old_files = []
+def make_regular_file(path):
+    with os.fdopen(os.open(path, os.O_WRONLY|os.O_CREAT, gen_file_mode()), 'wb') as fd:
+        c = Chance();
+        # 5% of reuse old file data
+        if len(old_files) > 0 and c.with_chance(0.05):
+            reused = random.choice(old_files)
+            with os.fdopen(os.open(reused, os.O_RDONLY), 'rb') as src:
+                shutil.copyfileobj(src, fd)
+            return
+
+        # 5% of files are large
+        if c.with_chance(0.05):
+            size = random.randrange(0, 4*1024*1024)
+        else: # Rest are small
+            size = random.randrange(0, 256)
+
+        data = random.randbytes(size)
+        fd.write(data)
+        # Save path for reuse
+        old_files.append(path)
+
+        set_user_xattr(path)
+
+def make_symlink(path):
+    target = gen_filename()
+    os.symlink(target, path)
+
+def make_node(path):
+    if not args.privileged:
+        return
+    target = gen_filename()
+    os.mknod(path, gen_file_mode() | random.choice([stat.S_IFCHR,stat.S_IFBLK]), os.makedev(0,0))
+
+def make_whiteout(path):
+    if args.nowhiteout:
+        return
+    target = gen_filename()
+    os.mknod(path, gen_file_mode() | stat.S_IFCHR, device=os.makedev(0,0))
+
+def make_fifo(path):
+    target = gen_filename()
+    os.mknod(path, gen_file_mode() | stat.S_IFIFO)
+
+def make_file(path):
+    c = Chance();
+    f = c.choice([
+        (make_regular_file, 0.7),
+        (make_symlink, 0.15),
+        (make_fifo, 0.05),
+        (make_node, 0.05),
+        (make_whiteout, 0.05)
+    ])
+    f(path)
+
+def make_dir(path, dirs):
+    os.mkdir(path, mode=gen_dir_mode())
+    set_user_xattr(path)
+    files = gen_filenames()
+    for f in files:
+        child_path = os.path.join(path, f)
+        if child_path in dirs:
+            continue
+
+        func = random.choice([make_file])
+        func(child_path)
+
+argParser = argparse.ArgumentParser()
+argParser.add_argument("--seed")
+argParser.add_argument("--unreadable", action='store_true')
+argParser.add_argument("--privileged", action='store_true')
+argParser.add_argument("--nowhiteout", action='store_true')
+argParser.add_argument('path')
+
+args = argParser.parse_args()
+
+if args.seed:
+    seed = args.seed
+else:
+    seed = os.urandom(16).hex()
+random.seed(seed)
+print(f"Using seed '{seed}'")
+
+# Generate tree structure
+root = bytes(args.path,"utf-8")
+dirs = gen_hierarchy(root)
+
+make_dir(root, dirs)
+for d in dirs:
+    make_dir(d, dirs)
