@@ -131,6 +131,11 @@ static int cfs_stat(fuse_ino_t ino, const erofs_inode *cino, struct stat *stbuf)
 
 		stbuf->st_mtim.tv_sec = erofs_build_time;
 		stbuf->st_mtim.tv_nsec = erofs_build_time_nsec;
+
+		int type = stbuf->st_mode & S_IFMT;
+		if (type == S_IFCHR || type == S_IFBLK)
+			stbuf->st_rdev = lcfs_u32_from_file(c->i_u.rdev);
+
 	} else {
 		const struct erofs_inode_extended *e = &cino->extended;
 
@@ -141,6 +146,10 @@ static int cfs_stat(fuse_ino_t ino, const erofs_inode *cino, struct stat *stbuf)
 		stbuf->st_mtim.tv_sec = lcfs_u64_from_file(e->i_mtime);
 		stbuf->st_mtim.tv_nsec = lcfs_u32_from_file(e->i_mtime);
 		stbuf->st_nlink = lcfs_u32_from_file(e->i_nlink);
+
+		int type = stbuf->st_mode & S_IFMT;
+		if (type == S_IFCHR || type == S_IFBLK)
+			stbuf->st_rdev = lcfs_u32_from_file(e->i_u.rdev);
 	}
 
 	return 0;
