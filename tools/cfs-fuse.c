@@ -23,6 +23,7 @@
 #include <linux/fsverity.h>
 #include <fuse_lowlevel.h>
 #include <sys/mman.h>
+#include <sys/sysmacros.h>
 
 #include "libcomposefs/lcfs-erofs-internal.h"
 #include "libcomposefs/lcfs-internal.h"
@@ -97,6 +98,24 @@ static const erofs_inode *cfs_get_erofs_inode(fuse_ino_t ino)
 	return (const erofs_inode *)(erofs_metadata + (nid << EROFS_ISLOTBITS));
 }
 
+static int erofs_inode_is_whiteout(const erofs_inode *cino)
+{
+	mode_t mode;
+	dev_t rdev;
+	if (erofs_inode_is_compact(cino)) {
+		const struct erofs_inode_compact *c = &cino->compact;
+		mode = lcfs_u16_from_file(c->i_mode);
+		rdev = lcfs_u32_from_file(c->i_u.rdev);
+	} else {
+		const struct erofs_inode_extended *e = &cino->extended;
+		mode = lcfs_u16_from_file(e->i_mode);
+		rdev = lcfs_u32_from_file(e->i_u.rdev);
+	}
+
+	int type = mode & S_IFMT;
+	return (type == S_IFCHR || type == S_IFBLK) && rdev == makedev(0, 0);
+}
+
 static int cfs_stat(fuse_ino_t ino, const erofs_inode *cino, struct stat *stbuf)
 {
 	stbuf->st_ino = ino;
@@ -112,6 +131,11 @@ static int cfs_stat(fuse_ino_t ino, const erofs_inode *cino, struct stat *stbuf)
 
 		stbuf->st_mtim.tv_sec = erofs_build_time;
 		stbuf->st_mtim.tv_nsec = erofs_build_time_nsec;
+
+		int type = stbuf->st_mode & S_IFMT;
+		if (type == S_IFCHR || type == S_IFBLK)
+			stbuf->st_rdev = lcfs_u32_from_file(c->i_u.rdev);
+
 	} else {
 		const struct erofs_inode_extended *e = &cino->extended;
 
@@ -120,9 +144,18 @@ static int cfs_stat(fuse_ino_t ino, const erofs_inode *cino, struct stat *stbuf)
 		stbuf->st_uid = lcfs_u32_from_file(e->i_uid);
 		stbuf->st_gid = lcfs_u32_from_file(e->i_gid);
 		stbuf->st_mtim.tv_sec = lcfs_u64_from_file(e->i_mtime);
-		stbuf->st_mtim.tv_nsec = lcfs_u32_from_file(e->i_mtime);
+		stbuf->st_mtim.tv_nsec = lcfs_u32_from_file(e->i_mtime_nsec);
 		stbuf->st_nlink = lcfs_u32_from_file(e->i_nlink);
+
+		int type = stbuf->st_mode & S_IFMT;
+		if (type == S_IFCHR || type == S_IFBLK)
+			stbuf->st_rdev = lcfs_u32_from_file(e->i_u.rdev);
 	}
+
+	stbuf->st_atim.tv_sec = stbuf->st_mtim.tv_sec;
+	stbuf->st_atim.tv_nsec = stbuf->st_mtim.tv_nsec;
+	stbuf->st_ctim.tv_sec = stbuf->st_mtim.tv_sec;
+	stbuf->st_ctim.tv_nsec = stbuf->st_mtim.tv_nsec;
 
 	return 0;
 }
@@ -221,13 +254,17 @@ static bool cfs_lookup_block(fuse_req_t req, const uint8_t *block,
 			const erofs_inode *child_cino = cfs_get_erofs_inode(nid);
 			struct fuse_entry_param e;
 
-			memset(&e, 0, sizeof(e));
-			e.ino = cfs_ino_from_nid(nid);
-			e.attr_timeout = CFS_ATTR_TIMEOUT;
-			e.entry_timeout = CFS_ENTRY_TIMEOUT;
-			cfs_stat(e.ino, child_cino, &e.attr);
+			if (erofs_inode_is_whiteout(child_cino)) {
+				fuse_reply_err(req, ENOENT);
+			} else {
+				memset(&e, 0, sizeof(e));
+				e.ino = cfs_ino_from_nid(nid);
+				e.attr_timeout = CFS_ATTR_TIMEOUT;
+				e.entry_timeout = CFS_ENTRY_TIMEOUT;
+				cfs_stat(e.ino, child_cino, &e.attr);
 
-			fuse_reply_entry(req, &e);
+				fuse_reply_entry(req, &e);
+			}
 
 			return true;
 		} else {
@@ -426,8 +463,13 @@ static bool cfs_readdir_block(fuse_req_t req, struct dirbuf *buf,
 		name_buf[child_name_len] = 0;
 
 		remaining_size = buf->max_size - buf->current_size;
-		if (use_plus) {
-			const erofs_inode *child_cino = cfs_get_erofs_inode(nid);
+
+		const erofs_inode *child_cino = cfs_get_erofs_inode(nid);
+		uint8_t type = dirents[i].file_type;
+		if (type == EROFS_FT_CHRDEV && erofs_inode_is_whiteout(child_cino)) {
+			/* Filtered */
+			res = 0;
+		} else if (use_plus) {
 			struct fuse_entry_param e;
 
 			memset(&e, 0, sizeof(e));
@@ -440,7 +482,6 @@ static bool cfs_readdir_block(fuse_req_t req, struct dirbuf *buf,
 				req, (char *)(buf->buf + buf->current_size),
 				remaining_size, name_buf, &e, next_offset);
 		} else {
-			uint8_t type = dirents[i].file_type;
 			memset(&stbuf, 0, sizeof(stbuf));
 			stbuf.st_ino = cfs_ino_from_nid(nid);
 			stbuf.st_mode = erofs_file_type_to_mode(type);
@@ -641,30 +682,28 @@ static void cfs_init(void *userdata, struct fuse_conn_info *conn)
 
 #define OVERLAY_XATTR_PARTIAL_PREFIX "overlay."
 
-static int cfs_rewrite_xattr_prefix_from_image(int name_index, const char *name,
-					       size_t name_len)
+static const char *cfs_xattr_rewrite(int name_index, const char *name,
+				     uint8_t *_name_len)
 {
-	/* We rewrite trusted.overlay.* to user.overlay.* */
+	uint8_t name_len = *_name_len;
+
 	if (name_index == EROFS_XATTR_INDEX_TRUSTED &&
 	    name_len > strlen(OVERLAY_XATTR_PARTIAL_PREFIX) &&
 	    memcmp(name, OVERLAY_XATTR_PARTIAL_PREFIX,
-		   strlen(OVERLAY_XATTR_PARTIAL_PREFIX)) == 0)
-		return EROFS_XATTR_INDEX_USER;
+		   strlen(OVERLAY_XATTR_PARTIAL_PREFIX)) == 0) {
+		name += strlen(OVERLAY_XATTR_PARTIAL_PREFIX);
+		name_len -= strlen(OVERLAY_XATTR_PARTIAL_PREFIX);
+		/* Check for escapes */
+		if (name_len > strlen(OVERLAY_XATTR_PARTIAL_PREFIX) &&
+		    memcmp(name, OVERLAY_XATTR_PARTIAL_PREFIX,
+			   strlen(OVERLAY_XATTR_PARTIAL_PREFIX)) == 0) {
+			*_name_len = name_len;
+			return name;
+		}
+		return NULL;
+	}
 
-	return name_index;
-}
-
-static int cfs_rewrite_xattr_prefix_to_image(int name_index, const char *name,
-					     size_t name_len)
-{
-	/* We rewrite trusted.overlay.* to user.overlay.* */
-	if (name_index == EROFS_XATTR_INDEX_USER &&
-	    name_len > strlen(OVERLAY_XATTR_PARTIAL_PREFIX) &&
-	    memcmp(name, OVERLAY_XATTR_PARTIAL_PREFIX,
-		   strlen(OVERLAY_XATTR_PARTIAL_PREFIX)) == 0)
-		return EROFS_XATTR_INDEX_TRUSTED;
-
-	return name_index;
+	return name;
 }
 
 static int cfs_listxattr_element(const struct erofs_xattr_entry *entry,
@@ -676,7 +715,13 @@ static int cfs_listxattr_element(const struct erofs_xattr_entry *entry,
 	size_t full_name_len;
 	const char *prefix;
 
-	name_index = cfs_rewrite_xattr_prefix_from_image(name_index, name, name_len);
+	name = cfs_xattr_rewrite(name_index, name, &name_len);
+	if (name == NULL)
+		return 0;
+
+	/* Until we support mount option to use all xattrs, only support user.* */
+	if (name_index != EROFS_XATTR_INDEX_USER)
+		return 0;
 
 	prefix = erofs_xattr_prefixes[name_index];
 	full_name_len = name_len + strlen(prefix);
@@ -782,19 +827,22 @@ static void cfs_listxattr(fuse_req_t req, fuse_ino_t ino, size_t max_size)
 	}
 }
 
-static int match_xattr_entry(const struct erofs_xattr_entry *entry,
-			     int name_prefix, const char *name, size_t name_len)
+static int match_xattr_entry(const struct erofs_xattr_entry *entry, int name_prefix,
+			     const char *name, size_t name_len, bool filter)
 {
 	uint8_t e_name_len = entry->e_name_len;
 	uint8_t e_name_prefix = entry->e_name_index;
 	const char *e_name = (const char *)entry + sizeof(struct erofs_xattr_entry);
 
-	return e_name_prefix == name_prefix && e_name_len == name_len &&
-	       memcmp(name, e_name, name_len) == 0;
+	if (filter)
+		e_name = cfs_xattr_rewrite(e_name_prefix, e_name, &e_name_len);
+
+	return e_name != NULL && e_name_prefix == name_prefix &&
+	       e_name_len == name_len && memcmp(name, e_name, name_len) == 0;
 }
 
 static const char *do_getxattr(const erofs_inode *cino, int name_prefix,
-			       const char *name, uint16_t *value_size_out)
+			       const char *name, uint16_t *value_size_out, bool filter)
 {
 	size_t name_len = strlen(name);
 	uint32_t mode;
@@ -808,6 +856,10 @@ static const char *do_getxattr(const erofs_inode *cino, int name_prefix,
 	const uint8_t *xattrs_inline;
 	const uint8_t *xattrs_start;
 	const uint8_t *xattrs_end;
+
+	/* Until we support mount option to use all xattrs, only support user.* */
+	if (filter && name_prefix != EROFS_XATTR_INDEX_USER)
+		return NULL;
 
 	erofs_inode_get_info(cino, &mode, &file_size, &xattr_icount,
 			     &raw_blkaddr, &isize);
@@ -836,7 +888,7 @@ static const char *do_getxattr(const erofs_inode *cino, int name_prefix,
 						  e_name_len + value_size,
 					  4);
 
-		if (match_xattr_entry(entry, name_prefix, name, name_len)) {
+		if (match_xattr_entry(entry, name_prefix, name, name_len, filter)) {
 			const char *value = (const char *)entry +
 					    sizeof(struct erofs_xattr_entry) +
 					    e_name_len;
@@ -853,7 +905,7 @@ static const char *do_getxattr(const erofs_inode *cino, int name_prefix,
 		const struct erofs_xattr_entry *entry =
 			(const struct erofs_xattr_entry *)(erofs_xattrdata + idx * 4);
 
-		if (match_xattr_entry(entry, name_prefix, name, name_len)) {
+		if (match_xattr_entry(entry, name_prefix, name, name_len, filter)) {
 			uint16_t value_size =
 				lcfs_u16_from_file(entry->e_value_size);
 			uint8_t e_name_len = entry->e_name_len;
@@ -887,8 +939,6 @@ static void cfs_getxattr(fuse_req_t req, fuse_ino_t ino, const char *name,
 	name += strlen(erofs_xattr_prefixes[name_prefix]);
 	name_len = strlen(name);
 
-	name_prefix = cfs_rewrite_xattr_prefix_to_image(name_prefix, name, name_len);
-
 	/* When acls are not used, send EOPTNOTSUPP, as this informs
 	   userspace to stop constantly looking for acls */
 	if (!erofs_use_acl && erofs_is_acl_xattr(name_prefix, name, name_len)) {
@@ -896,7 +946,7 @@ static void cfs_getxattr(fuse_req_t req, fuse_ino_t ino, const char *name,
 		return;
 	}
 
-	value = do_getxattr(cino, name_prefix, name, &value_size);
+	value = do_getxattr(cino, name_prefix, name, &value_size, true);
 	if (value == NULL) {
 		fuse_reply_err(req, ENODATA);
 		return;
@@ -927,7 +977,7 @@ static void cfs_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
 	}
 
 	redirect = do_getxattr(cino, EROFS_XATTR_INDEX_TRUSTED,
-			       "overlay.redirect", &value_size);
+			       "overlay.redirect", &value_size, false);
 
 	if (redirect == NULL) {
 		/* Empty files have no redirect */

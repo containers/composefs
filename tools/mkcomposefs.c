@@ -369,6 +369,7 @@ static void usage(const char *argv0)
 #define OPT_PRINT_DIGEST 109
 #define OPT_FORMAT 110
 #define OPT_PRINT_DIGEST_ONLY 111
+#define OPT_USER_XATTRS 112
 
 static ssize_t write_cb(void *_file, void *buf, size_t count)
 {
@@ -391,6 +392,12 @@ int main(int argc, char **argv)
 			has_arg: no_argument,
 			flag: NULL,
 			val: OPT_SKIP_XATTRS
+		},
+		{
+			name: "user-xattrs",
+			has_arg: no_argument,
+			flag: NULL,
+			val: OPT_USER_XATTRS
 		},
 		{
 			name: "skip-devices",
@@ -468,6 +475,9 @@ int main(int argc, char **argv)
 			break;
 		case OPT_SKIP_XATTRS:
 			buildflags |= LCFS_BUILD_SKIP_XATTRS;
+			break;
+		case OPT_USER_XATTRS:
+			buildflags |= LCFS_BUILD_USER_XATTRS;
 			break;
 		case OPT_SKIP_DEVICES:
 			buildflags |= LCFS_BUILD_SKIP_DEVICES;

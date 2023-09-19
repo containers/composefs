@@ -881,7 +881,7 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 		i.i_uid = lcfs_u32_to_file(node->inode.st_uid);
 		i.i_gid = lcfs_u32_to_file(node->inode.st_gid);
 		i.i_mtime = lcfs_u64_to_file(node->inode.st_mtim_sec);
-		i.i_mtime_nsec = lcfs_u64_to_file(node->inode.st_mtim_nsec);
+		i.i_mtime_nsec = lcfs_u32_to_file(node->inode.st_mtim_nsec);
 
 		if (type == S_IFDIR) {
 			if (node->erofs_n_blocks > 0) {
