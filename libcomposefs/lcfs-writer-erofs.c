@@ -810,6 +810,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 	compute_erofs_xattr_counts(node, &n_shared_xattrs, &unshared_xattrs_size);
 	xattr_size = xattr_erofs_inode_size(n_shared_xattrs, unshared_xattrs_size);
 	xattr_icount = xattr_erofs_icount(xattr_size);
+	if (xattr_icount > UINT16_MAX)
+		return -EINVAL;
 
 	version = node->erofs_compact ? 0 : 1;
 	datalayout = (node->erofs_tailsize > 0) ? EROFS_INODE_FLAT_INLINE :
@@ -838,18 +840,19 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 	if (node->erofs_compact) {
 		struct erofs_inode_compact i = { 0 };
 		i.i_format = lcfs_u16_to_file(format);
-		i.i_xattr_icount = lcfs_u16_to_file(xattr_icount);
-		i.i_mode = lcfs_u16_to_file(node->inode.st_mode);
-		i.i_nlink = lcfs_u16_to_file(node->inode.st_nlink);
-		i.i_size = lcfs_u32_to_file(size);
+		i.i_xattr_icount = lcfs_u16_to_file((uint16_t)xattr_icount);
+		i.i_mode = lcfs_u16_to_file((uint16_t)node->inode.st_mode);
+		i.i_nlink = lcfs_u16_to_file((uint16_t)node->inode.st_nlink);
+		i.i_size = lcfs_u32_to_file((uint32_t)size);
 		i.i_ino = lcfs_u32_to_file(node->inode_num);
-		i.i_uid = lcfs_u16_to_file(node->inode.st_uid);
-		i.i_gid = lcfs_u16_to_file(node->inode.st_gid);
+		i.i_uid = lcfs_u16_to_file((uint16_t)node->inode.st_uid);
+		i.i_gid = lcfs_u16_to_file((uint16_t)node->inode.st_gid);
 
 		if (type == S_IFDIR) {
 			if (node->erofs_n_blocks > 0) {
 				i.i_u.raw_blkaddr = lcfs_u32_to_file(
-					ctx_erofs->current_end / EROFS_BLKSIZ);
+					(uint32_t)(ctx_erofs->current_end /
+						   EROFS_BLKSIZ));
 				ctx_erofs->current_end +=
 					EROFS_BLKSIZ * node->erofs_n_blocks;
 			}
@@ -858,7 +861,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 		} else if (type == S_IFREG) {
 			if (node->erofs_n_blocks > 0) {
 				i.i_u.raw_blkaddr = lcfs_u32_to_file(
-					ctx_erofs->current_end / EROFS_BLKSIZ);
+					(uint32_t)(ctx_erofs->current_end /
+						   EROFS_BLKSIZ));
 				ctx_erofs->current_end +=
 					EROFS_BLKSIZ * node->erofs_n_blocks;
 			}
@@ -873,8 +877,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 	} else {
 		struct erofs_inode_extended i = { 0 };
 		i.i_format = lcfs_u16_to_file(format);
-		i.i_xattr_icount = lcfs_u16_to_file(xattr_icount);
-		i.i_mode = lcfs_u16_to_file(node->inode.st_mode);
+		i.i_xattr_icount = lcfs_u16_to_file((uint16_t)xattr_icount);
+		i.i_mode = lcfs_u16_to_file((uint16_t)node->inode.st_mode);
 		i.i_nlink = lcfs_u32_to_file(node->inode.st_nlink);
 		i.i_size = lcfs_u64_to_file(size);
 		i.i_ino = lcfs_u32_to_file(node->inode_num);
@@ -886,7 +890,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 		if (type == S_IFDIR) {
 			if (node->erofs_n_blocks > 0) {
 				i.i_u.raw_blkaddr = lcfs_u32_to_file(
-					ctx_erofs->current_end / EROFS_BLKSIZ);
+					(uint32_t)(ctx_erofs->current_end /
+						   EROFS_BLKSIZ));
 				ctx_erofs->current_end +=
 					EROFS_BLKSIZ * node->erofs_n_blocks;
 			}
@@ -895,7 +900,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 		} else if (type == S_IFREG) {
 			if (node->erofs_n_blocks > 0) {
 				i.i_u.raw_blkaddr = lcfs_u32_to_file(
-					ctx_erofs->current_end / EROFS_BLKSIZ);
+					(uint32_t)(ctx_erofs->current_end /
+						   EROFS_BLKSIZ));
 				ctx_erofs->current_end +=
 					EROFS_BLKSIZ * node->erofs_n_blocks;
 			}
@@ -927,8 +933,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 				uint64_t offset =
 					ctx_erofs->inodes_end % EROFS_BLKSIZ +
 					xattr->erofs_shared_xattr_offset;
-				uint32_t v =
-					lcfs_u32_to_file(offset / sizeof(uint32_t));
+				uint32_t v = lcfs_u32_to_file(
+					(uint32_t)(offset / sizeof(uint32_t)));
 				ret = lcfs_write(ctx, &v, sizeof(v));
 				if (ret < 0)
 					return ret;
@@ -1351,20 +1357,21 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 
 	/* metadata is stored directly after superblock */
 	superblock.meta_blkaddr = lcfs_u32_to_file(
-		(EROFS_SUPER_OFFSET + sizeof(superblock)) / EROFS_BLKSIZ);
+		(uint32_t)((EROFS_SUPER_OFFSET + sizeof(superblock)) / EROFS_BLKSIZ));
 	assert(root->erofs_nid < UINT16_MAX);
-	superblock.root_nid = lcfs_u16_to_file(root->erofs_nid);
+	superblock.root_nid = lcfs_u16_to_file((uint16_t)root->erofs_nid);
 
 	/* shared xattrs is directly after metadata */
 	superblock.xattr_blkaddr =
-		lcfs_u32_to_file(ctx_erofs->inodes_end / EROFS_BLKSIZ);
+		lcfs_u32_to_file((uint32_t)(ctx_erofs->inodes_end / EROFS_BLKSIZ));
 
 	data_block_start =
 		round_up(ctx_erofs->inodes_end + ctx_erofs->shared_xattr_size,
 			 EROFS_BLKSIZ);
 
-	superblock.blocks = lcfs_u32_to_file(data_block_start / EROFS_BLKSIZ +
-					     ctx_erofs->n_data_blocks);
+	superblock.blocks =
+		lcfs_u32_to_file((uint32_t)(data_block_start / EROFS_BLKSIZ +
+					    ctx_erofs->n_data_blocks));
 
 	/* TODO: More superblock fields:
 	 *  uuid?
