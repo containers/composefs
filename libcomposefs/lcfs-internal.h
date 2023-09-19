@@ -95,7 +95,7 @@ static inline uint64_t lcfs_u64_from_file(uint64_t val)
 struct lcfs_xattr_s {
 	char *key;
 	char *value;
-	size_t value_len;
+	uint16_t value_len;
 
 	/* Used during writing */
 	int64_t erofs_shared_xattr_offset; /* shared offset, or -1 if not shared */

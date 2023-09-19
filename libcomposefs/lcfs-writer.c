@@ -1285,6 +1285,11 @@ int lcfs_node_set_xattr(struct lcfs_node_s *node, const char *name,
 	char *k, *v;
 	ssize_t index = find_xattr(node, name);
 
+	if (value_len > UINT16_MAX) {
+		errno = EINVAL;
+		return -1;
+	}
+
 	if (index >= 0) {
 		/* Already set, replace */
 		struct lcfs_xattr_s *xattr = &node->xattrs[index];
