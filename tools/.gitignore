@@ -1,4 +1,7 @@
 dump
 mkcomposefs
-writer-json
+composefs-dump
+composefs-from-json
+composefs-fuse
+composefs-info
 mount.composefs
