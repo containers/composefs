@@ -60,42 +60,48 @@
 
 #define LCFS_MAX_NAME_LENGTH 255 /* max len of file name excluding NULL */
 
-static inline uint16_t lcfs_u16_to_file(uint16_t val)
-{
-	return htole16(val);
-}
+#define lcfs_u16_to_file(v)                                                    \
+	({                                                                     \
+		_Static_assert(sizeof(v) == sizeof(uint16_t));                 \
+		htole16(v);                                                    \
+	})
 
-static inline uint32_t lcfs_u32_to_file(uint32_t val)
-{
-	return htole32(val);
-}
+#define lcfs_u32_to_file(v)                                                    \
+	({                                                                     \
+		_Static_assert(sizeof(v) == sizeof(uint32_t));                 \
+		htole32(v);                                                    \
+	})
 
-static inline uint64_t lcfs_u64_to_file(uint64_t val)
-{
-	return htole64(val);
-}
+#define lcfs_u64_to_file(v)                                                    \
+	({                                                                     \
+		_Static_assert(sizeof(v) == sizeof(uint64_t));                 \
+		htole64(v);                                                    \
+	})
 
-static inline uint16_t lcfs_u16_from_file(uint16_t val)
-{
-	return le16toh(val);
-}
+#define lcfs_u16_from_file(v)                                                  \
+	({                                                                     \
+		_Static_assert(sizeof(v) == sizeof(uint16_t));                 \
+		le16toh(v);                                                    \
+	})
 
-static inline uint32_t lcfs_u32_from_file(uint32_t val)
-{
-	return le32toh(val);
-}
+#define lcfs_u32_from_file(v)                                                  \
+	({                                                                     \
+		_Static_assert(sizeof(v) == sizeof(uint32_t));                 \
+		le32toh(v);                                                    \
+	})
 
-static inline uint64_t lcfs_u64_from_file(uint64_t val)
-{
-	return le64toh(val);
-}
+#define lcfs_u64_from_file(v)                                                  \
+	({                                                                     \
+		_Static_assert(sizeof(v) == sizeof(uint64_t));                 \
+		le64toh(v);                                                    \
+	})
 
 /* In memory representation used to build the file.  */
 
 struct lcfs_xattr_s {
 	char *key;
 	char *value;
-	size_t value_len;
+	uint16_t value_len;
 
 	/* Used during writing */
 	int64_t erofs_shared_xattr_offset; /* shared offset, or -1 if not shared */
@@ -144,7 +150,7 @@ struct lcfs_node_s {
 	bool erofs_compact;
 	uint32_t erofs_ipad; /* padding before inode data */
 	uint32_t erofs_isize;
-	uint32_t erofs_nid;
+	uint64_t erofs_nid;
 	uint32_t erofs_n_blocks;
 	uint32_t erofs_tailsize;
 };
@@ -156,7 +162,7 @@ struct lcfs_ctx_s {
 
 	/* Used by compute_tree.  */
 	struct lcfs_node_s *queue_end;
-	uint32_t num_inodes;
+	uint64_t num_inodes;
 	int64_t min_mtim_sec;
 	uint32_t min_mtim_nsec;
 	bool has_acl;
