@@ -39,7 +39,7 @@ def dumpfile(file, root):
         xattrs["user.overlay.whiteouts"] = b''
 
     nlink = s.st_nlink;
-    if args.no_nlink:
+    if args.no_nlink or (args.no_root_nlink and file == root):
         nlink = 1
     print(f"{shlex.quote(rel)} {oct(st_mode)} {nlink} {s.st_uid}:{s.st_gid} {s.st_rdev} {s.st_mtime_ns}",end="")
     if stat.S_ISREG(st_mode):
@@ -77,6 +77,7 @@ def dumpdir(root):
 
 argParser = argparse.ArgumentParser()
 argParser.add_argument("--no-nlink", action='store_true')
+argParser.add_argument("--no-root-nlink", action='store_true')
 argParser.add_argument("--userxattr", action='store_true')
 argParser.add_argument("--whiteout", action='store_true')
 argParser.add_argument("--noescaped", action='store_true')
