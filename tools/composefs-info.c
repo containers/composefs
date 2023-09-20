@@ -32,11 +32,24 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <ctype.h>
+#include <getopt.h>
 
 #define ESCAPE_STANDARD 0
 #define NOESCAPE_SPACE (1 << 0)
 #define ESCAPE_EQUAL (1 << 1)
 #define ESCAPE_LONE_DASH (1 << 2)
+
+const char *opt_basedir_path;
+int opt_basedir_fd;
+
+typedef void *(*command_handler_init)(void);
+typedef void (*command_handler)(struct lcfs_node_s *node, void *handler_data);
+typedef void (*command_handler_end)(void *handler_data);
+
+static void oom(void)
+{
+	errx(EXIT_FAILURE, "Out of memory");
+}
 
 static void print_escaped(const char *val, ssize_t len, int escape)
 {
@@ -118,6 +131,11 @@ static void print_node(struct lcfs_node_s *node, char *parent_path)
 	}
 }
 
+static void print_node_handler(struct lcfs_node_s *node, void *data)
+{
+	print_node(node, "");
+}
+
 static void digest_to_string(const uint8_t *csum, char *buf)
 {
 	static const char hexchars[] = "0123456789abcdef";
@@ -187,21 +205,41 @@ static void dump_node(struct lcfs_node_s *node, char *path)
 	}
 }
 
-static void get_objects(struct lcfs_node_s *node, Hash_table *ht)
+static void dump_node_handler(struct lcfs_node_s *node, void *data)
+{
+	dump_node(node, "");
+}
+
+typedef struct {
+	Hash_table *ht;
+} PrintData;
+
+static const char *abs_to_rel_path(const char *path)
+{
+	while (*path == '/')
+		path++;
+	return path;
+}
+
+static void get_objects(struct lcfs_node_s *node, PrintData *data, int basedir_fd)
 {
 	uint32_t mode = lcfs_node_get_mode(node);
 	uint32_t type = mode & S_IFMT;
 	const char *payload = lcfs_node_get_payload(node);
 
-	if (type == S_IFREG && payload) {
-		if (hash_insert(ht, payload) == NULL) {
-			errx(EXIT_FAILURE, "Out of memory");
+	if (type == S_IFREG && payload && hash_lookup(data->ht, payload) == NULL) {
+		struct stat st;
+		if (basedir_fd == -1 || fstatat(basedir_fd, abs_to_rel_path(payload),
+						&st, AT_EMPTY_PATH) < 0) {
+			char *dup = strdup(payload);
+			if (dup == NULL || hash_insert(data->ht, dup) == NULL)
+				oom();
 		}
 	}
 
 	for (size_t i = 0; i < lcfs_node_get_n_children(node); i++) {
 		struct lcfs_node_s *child = lcfs_node_get_child(node, i);
-		get_objects(child, ht);
+		get_objects(child, data, basedir_fd);
 	}
 }
 
@@ -222,75 +260,153 @@ static int cmp_obj(const void *_a, const void *_b)
 	return strcmp(*a, *b);
 }
 
-static void print_objects(struct lcfs_node_s *node)
+static void *print_objects_handler_init(void)
 {
-	Hash_table *ht = hash_initialize(0, NULL, str_ht_hash, str_ht_eq, NULL);
-	if (ht == NULL)
-		errx(EXIT_FAILURE, "Out of memory");
+	PrintData *data = calloc(1, sizeof(PrintData));
 
-	get_objects(node, ht);
+	if (data == NULL)
+		oom();
 
-	size_t n_objects = hash_get_n_entries(ht);
+	data->ht = hash_initialize(0, NULL, str_ht_hash, str_ht_eq, free);
+	if (data->ht == NULL)
+		oom();
+
+	return data;
+}
+
+static void print_objects_handler(struct lcfs_node_s *node, void *_data)
+{
+	PrintData *data = _data;
+	get_objects(node, data, -1);
+}
+
+static void print_missing_objects_handler(struct lcfs_node_s *node, void *_data)
+{
+	PrintData *data = _data;
+	get_objects(node, data, opt_basedir_fd);
+}
+
+static void print_objects_handler_end(void *_data)
+{
+	PrintData *data = _data;
+
+	size_t n_objects = hash_get_n_entries(data->ht);
 	cleanup_free char **objects = calloc(n_objects, sizeof(char *));
 	if (objects == NULL)
-		errx(EXIT_FAILURE, "Out of memory");
+		oom();
 
-	hash_get_entries(ht, (void **)objects, n_objects);
+	hash_get_entries(data->ht, (void **)objects, n_objects);
 
 	qsort(objects, n_objects, sizeof(char *), cmp_obj);
 
 	for (size_t i = 0; i < n_objects; i++)
 		printf("%s\n", objects[i]);
 
-	hash_free(ht);
+	hash_free(data->ht);
+	free(data);
 }
 
 static void usage(const char *argv0)
 {
-	fprintf(stderr, "usage: %s [ls|objects|dump] IMAGE\n", argv0);
+	fprintf(stderr,
+		"usage: %s [--basedir=path] [ls|objects|dump|missing-objects] IMAGES...\n",
+		argv0);
 }
+
+#define OPT_BASEDIR 100
 
 int main(int argc, char **argv)
 {
 	const char *bin = argv[0];
-	int fd;
-	cleanup_node struct lcfs_node_s *root = NULL;
-	const char *image_path = NULL;
-	const char *command;
+	int opt;
+	const struct option longopts[] = { {
+		name: "basedir",
+		has_arg: required_argument,
+		flag: NULL,
+		val: OPT_BASEDIR
+	} };
+
+	while ((opt = getopt_long(argc, argv, "", longopts, NULL)) != -1) {
+		switch (opt) {
+		case OPT_BASEDIR:
+			opt_basedir_path = optarg;
+			break;
+		case ':':
+			fprintf(stderr, "option needs a value\n");
+			exit(EXIT_FAILURE);
+		default:
+			printf("Def\n");
+			usage(bin);
+			exit(1);
+		}
+	}
+
+	argv += optind - 1;
+	argc -= optind - 1;
 
 	if (argc <= 1) {
 		fprintf(stderr, "No command specified\n");
 		usage(bin);
 		exit(1);
 	}
-	command = argv[1];
+	const char *command = argv[1];
+
+	command_handler_init handler_init = NULL;
+	command_handler handler = NULL;
+	command_handler_end handler_end = NULL;
+	void *handler_data = NULL;
+
+	if (strcmp(command, "ls") == 0) {
+		handler = print_node_handler;
+	} else if (strcmp(command, "dump") == 0) {
+		handler = dump_node_handler;
+	} else if (strcmp(command, "objects") == 0) {
+		handler = print_objects_handler;
+		handler_init = print_objects_handler_init;
+		handler_end = print_objects_handler_end;
+	} else if (strcmp(command, "missing-objects") == 0) {
+		handler = print_missing_objects_handler;
+		handler_init = print_objects_handler_init;
+		handler_end = print_objects_handler_end;
+	} else {
+		errx(EXIT_FAILURE, "Unknown command '%s'\n", command);
+	}
+
+	if (opt_basedir_path) {
+		opt_basedir_fd = open(opt_basedir_path,
+				      O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_PATH);
+		if (opt_basedir_fd < 0)
+			err(EXIT_FAILURE, "Can't open basedir `%s`\n",
+			    opt_basedir_path);
+	}
 
 	if (argc <= 2) {
 		fprintf(stderr, "No image path specified\n");
 		usage(bin);
 		exit(1);
 	}
-	image_path = argv[2];
 
-	fd = open(image_path, O_RDONLY | O_CLOEXEC);
-	if (fd < 0) {
-		err(EXIT_FAILURE, "Failed to open '%s'", image_path);
+	if (handler_init)
+		handler_data = handler_init();
+
+	for (int i = 2; i < argc; i++) {
+		const char *image_path = image_path = argv[i];
+
+		cleanup_fd int fd = open(image_path, O_RDONLY | O_CLOEXEC);
+		if (fd < 0) {
+			err(EXIT_FAILURE, "Failed to open '%s'", image_path);
+		}
+
+		cleanup_node struct lcfs_node_s *root = lcfs_load_node_from_fd(fd);
+		if (root == NULL) {
+			err(EXIT_FAILURE, "Failed to load '%s'", image_path);
+		}
+
+		handler(root, handler_data);
 	}
 
-	root = lcfs_load_node_from_fd(fd);
-	if (root == NULL) {
-		err(EXIT_FAILURE, "Failed to load '%s'", image_path);
-	}
-
-	if (strcmp(command, "ls") == 0) {
-		print_node(root, "");
-	} else if (strcmp(command, "dump") == 0) {
-		dump_node(root, "");
-	} else if (strcmp(command, "objects") == 0) {
-		print_objects(root);
-	} else {
-		errx(EXIT_FAILURE, "Unknown command '%s'\n", command);
-	}
+	if (handler_end)
+		handler_end(handler_data);
 
 	return 0;
 }
