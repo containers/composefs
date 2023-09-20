@@ -135,7 +135,7 @@ def make_node(path):
     if not args.privileged:
         return
     target = gen_filename()
-    os.mknod(path, gen_file_mode() | random.choice([stat.S_IFCHR,stat.S_IFBLK]), os.makedev(0,0))
+    os.mknod(path, gen_file_mode() | random.choice([stat.S_IFCHR,stat.S_IFBLK]), os.makedev(random.randrange(1, 255),random.randrange(1, 255)))
 
 def make_whiteout(path):
     if args.nowhiteout:
