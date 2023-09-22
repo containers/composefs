@@ -51,11 +51,23 @@ static void printexit(const char *format, ...)
 
 static void usage(const char *argv0)
 {
+	const char *bin = basename(argv0);
 	fprintf(stderr,
 		"usage: %s [-t type] [-o opt[,opts..]] IMAGE MOUNTPOINT\n"
 		"Example:\n"
-		"  %s -o basedir=/composefs/objects exampleimage.cfs /mnt/exampleimage\n",
-		argv0, argv0);
+		"  %s -o basedir=/composefs/objects exampleimage.cfs /mnt/exampleimage\n"
+		"or, as a mount helper:\n"
+		"  mount -t composefs -o basedir=/composefs/objects exampleimage.cfs /mnt/exampleimage\n"
+		"\n"
+		"Supported options:\n"
+		"  basedir=PATH[:PATH]    Specify location of basedir(s)\n"
+		"  digest=DIGEST          Specify required image digest\n"
+		"  verity                 Require all files to have specified and valid fs-verity digests\n"
+		"  ro                     Read only\n"
+		"  rw                     Read/write\n"
+		"  upperdir               Overlayfs upperdir\n"
+		"  workdir                Overlayfs workdir\n",
+		bin, bin);
 }
 
 static void unescape_option(char *s)
@@ -117,7 +129,6 @@ int main(int argc, char **argv)
 	const char *opt_upperdir = NULL;
 	const char *opt_workdir = NULL;
 	bool opt_verity = false;
-	bool opt_noverity = false;
 	bool opt_ro = false;
 	int opt, fd, res, userns_fd;
 
@@ -170,8 +181,6 @@ int main(int argc, char **argv)
 			opt_digest = value;
 		} else if (strcmp("verity", key) == 0) {
 			opt_verity = true;
-		} else if (strcmp("noverity", key) == 0) {
-			opt_noverity = true;
 		} else if (strcmp("upperdir", key) == 0) {
 			if (value == NULL)
 				printexit("No value specified for upperdir option\n");
@@ -229,14 +238,8 @@ int main(int argc, char **argv)
 
 	options.expected_fsverity_digest = opt_digest;
 
-	if (opt_verity && opt_noverity) {
-		printexit("Incompatible options verity, noverity\n");
-	}
-
-	if (opt_verity)
+	if (opt_verity || opt_digest != NULL)
 		options.flags |= LCFS_MOUNT_FLAGS_REQUIRE_VERITY;
-	if (opt_noverity)
-		options.flags |= LCFS_MOUNT_FLAGS_DISABLE_VERITY;
 	if (opt_ro)
 		options.flags |= LCFS_MOUNT_FLAGS_READONLY;
 

@@ -16,7 +16,7 @@ run_test() {
     local dumpdir_args="$2"
     mkcomposefs --print-digest --digest-store=${cfsroot}/objects ${testsrc} ${cfsroot}/roots/test.cfs | tee digest.txt
     prev_digest=$(cat digest.txt)
-    new_digest=$(mkcomposefs --by-digest --print-digest-only ${testsrc})
+    new_digest=$(mkcomposefs --print-digest-only ${testsrc})
     test "$prev_digest" = "$new_digest"
 
     if which fsck.erofs &>/dev/null; then
@@ -36,7 +36,7 @@ run_test() {
         exit 1
     fi
 
-    new_digest=$(mkcomposefs --by-digest --print-digest-only mnt)
+    new_digest=$(mkcomposefs --print-digest-only mnt)
     test "$prev_digest" = "$new_digest"
 
     umount mnt
