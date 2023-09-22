@@ -69,6 +69,24 @@ AC_DEFUN([CC_CHECK_FLAGS_APPEND], [
   done
 ])
 
+AC_ARG_ENABLE(man,
+              [AS_HELP_STRING([--enable-man],
+                              [generate man pages [default=auto]])],,
+              enable_man=maybe)
+
+AS_IF([test "$enable_man" != no], [
+  AC_PATH_PROG([PANDOC], [pandoc])
+  AS_IF([test -z "$PANDOC"], [
+    AS_IF([test "$enable_man" = yes], [
+      AC_MSG_ERROR([pandoc is required for --enable-man])
+    ])
+    enable_man=no
+  ],[
+    enable_man=yes
+  ])
+])
+AM_CONDITIONAL(ENABLE_MAN, test "$enable_man" != no)
+
 ##################################################
 # Visibility handling
 ##################################################
