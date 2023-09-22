@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([composefs], [0.1.4], [giuseppe@scrivano.org])
+AC_INIT([composefs], [0.9.0], [giuseppe@scrivano.org])
 AC_CONFIG_SRCDIR([tools/mkcomposefs.c])
 AC_CONFIG_HEADERS([config.h])
 AC_SYS_LARGEFILE
