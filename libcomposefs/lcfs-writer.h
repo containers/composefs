@@ -33,9 +33,10 @@ enum {
 	LCFS_BUILD_SKIP_XATTRS = (1 << 0),
 	LCFS_BUILD_USE_EPOCH = (1 << 1),
 	LCFS_BUILD_SKIP_DEVICES = (1 << 2),
-	LCFS_BUILD_COMPUTE_DIGEST = (1 << 3),
+	LCFS_BUILD_COMPUTE_DIGEST = (1 << 3), /* Store expected fs-verity digest */
 	LCFS_BUILD_NO_INLINE = (1 << 4),
 	LCFS_BUILD_USER_XATTRS = (1 << 5), /* Only read user.* xattrs */
+	LCFS_BUILD_BY_DIGEST = (1 << 6), /* Refer to basedir files by fs-verity digest */
 };
 
 enum lcfs_format_t {

@@ -559,6 +559,21 @@ static int read_content(int fd, size_t size, uint8_t *buf)
 	return 0;
 }
 
+static void digest_to_path(const uint8_t *csum, char *buf)
+{
+	static const char hexchars[] = "0123456789abcdef";
+	uint32_t i, j;
+
+	for (i = 0, j = 0; i < LCFS_DIGEST_SIZE; i++, j += 2) {
+		uint8_t byte = csum[i];
+		if (i == 1)
+			buf[j++] = '/';
+		buf[j] = hexchars[byte >> 4];
+		buf[j + 1] = hexchars[byte & 0xF];
+	}
+	buf[j] = '\0';
+}
+
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 					     int buildflags)
 {
@@ -568,7 +583,8 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 
 	if (buildflags & ~(LCFS_BUILD_SKIP_XATTRS | LCFS_BUILD_USE_EPOCH |
 			   LCFS_BUILD_SKIP_DEVICES | LCFS_BUILD_COMPUTE_DIGEST |
-			   LCFS_BUILD_NO_INLINE | LCFS_BUILD_USER_XATTRS)) {
+			   LCFS_BUILD_NO_INLINE | LCFS_BUILD_USER_XATTRS |
+			   LCFS_BUILD_BY_DIGEST)) {
 		errno = EINVAL;
 		return NULL;
 	}
@@ -596,9 +612,10 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 
 	if ((sb.st_mode & S_IFMT) == S_IFREG) {
 		bool compute_digest = (buildflags & LCFS_BUILD_COMPUTE_DIGEST) != 0;
+		bool by_digest = (buildflags & LCFS_BUILD_BY_DIGEST) != 0;
 		bool no_inline = (buildflags & LCFS_BUILD_NO_INLINE) != 0;
 		bool is_zerosized = sb.st_size == 0;
-		bool do_digest = !is_zerosized && compute_digest;
+		bool do_digest = !is_zerosized && (compute_digest || by_digest);
 		bool do_inline = !is_zerosized && !no_inline &&
 				 sb.st_size <= LCFS_BUILD_INLINE_FILE_SIZE_LIMIT;
 
@@ -611,6 +628,21 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 				r = lcfs_node_set_fsverity_from_fd(ret, fd);
 				if (r < 0)
 					return NULL;
+
+				if (by_digest) {
+					const uint8_t *digest =
+						lcfs_node_get_fsverity_digest(ret);
+					char digest_path[LCFS_DIGEST_SIZE * 2 + 2];
+					digest_to_path(digest, digest_path);
+					r = lcfs_node_set_payload(ret, digest_path);
+					if (r < 0)
+						return NULL;
+
+					/* We just computed digest to get the payoad path */
+					if (!compute_digest)
+						ret->digest_set = false;
+				}
+
 				/* In case we re-read below */
 				lseek(fd, 0, SEEK_SET);
 			}
@@ -625,6 +657,17 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 					return NULL;
 			}
 		}
+	} else if ((sb.st_mode & S_IFMT) == S_IFLNK) {
+		char target[PATH_MAX + 1];
+
+		r = readlinkat(dirfd, fname, target, sizeof(target));
+		if (r < 0)
+			return NULL;
+
+		target[r] = '\0';
+		r = lcfs_node_set_payload(ret, target);
+		if (r < 0)
+			return NULL;
 	}
 
 	if ((buildflags & LCFS_BUILD_USE_EPOCH) == 0) {
