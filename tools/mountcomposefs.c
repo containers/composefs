@@ -117,7 +117,6 @@ int main(int argc, char **argv)
 	const char *opt_upperdir = NULL;
 	const char *opt_workdir = NULL;
 	bool opt_verity = false;
-	bool opt_noverity = false;
 	bool opt_ro = false;
 	int opt, fd, res, userns_fd;
 
@@ -170,8 +169,6 @@ int main(int argc, char **argv)
 			opt_digest = value;
 		} else if (strcmp("verity", key) == 0) {
 			opt_verity = true;
-		} else if (strcmp("noverity", key) == 0) {
-			opt_noverity = true;
 		} else if (strcmp("upperdir", key) == 0) {
 			if (value == NULL)
 				printexit("No value specified for upperdir option\n");
@@ -229,14 +226,8 @@ int main(int argc, char **argv)
 
 	options.expected_fsverity_digest = opt_digest;
 
-	if (opt_verity && opt_noverity) {
-		printexit("Incompatible options verity, noverity\n");
-	}
-
-	if (opt_verity)
+	if (opt_verity || opt_digest != NULL)
 		options.flags |= LCFS_MOUNT_FLAGS_REQUIRE_VERITY;
-	if (opt_noverity)
-		options.flags |= LCFS_MOUNT_FLAGS_DISABLE_VERITY;
 	if (opt_ro)
 		options.flags |= LCFS_MOUNT_FLAGS_READONLY;
 
