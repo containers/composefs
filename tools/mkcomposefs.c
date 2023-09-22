@@ -49,21 +49,6 @@ static void digest_to_string(const uint8_t *csum, char *buf)
 	buf[j] = '\0';
 }
 
-static void digest_to_path(const uint8_t *csum, char *buf)
-{
-	static const char hexchars[] = "0123456789abcdef";
-	uint32_t i, j;
-
-	for (i = 0, j = 0; i < LCFS_DIGEST_SIZE; i++, j += 2) {
-		uint8_t byte = csum[i];
-		if (i == 1)
-			buf[j++] = '/';
-		buf[j] = hexchars[byte >> 4];
-		buf[j + 1] = hexchars[byte & 0xF];
-	}
-	buf[j] = '\0';
-}
-
 static int ensure_dir(const char *path, mode_t mode)
 {
 	struct stat buf;
@@ -284,67 +269,36 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 	return 0;
 }
 
-static int fill_payload(struct lcfs_node_s *node, const char *path, size_t len,
-			size_t path_start_offset, bool by_digest,
-			const char *digest_store_path)
+static int fill_store(struct lcfs_node_s *node, const char *path,
+		      const char *digest_store_path)
 {
 	cleanup_free char *tmp_path = NULL;
 	const char *fname;
 	int ret;
 
 	fname = lcfs_node_get_name(node);
-
 	if (fname) {
 		ret = join_paths(&tmp_path, path, fname);
 		if (ret < 0)
 			return ret;
-		len += ret;
 		path = tmp_path;
 	}
 
 	if (lcfs_node_dirp(node)) {
-		size_t i, n_children;
-
-		n_children = lcfs_node_get_n_children(node);
-		for (i = 0; i < n_children; i++) {
+		size_t n_children = lcfs_node_get_n_children(node);
+		for (size_t i = 0; i < n_children; i++) {
 			struct lcfs_node_s *child = lcfs_node_get_child(node, i);
-			ret = fill_payload(child, path, len, path_start_offset,
-					   by_digest, digest_store_path);
+			ret = fill_store(child, path, digest_store_path);
 			if (ret < 0)
 				return ret;
 		}
-	} else if ((lcfs_node_get_mode(node) & S_IFMT) == S_IFLNK) {
-		char target[PATH_MAX + 1];
-		ssize_t s = readlink(path, target, sizeof(target));
-		if (s < 0)
-			return s;
-
-		target[s] = '\0';
-		ret = lcfs_node_set_payload(node, target);
-		if (ret < 0)
-			return ret;
 	} else if ((lcfs_node_get_mode(node) & S_IFMT) == S_IFREG &&
-		   lcfs_node_get_content(node) == NULL) {
-		const uint8_t *digest = NULL;
+		   lcfs_node_get_content(node) == NULL &&
+		   lcfs_node_get_payload(node) != NULL) {
+		const char *payload = lcfs_node_get_payload(node);
 
-		if (by_digest)
-			digest = lcfs_node_get_fsverity_digest(node);
-
-		if (digest) { /* Zero size files don't have a digest (since they are non-backed */
-			char digest_path[LCFS_DIGEST_SIZE * 2 + 2];
-			digest_to_path(digest, digest_path);
-
-			if (digest_store_path) {
-				ret = copy_file_with_dirs_if_needed(
-					path, digest_store_path, digest_path, true);
-				if (ret < 0)
-					return ret;
-			}
-
-			ret = lcfs_node_set_payload(node, digest_path);
-		} else {
-			ret = lcfs_node_set_payload(node, path + path_start_offset);
-		}
+		ret = copy_file_with_dirs_if_needed(path, digest_store_path,
+						    payload, true);
 		if (ret < 0)
 			return ret;
 	}
@@ -359,15 +313,11 @@ static void usage(const char *argv0)
 		argv0);
 }
 
-#define OPT_ABSOLUTE 100
 #define OPT_SKIP_XATTRS 102
 #define OPT_USE_EPOCH 103
 #define OPT_SKIP_DEVICES 104
-#define OPT_COMPUTE_DIGEST 106
-#define OPT_BY_DIGEST 107
 #define OPT_DIGEST_STORE 108
 #define OPT_PRINT_DIGEST 109
-#define OPT_FORMAT 110
 #define OPT_PRINT_DIGEST_ONLY 111
 #define OPT_USER_XATTRS 112
 
@@ -381,12 +331,6 @@ static ssize_t write_cb(void *_file, void *buf, size_t count)
 int main(int argc, char **argv)
 {
 	const struct option longopts[] = {
-		{
-			name: "absolute",
-			has_arg: no_argument,
-			flag: NULL,
-			val: OPT_ABSOLUTE
-		},
 		{
 			name: "skip-xattrs",
 			has_arg: no_argument,
@@ -412,18 +356,6 @@ int main(int argc, char **argv)
 			val: OPT_USE_EPOCH
 		},
 		{
-			name: "compute-digest",
-			has_arg: no_argument,
-			flag: NULL,
-			val: OPT_COMPUTE_DIGEST
-		},
-		{
-			name: "by-digest",
-			has_arg: no_argument,
-			flag: NULL,
-			val: OPT_BY_DIGEST
-		},
-		{
 			name: "digest-store",
 			has_arg: required_argument,
 			flag: NULL,
@@ -441,32 +373,25 @@ int main(int argc, char **argv)
 			flag: NULL,
 			val: OPT_PRINT_DIGEST_ONLY
 		},
-		{
-			name: "format",
-			has_arg: required_argument,
-			flag: NULL,
-			val: OPT_FORMAT
-		},
 		{},
 	};
 	struct lcfs_write_options_s options = { 0 };
 	const char *bin = argv[0];
 	int buildflags = 0;
-	bool absolute_path = false;
-	bool by_digest = false;
 	bool print_digest = false;
 	bool print_digest_only = false;
-	const char *format = "erofs";
 	struct lcfs_node_s *root;
 	const char *out = NULL;
 	const char *dir_path = NULL;
 	const char *digest_store_path = NULL;
-	ssize_t path_start_offset;
 	cleanup_free char *pathbuf = NULL;
 	uint8_t digest[LCFS_DIGEST_SIZE];
 	int opt;
 	FILE *out_file;
 	char *failed_path;
+
+	/* We always compute the digest and reference by digest */
+	buildflags |= LCFS_BUILD_COMPUTE_DIGEST | LCFS_BUILD_BY_DIGEST;
 
 	while ((opt = getopt_long(argc, argv, ":CR", longopts, NULL)) != -1) {
 		switch (opt) {
@@ -482,20 +407,8 @@ int main(int argc, char **argv)
 		case OPT_SKIP_DEVICES:
 			buildflags |= LCFS_BUILD_SKIP_DEVICES;
 			break;
-		case OPT_COMPUTE_DIGEST:
-			buildflags |= LCFS_BUILD_COMPUTE_DIGEST;
-			break;
-		case OPT_ABSOLUTE:
-			absolute_path = true;
-			break;
-		case OPT_BY_DIGEST:
-			by_digest = true;
-			break;
 		case OPT_DIGEST_STORE:
 			digest_store_path = optarg;
-			break;
-		case OPT_FORMAT:
-			format = optarg;
 			break;
 		case OPT_PRINT_DIGEST:
 			print_digest = true;
@@ -522,6 +435,9 @@ int main(int argc, char **argv)
 	}
 	dir_path = argv[0];
 
+	if (dir_path[0] == '\0')
+		error(EXIT_FAILURE, 0, "Empty source path specified");
+
 	if (argc > 2) {
 		fprintf(stderr, "Too many arguments\n");
 		usage(bin);
@@ -545,16 +461,6 @@ int main(int argc, char **argv)
 
 	assert(out || print_digest_only);
 
-	if (digest_store_path != NULL)
-		by_digest = true; /* implied */
-
-	if (by_digest)
-		buildflags |= LCFS_BUILD_COMPUTE_DIGEST; /* implied */
-
-	if (absolute_path && by_digest)
-		error(EXIT_FAILURE, 0,
-		      "Can't specify both --absolute and --by-digest");
-
 	if (print_digest_only) {
 		out_file = NULL;
 	} else if (strcmp(out, "-") == 0) {
@@ -571,49 +477,8 @@ int main(int argc, char **argv)
 	if (root == NULL)
 		error(EXIT_FAILURE, errno, "error accessing %s", failed_path);
 
-	if (absolute_path) {
-		cleanup_free char *cwd_cleanup = NULL;
-		cleanup_free char *tmp_pathbuf = NULL;
-		cleanup_free char *absolute_prefix = NULL;
-		const char *cwd = "";
-		int r;
-
-		if (dir_path[0] != '/') {
-			cwd = cwd_cleanup = get_current_dir_name();
-			if (cwd == NULL)
-				error(EXIT_FAILURE, errno,
-				      "retrieve current working directory");
-		}
-		(void)cwd_cleanup; // This is just used for cleanup
-		r = join_paths(&tmp_pathbuf, cwd, dir_path);
-		if (r < 0)
-			error(EXIT_FAILURE, errno, "compute directory path");
-
-		absolute_prefix = canonicalize_file_name(tmp_pathbuf);
-		if (absolute_prefix == NULL)
-			error(EXIT_FAILURE, errno, "failed to canonicalize %s",
-			      tmp_pathbuf);
-
-		r = join_paths(&pathbuf, absolute_prefix, "");
-		if (r < 0)
-			error(EXIT_FAILURE, errno, "compute directory path");
-		path_start_offset = 0;
-	} else {
-		if (dir_path[0] == '\0')
-			error(EXIT_FAILURE, 0, "invalid directory path");
-		path_start_offset = join_paths(&pathbuf, dir_path, "");
-		if (path_start_offset < 0)
-			error(EXIT_FAILURE, errno, "compute directory path");
-	}
-	if (fill_payload(root, pathbuf, strlen(pathbuf), path_start_offset,
-			 by_digest, digest_store_path) < 0)
-		error(EXIT_FAILURE, errno, "cannot fill payload");
-
-	if (strcmp(format, "erofs") == 0) {
-		options.format = LCFS_FORMAT_EROFS;
-	} else {
-		error(EXIT_FAILURE, errno, "Unknown format %s", format);
-	}
+	if (digest_store_path && fill_store(root, dir_path, digest_store_path) < 0)
+		error(EXIT_FAILURE, errno, "cannot fill store");
 
 	if (out_file) {
 		options.file = out_file;
@@ -621,6 +486,8 @@ int main(int argc, char **argv)
 	}
 	if (print_digest)
 		options.digest_out = digest;
+
+	options.format = LCFS_FORMAT_EROFS;
 
 	if (lcfs_write_to(root, &options) < 0)
 		error(EXIT_FAILURE, errno, "cannot write file");
