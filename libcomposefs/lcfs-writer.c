@@ -657,6 +657,17 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 					return NULL;
 			}
 		}
+	} else if ((sb.st_mode & S_IFMT) == S_IFLNK) {
+		char target[PATH_MAX + 1];
+
+		r = readlinkat(dirfd, fname, target, sizeof(target));
+		if (r < 0)
+			return NULL;
+
+		target[r] = '\0';
+		r = lcfs_node_set_payload(ret, target);
+		if (r < 0)
+			return NULL;
 	}
 
 	if ((buildflags & LCFS_BUILD_USE_EPOCH) == 0) {
