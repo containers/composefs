@@ -12,7 +12,7 @@ exit_cleanup() {
 
 trap exit_cleanup EXIT
 
-. test-lib.sh
+. $(dirname $0)/test-lib.sh
 
 GENDIRARGS=""
 if [ ${can_whiteout} == "n" ]; then
@@ -25,8 +25,8 @@ fi
 
 test_random() {
     echo Generating root dir
-    ./gendir $GENDIRARGS $workdir/root
-    ./dumpdir --userxattr --whiteout $workdir/root >  $workdir/root.dump
+    $(dirname $0)/gendir $GENDIRARGS $workdir/root
+    $(dirname $0)/dumpdir --userxattr --whiteout $workdir/root >  $workdir/root.dump
     echo Generating composefs image
     ${VALGRIND_PREFIX} ${BINDIR}/mkcomposefs --digest-store=$workdir/objects $workdir/root $workdir/root.cfs
     if [ $has_fsck == y ]; then
@@ -49,7 +49,7 @@ test_random() {
     mkdir -p $workdir/mnt
     echo Mounting composefs image using fuse
     ${BINDIR}/composefs-fuse -o source=$workdir/root.cfs,basedir=$workdir/objects $workdir/mnt
-    ./dumpdir --userxattr --whiteout $workdir/mnt >  $workdir/fuse.dump
+    $(dirname $0)/dumpdir --userxattr --whiteout $workdir/mnt >  $workdir/fuse.dump
 
     ${VALGRIND_PREFIX} ${BINDIR}/mkcomposefs --digest-store=$workdir/objects $workdir/mnt $workdir/fuse.cfs
     if [ $has_fsck == y ]; then
@@ -65,7 +65,7 @@ test_random() {
     fi
 
     ${BINDIR}/composefs-fuse -o source=$workdir/fuse.cfs,basedir=$workdir/objects $workdir/mnt
-    ./dumpdir --userxattr --whiteout $workdir/mnt >  $workdir/fuse2.dump
+    $(dirname $0)/dumpdir --userxattr --whiteout $workdir/mnt >  $workdir/fuse2.dump
     umount $workdir/mnt
 
     # fuse.cfs and fuse2.cfs files differ due to whiteout conversions and non-user xattrs.
