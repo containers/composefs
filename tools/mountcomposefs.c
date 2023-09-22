@@ -51,11 +51,23 @@ static void printexit(const char *format, ...)
 
 static void usage(const char *argv0)
 {
+	const char *bin = basename(argv0);
 	fprintf(stderr,
 		"usage: %s [-t type] [-o opt[,opts..]] IMAGE MOUNTPOINT\n"
 		"Example:\n"
-		"  %s -o basedir=/composefs/objects exampleimage.cfs /mnt/exampleimage\n",
-		argv0, argv0);
+		"  %s -o basedir=/composefs/objects exampleimage.cfs /mnt/exampleimage\n"
+		"or, as a mount helper:\n"
+		"  mount -t composefs -o basedir=/composefs/objects exampleimage.cfs /mnt/exampleimage\n"
+		"\n"
+		"Supported options:\n"
+		"  basedir=PATH[:PATH]    Specify location of basedir(s)\n"
+		"  digest=DIGEST          Specify required image digest\n"
+		"  verity                 Require all files to have specified and valid fs-verity digests\n"
+		"  ro                     Read only\n"
+		"  rw                     Read/write\n"
+		"  upperdir               Overlayfs upperdir\n"
+		"  workdir                Overlayfs workdir\n",
+		bin, bin);
 }
 
 static void unescape_option(char *s)
