@@ -308,9 +308,17 @@ static int fill_store(struct lcfs_node_s *node, const char *path,
 
 static void usage(const char *argv0)
 {
+	const char *bin = basename(argv0);
 	fprintf(stderr,
-		"usage: %s [--use-epoch] [--skip-xattrs] [--absolute] [--by-digest] [--digest-store=path] [--print-digest] [--print-digest-only] [--skip-devices] [--compute-digest] SOURCEDIR IMAGE\n",
-		argv0);
+		"Usage: %s [OPTIONS] SOURCEDIR IMAGE\n"
+		"Options:\n"
+		"  --digest-store=PATH   Store content files in this directory\n"
+		"  --use-epoch           Make all mtimes zero\n"
+		"  --skip-xattrs         Don't store file xattrs\n"
+		"  --user-xattrs         Only store user.* xattrs\n"
+		"  --print-digest        Print the digest of the image\n"
+		"  --print-digest-only   Print the digest of the image, don't write image\n",
+		bin);
 }
 
 #define OPT_SKIP_XATTRS 102
