@@ -4,7 +4,7 @@ BINDIR="$1"
 ASSET_DIR="$2"
 TEST_ASSETS="$3"
 
-. test-lib.sh
+. $(dirname $0)/test-lib.sh
 
 has_fsck=$(check_erofs_fsck)
 

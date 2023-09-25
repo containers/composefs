@@ -107,8 +107,11 @@ static void print_node(struct lcfs_node_s *node, char *parent_path)
 	for (size_t i = 0; i < lcfs_node_get_n_children(node); i++) {
 		struct lcfs_node_s *child = lcfs_node_get_child(node, i);
 		cleanup_free char *path = NULL;
+		int r;
 
-		asprintf(&path, "%s/%s", parent_path, lcfs_node_get_name(child));
+		r = asprintf(&path, "%s/%s", parent_path, lcfs_node_get_name(child));
+		if (r < 0)
+			oom();
 
 		uint32_t mode = lcfs_node_get_mode(child);
 		uint32_t type = mode & S_IFMT;
@@ -198,8 +201,11 @@ static void dump_node(struct lcfs_node_s *node, char *path)
 	for (size_t i = 0; i < lcfs_node_get_n_children(node); i++) {
 		struct lcfs_node_s *child = lcfs_node_get_child(node, i);
 		cleanup_free char *child_path = NULL;
+		int r;
 
-		asprintf(&child_path, "%s/%s", path, lcfs_node_get_name(child));
+		r = asprintf(&child_path, "%s/%s", path, lcfs_node_get_name(child));
+		if (r < 0)
+			oom();
 
 		dump_node(child, child_path);
 	}

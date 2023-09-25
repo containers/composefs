@@ -9,7 +9,15 @@ if ENABLE_VALGRIND
 VALGRIND_PREFIX=libtool --mode=execute ${VALGRIND} --quiet --leak-check=yes --error-exitcode=42
 endif
 
-EXTRA_DIST = test-checksums.sh $(patsubst %,assets/%,${TEST_ASSETS_SMALL}) $(patsubst %,assets/%.sha256_erofs,${TEST_ASSETS_SMALL})
+EXTRA_DIST = \
+	gendir \
+	dumpdir \
+	test-lib.sh \
+	test-units.sh \
+	test-random-fuse.sh \
+	test-checksums.sh \
+	integration.sh \
+	$(patsubst %,assets/%,${TEST_ASSETS_SMALL}) $(patsubst %,assets/%.sha256_erofs,${TEST_ASSETS_SMALL})
 
 check-checksums:
 	VALGRIND_PREFIX="${VALGRIND_PREFIX}" $(srcdir)/test-checksums.sh "$(builddir)/../tools/" "$(srcdir)/assets" "${TEST_ASSETS}"

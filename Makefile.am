@@ -1,14 +1,27 @@
 SUBDIRS=libcomposefs tools tests
 
+CLEANFILES=
+
+MANPAGES=\
+	man/mount.composefs.md \
+	man/mkcomposefs.md
+
 EXTRA_DIST=\
 	composefs.pc.in \
 	composefs.spec.in \
-	composefs.spec
+	composefs.spec \
+	${MANPAGES}
 
 pkgconfig_DATA = composefs.pc
 
-man/%.1: man/%.md
-	pandoc $+ -s -t man > $@
+if ENABLE_MAN
 
-install-man: man/mount.composefs.1 man/mkcomposefs.1
-	install -m 644 -D --target-directory=$(DESTDIR)$(mandir)/man1 $^
+man/%.1: man/%.md
+	mkdir -p man
+	${PANDOC} $+ -s -t man > $@
+
+man1_MANS = $(MANPAGES:.md=.1)
+
+CLEANFILES += ${man1_MANS}
+
+endif

@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([composefs], [0.1.4], [giuseppe@scrivano.org])
+AC_INIT([composefs], [0.9.0], [giuseppe@scrivano.org])
 AC_CONFIG_SRCDIR([tools/mkcomposefs.c])
 AC_CONFIG_HEADERS([config.h])
 AC_SYS_LARGEFILE
@@ -68,6 +68,24 @@ AC_DEFUN([CC_CHECK_FLAGS_APPEND], [
     CC_CHECK_FLAG_APPEND([$1], [$2], $flag, [$4])
   done
 ])
+
+AC_ARG_ENABLE(man,
+              [AS_HELP_STRING([--enable-man],
+                              [generate man pages [default=auto]])],,
+              enable_man=maybe)
+
+AS_IF([test "$enable_man" != no], [
+  AC_PATH_PROG([PANDOC], [pandoc])
+  AS_IF([test -z "$PANDOC"], [
+    AS_IF([test "$enable_man" = yes], [
+      AC_MSG_ERROR([pandoc is required for --enable-man])
+    ])
+    enable_man=no
+  ],[
+    enable_man=yes
+  ])
+])
+AM_CONDITIONAL(ENABLE_MAN, test "$enable_man" != no)
 
 ##################################################
 # Visibility handling
