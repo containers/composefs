@@ -17,7 +17,17 @@
 #ifndef _LCFS_INTERNAL_H
 #define _LCFS_INTERNAL_H
 
+#ifdef HAVE_MACHINE_ENDIAN_H
+#include <machine/endian.h>
+#endif
+
+#ifdef HAVE_SYS_ENDIAN_H
+#include <sys/endian.h>
+#endif
+
+#ifdef HAVE_ENDIAN_H
 #include <endian.h>
+#endif
 
 #include "lcfs-writer.h"
 #include "lcfs-fsverity.h"

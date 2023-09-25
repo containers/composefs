@@ -45,7 +45,7 @@ PKG_CHECK_MODULES(LCFS_DEP_CRYPTO, libcrypto,[
 ])
 AM_CONDITIONAL(USE_OPENSSL, test $with_openssl != no)
 
-AC_CHECK_HEADERS([sys/capability.h])
+AC_CHECK_HEADERS([sys/capability.h endian.h sys/endian.h machine/endian.h])
 
 AC_DEFUN([CC_CHECK_FLAG_APPEND], [
   AC_CACHE_CHECK([if $CC supports flag $3 in envvar $2],

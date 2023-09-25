@@ -24,7 +24,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <endian.h>
 #include <assert.h>
 #include <string.h>
 #include <sys/param.h>
@@ -298,6 +297,7 @@ static void sha256_sum_close(Sha256sum *sha256, uint8_t *digest)
 
 #endif /* SHA256 fallback implementation */
 
+#include "lcfs-internal.h" /* for endian.h */
 #include "lcfs-fsverity.h"
 
 struct fsverity_descriptor {
