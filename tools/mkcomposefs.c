@@ -26,7 +26,7 @@
 #include <linux/limits.h>
 #include <string.h>
 #include <stdlib.h>
-#include <error.h>
+#include <err.h>
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -444,7 +444,7 @@ int main(int argc, char **argv)
 	dir_path = argv[0];
 
 	if (dir_path[0] == '\0')
-		error(EXIT_FAILURE, 0, "Empty source path specified");
+		errx(EXIT_FAILURE, "Empty source path specified");
 
 	if (argc > 2) {
 		fprintf(stderr, "Too many arguments\n");
@@ -473,20 +473,20 @@ int main(int argc, char **argv)
 		out_file = NULL;
 	} else if (strcmp(out, "-") == 0) {
 		if (isatty(1))
-			error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
+			errx(EXIT_FAILURE, "stdout is a tty.  Refusing to use it");
 		out_file = stdout;
 	} else {
 		out_file = fopen(out, "we");
 		if (out_file == NULL)
-			error(EXIT_FAILURE, errno, "failed to open output file");
+			err(EXIT_FAILURE, "failed to open output file");
 	}
 
 	root = lcfs_build(AT_FDCWD, dir_path, buildflags, &failed_path);
 	if (root == NULL)
-		error(EXIT_FAILURE, errno, "error accessing %s", failed_path);
+		err(EXIT_FAILURE, "error accessing %s", failed_path);
 
 	if (digest_store_path && fill_store(root, dir_path, digest_store_path) < 0)
-		error(EXIT_FAILURE, errno, "cannot fill store");
+		err(EXIT_FAILURE, "cannot fill store");
 
 	if (out_file) {
 		options.file = out_file;
@@ -498,7 +498,7 @@ int main(int argc, char **argv)
 	options.format = LCFS_FORMAT_EROFS;
 
 	if (lcfs_write_to(root, &options) < 0)
-		error(EXIT_FAILURE, errno, "cannot write file");
+		err(EXIT_FAILURE, "cannot write file");
 
 	if (print_digest) {
 		char digest_str[LCFS_DIGEST_SIZE * 2 + 1] = { 0 };
