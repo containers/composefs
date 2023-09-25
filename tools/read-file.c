@@ -14,6 +14,8 @@
   limitations under the License.
 */
 
+#include "config.h"
+
 #include "read-file.h"
 
 #include <sys/stat.h>
