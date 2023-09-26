@@ -62,37 +62,43 @@
 
 #define lcfs_u16_to_file(v)                                                    \
 	({                                                                     \
-		_Static_assert(sizeof(v) == sizeof(uint16_t));                 \
+		_Static_assert(sizeof(v) == sizeof(uint16_t),                  \
+			       "Size of v is not equal to size of uint16_t");  \
 		htole16(v);                                                    \
 	})
 
 #define lcfs_u32_to_file(v)                                                    \
 	({                                                                     \
-		_Static_assert(sizeof(v) == sizeof(uint32_t));                 \
+		_Static_assert(sizeof(v) == sizeof(uint32_t),                  \
+			       "Size of v is not equal to size of uint32_t");  \
 		htole32(v);                                                    \
 	})
 
 #define lcfs_u64_to_file(v)                                                    \
 	({                                                                     \
-		_Static_assert(sizeof(v) == sizeof(uint64_t));                 \
+		_Static_assert(sizeof(v) == sizeof(uint64_t),                  \
+			       "Size of v is not equal to size of uint64_t");  \
 		htole64(v);                                                    \
 	})
 
 #define lcfs_u16_from_file(v)                                                  \
 	({                                                                     \
-		_Static_assert(sizeof(v) == sizeof(uint16_t));                 \
+		_Static_assert(sizeof(v) == sizeof(uint16_t),                  \
+			       "Size of v is not equal to size of uint16_t");  \
 		le16toh(v);                                                    \
 	})
 
 #define lcfs_u32_from_file(v)                                                  \
 	({                                                                     \
-		_Static_assert(sizeof(v) == sizeof(uint32_t));                 \
+		_Static_assert(sizeof(v) == sizeof(uint32_t),                  \
+			       "Size of v is not equal to size of uint32_t");  \
 		le32toh(v);                                                    \
 	})
 
 #define lcfs_u64_from_file(v)                                                  \
 	({                                                                     \
-		_Static_assert(sizeof(v) == sizeof(uint64_t));                 \
+		_Static_assert(sizeof(v) == sizeof(uint64_t),                  \
+			       "Size of v is not equal to size of uint64_t");  \
 		le64toh(v);                                                    \
 	})
 
