@@ -26,7 +26,7 @@
 #include <stdio.h>
 #include <linux/limits.h>
 #include <string.h>
-#include <error.h>
+#include <err.h>
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -62,17 +62,21 @@ static void do_seccomp_sandbox(void)
 
 	ctx = seccomp_init(SCMP_ACT_ERRNO(ENOSYS));
 	if (ctx == NULL)
-		error(EXIT_FAILURE, errno, "seccomp_init");
+		err(EXIT_FAILURE, "seccomp_init");
 
 	for (i = 0; i < sizeof(syscalls) / sizeof(syscalls[0]); i++) {
 		ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, syscalls[i], 0);
-		if (ret < 0)
-			error(EXIT_FAILURE, -ret, "seccomp_rule_add");
+		if (ret < 0) {
+			errno = -ret;
+			err(EXIT_FAILURE, "seccomp_rule_add");
+		}
 	}
 
 	ret = seccomp_load(ctx);
-	if (ret < 0)
-		error(EXIT_FAILURE, -ret, "seccomp_load");
+	if (ret < 0) {
+		errno = -ret;
+		err(EXIT_FAILURE, "seccomp_load");
+	}
 #endif
 }
 
@@ -100,68 +104,68 @@ static void do_namespace_sandbox(void)
 
 	fd = open("/proc/self/setgroups", O_WRONLY | O_CLOEXEC);
 	if (fd < 0)
-		error(EXIT_FAILURE, errno, "open /proc/self/setgroups");
+		err(EXIT_FAILURE, "open /proc/self/setgroups");
 	ret = write(fd, "deny", 4);
 	if (ret < 0)
-		error(EXIT_FAILURE, errno, "write to /proc/self/gid_map");
+		err(EXIT_FAILURE, "write to /proc/self/gid_map");
 	close(fd);
 
 	fd = open("/proc/self/gid_map", O_WRONLY | O_CLOEXEC);
 	if (fd < 0)
-		error(EXIT_FAILURE, errno, "open /proc/self/gid_map");
+		err(EXIT_FAILURE, "open /proc/self/gid_map");
 	ret = dprintf(fd, "0 %d 1\n", gid);
 	if (ret < 0)
-		error(EXIT_FAILURE, errno, "write to /proc/self/gid_map");
+		err(EXIT_FAILURE, "write to /proc/self/gid_map");
 	close(fd);
 
 	fd = open("/proc/self/uid_map", O_WRONLY | O_CLOEXEC);
 	if (fd < 0)
-		error(EXIT_FAILURE, errno, "open /proc/self/uid_map");
+		err(EXIT_FAILURE, "open /proc/self/uid_map");
 	ret = dprintf(fd, "0 %d 1\n", uid);
 	if (ret < 0)
-		error(EXIT_FAILURE, errno, "write to /proc/self/uid_map");
+		err(EXIT_FAILURE, "write to /proc/self/uid_map");
 	close(fd);
 
 #ifdef __NR_pivot_root
 	ret = mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
 	if (ret < 0)
-		error(EXIT_FAILURE, errno, "mount /");
+		err(EXIT_FAILURE, "mount /");
 
 	cwd = get_current_dir_name();
 	if (!cwd)
-		error(EXIT_FAILURE, errno, "get_current_dir_name");
+		err(EXIT_FAILURE, "get_current_dir_name");
 
 	ret = mount(NULL, cwd, "tmpfs", 0, NULL);
 	if (ret < 0)
-		error(EXIT_FAILURE, errno, "mount tmpfs");
+		err(EXIT_FAILURE, "mount tmpfs");
 
 	old_root = open("/", O_PATH | O_DIRECTORY | O_CLOEXEC);
 	if (old_root < 0)
-		error(EXIT_FAILURE, errno, "open /");
+		err(EXIT_FAILURE, "open /");
 
 	ret = chdir(cwd);
 	if (ret < 0)
-		error(EXIT_FAILURE, errno, "chdir cwd");
+		err(EXIT_FAILURE, "chdir cwd");
 
 	free(cwd);
 	cwd = NULL;
 
 	ret = pivot_root(".", ".");
 	if (ret < 0)
-		error(EXIT_FAILURE, errno, "pivot_root");
+		err(EXIT_FAILURE, "pivot_root");
 
 	ret = fchdir(old_root);
 	if (ret < 0)
-		error(EXIT_FAILURE, errno, "fchdir");
+		err(EXIT_FAILURE, "fchdir");
 	close(old_root);
 
 	ret = umount2(".", MNT_DETACH);
 	if (ret < 0)
-		error(EXIT_FAILURE, errno, "umount2");
+		err(EXIT_FAILURE, "umount2");
 
 	ret = chdir("/");
 	if (ret < 0)
-		error(EXIT_FAILURE, errno, "fchdir");
+		err(EXIT_FAILURE, "fchdir");
 #endif
 }
 
@@ -174,12 +178,12 @@ static void drop_caps(void)
 	int ret, cap;
 	ret = prctl(PR_SET_KEEPCAPS, 0, 0, 0, 0);
 	if (ret < 0)
-		error(EXIT_FAILURE, errno, "prctl(PR_SET_KEEPCAPS)");
+		err(EXIT_FAILURE, "prctl(PR_SET_KEEPCAPS)");
 
 	for (cap = 0;; cap++) {
 		ret = prctl(PR_CAPBSET_DROP, cap, 0, 0, 0);
 		if (ret < 0 && errno != EINVAL)
-			error(EXIT_FAILURE, errno, "prctl(PR_CAPBSET_DROP)");
+			err(EXIT_FAILURE, "prctl(PR_CAPBSET_DROP)");
 		if (ret < 0)
 			break;
 	}
@@ -187,13 +191,13 @@ static void drop_caps(void)
 #ifdef PR_CAP_AMBIENT
 	ret = prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0);
 	if (ret < 0 && errno != EINVAL)
-		error(EXIT_FAILURE, errno, "prctl(PR_CAP_AMBIENT)");
+		err(EXIT_FAILURE, "prctl(PR_CAP_AMBIENT)");
 #endif
 
 #ifdef HAVE_SYS_CAPABILITY_H
 	ret = capset(&hdr, data);
 	if (ret < 0 && errno != EINVAL)
-		error(EXIT_FAILURE, errno, "capset");
+		err(EXIT_FAILURE, "capset");
 #endif
 }
 
@@ -203,11 +207,11 @@ static void do_set_oom_score_adj(void)
 
 	fd = open("/proc/self/oom_score_adj", O_WRONLY);
 	if (fd < 0)
-		error(EXIT_FAILURE, errno, "open /proc/self/oom_score_adj");
+		err(EXIT_FAILURE, "open /proc/self/oom_score_adj");
 
 	ret = write(fd, "1000", 4);
 	if (ret < 0)
-		error(EXIT_FAILURE, errno, "write to /proc/self/oom_score_adj");
+		err(EXIT_FAILURE, "write to /proc/self/oom_score_adj");
 
 	close(fd);
 }
@@ -219,7 +223,7 @@ static void sandbox(void)
 	drop_caps();
 
 	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0)
-		error(EXIT_FAILURE, errno, "prctl(PR_SET_NO_NEW_PRIVS)");
+		err(EXIT_FAILURE, "prctl(PR_SET_NO_NEW_PRIVS)");
 
 	do_seccomp_sandbox();
 }
@@ -341,7 +345,7 @@ static int fill_xattrs(struct lcfs_node_s *node, yajl_val xattrs)
 		const char *v, *k = YAJL_GET_OBJECT(xattrs)->keys[i];
 
 		if (!YAJL_IS_STRING(YAJL_GET_OBJECT(xattrs)->values[i])) {
-			error(0, 0, "xattr value is not a string");
+			fprintf(stderr, "xattr value is not a string\n");
 			return -1;
 		}
 
@@ -349,13 +353,13 @@ static int fill_xattrs(struct lcfs_node_s *node, yajl_val xattrs)
 
 		r = base64_decode(v, strlen(v), v_buffer, sizeof(v_buffer), &written);
 		if (r < 0) {
-			error(0, 0, "xattr value is not valid b64");
+			fprintf(stderr, "xattr value is not valid b64\n");
 			return -1;
 		}
 
 		r = lcfs_node_set_xattr(node, k, v_buffer, written);
 		if (r < 0) {
-			error(0, 0, "append xattr");
+			fprintf(stderr, "append xattr\n");
 			return -1;
 		}
 	}
@@ -414,7 +418,7 @@ static int fill_file(const char *typ, struct lcfs_node_s *root,
 	bool is_regular_file = false;
 
 	if (node == NULL) {
-		error(0, 0, "node is NULL");
+		fprintf(stderr, "node is NULL\n");
 		return 0;
 	}
 
@@ -434,7 +438,7 @@ static int fill_file(const char *typ, struct lcfs_node_s *root,
 
 		v = get_child(entry, "linkName", yajl_t_string);
 		if (!v) {
-			error(0, 0, "linkName not specified");
+			fprintf(stderr, "linkName not specified\n");
 			return -1;
 		}
 
@@ -446,13 +450,14 @@ static int fill_file(const char *typ, struct lcfs_node_s *root,
 
 		v = get_child(entry, "linkName", yajl_t_string);
 		if (!v) {
-			error(0, 0, "linkName not specified");
+			fprintf(stderr, "linkName not specified\n");
 			return -1;
 		}
 
 		target = get_node(root, YAJL_GET_STRING(v));
 		if (!target) {
-			error(0, 0, "could not find target %s", YAJL_GET_STRING(v));
+			fprintf(stderr, "could not find target %s\n",
+				YAJL_GET_STRING(v));
 			return -1;
 		}
 
@@ -520,7 +525,7 @@ static int fill_file(const char *typ, struct lcfs_node_s *root,
 
 		r = lcfs_node_set_payload(node, payload);
 		if (r < 0) {
-			error(0, 0, "set_payload");
+			fprintf(stderr, "set_payload\n");
 			return -1;
 		}
 	}
@@ -536,20 +541,20 @@ static int fill_file(const char *typ, struct lcfs_node_s *root,
 		cleanup_free uint8_t *buf = malloc(buf_size);
 
 		if (buf == NULL) {
-			error(0, 0, "malloc");
+			fprintf(stderr, "malloc\n");
 			return -1;
 		}
 
 		r = base64_decode(content, strlen(content), (char *)buf,
 				  buf_size, &written);
 		if (r < 0) {
-			error(0, 0, "x-content value is not valid b64");
+			fprintf(stderr, "x-content value is not valid b64\n");
 			return -1;
 		}
 
 		r = lcfs_node_set_content(node, buf, written);
 		if (r < 0) {
-			error(0, 0, "set_content");
+			fprintf(stderr, "set_content\n");
 			return -1;
 		}
 	}
@@ -574,19 +579,19 @@ static struct lcfs_node_s *get_or_add_node(const char *typ,
 
 	tmp = get_child(entry, "name", yajl_t_string);
 	if (tmp == NULL) {
-		error(0, 0, "entry has no name");
+		fprintf(stderr, "entry has no name\n");
 		return NULL;
 	}
 
 	it = YAJL_GET_STRING(tmp);
 	if (it == NULL) {
-		error(0, 0, "name is not a string");
+		fprintf(stderr, "name is not a string\n");
 		return NULL;
 	}
 
 	path = strdup(it);
 	if (path == NULL)
-		error(EXIT_FAILURE, errno, "strdup");
+		err(EXIT_FAILURE, "strdup");
 
 	dpath = path;
 	while ((it = strsep(&dpath, "/"))) {
@@ -603,7 +608,7 @@ static struct lcfs_node_s *get_or_add_node(const char *typ,
 
 		node = append_child(node, it);
 		if (node == NULL) {
-			error(0, errno, "append_child");
+			perror("append_child");
 			return NULL;
 		}
 	}
@@ -624,14 +629,14 @@ static void do_file(struct lcfs_node_s *root, FILE *file)
 
 	root_val = parse_file(file);
 	if (root_val == NULL)
-		error(EXIT_FAILURE, errno, "parse_file");
+		err(EXIT_FAILURE, "parse_file");
 
 	if (!YAJL_IS_OBJECT(root_val))
-		error(EXIT_FAILURE, 0, "invalid type for root");
+		errx(EXIT_FAILURE, "invalid type for root");
 
 	entries = get_child(root_val, "entries", yajl_t_array);
 	if (entries == NULL)
-		error(EXIT_FAILURE, 0, "cannot find any entry");
+		errx(EXIT_FAILURE, "cannot find any entry");
 
 	for (i = 0; i < YAJL_GET_ARRAY(entries)->len; i++) {
 		static struct lcfs_node_s *n;
@@ -640,7 +645,7 @@ static void do_file(struct lcfs_node_s *root, FILE *file)
 
 		tmp = get_child(entry, "type", yajl_t_string);
 		if (tmp == NULL)
-			error(EXIT_FAILURE, 0, "entry has no name");
+			errx(EXIT_FAILURE, "entry has no name");
 
 		typ = YAJL_GET_STRING(tmp);
 
@@ -650,7 +655,7 @@ static void do_file(struct lcfs_node_s *root, FILE *file)
 
 		n = get_or_add_node(typ, root, entry);
 		if (n == NULL)
-			error(EXIT_FAILURE, 0, "get_or_add_node");
+			errx(EXIT_FAILURE, "get_or_add_node");
 	}
 
 	yajl_tree_free(root_val);
@@ -730,16 +735,16 @@ int main(int argc, char **argv)
 	if (out != NULL) {
 		out_file = fopen(out, "we");
 		if (out_file == NULL)
-			error(EXIT_FAILURE, errno, "Failed to open output file");
+			err(EXIT_FAILURE, "Failed to open output file");
 	} else {
 		if (isatty(1))
-			error(EXIT_FAILURE, 0, "stdout is a tty.  Refusing to use it");
+			errx(EXIT_FAILURE, "stdout is a tty.  Refusing to use it");
 		out_file = stdout;
 	}
 
 	input_files = malloc(sizeof(FILE *) * argc);
 	if (input_files == NULL)
-		error(EXIT_FAILURE, errno, "malloc");
+		err(EXIT_FAILURE, "malloc");
 
 	for (i = 0; i < argc; i++) {
 		if (strcmp(argv[i], "-") == 0) {
@@ -747,7 +752,7 @@ int main(int argc, char **argv)
 		} else {
 			input_files[i] = fopen(argv[i], "re");
 			if (input_files[i] == NULL)
-				error(EXIT_FAILURE, errno, "open `%s`", argv[i]);
+				err(EXIT_FAILURE, "open `%s`", argv[i]);
 		}
 	}
 
@@ -756,7 +761,7 @@ int main(int argc, char **argv)
 
 	root = lcfs_node_new();
 	if (root == NULL)
-		error(EXIT_FAILURE, errno, "malloc");
+		err(EXIT_FAILURE, "malloc");
 
 	for (i = 0; i < argc; i++) {
 		do_file(root, input_files[i]);
@@ -771,17 +776,17 @@ int main(int argc, char **argv)
 	if (strcmp(format, "erofs") == 0) {
 		options.format = LCFS_FORMAT_EROFS;
 	} else {
-		error(EXIT_FAILURE, errno, "Unknown format %s", format);
+		err(EXIT_FAILURE, "Unknown format %s", format);
 	}
 
 	if (lcfs_write_to(root, &options) < 0)
-		error(EXIT_FAILURE, errno, "cannot write to stdout");
+		err(EXIT_FAILURE, "cannot write to stdout");
 
 	if (fflush(out_file) < 0)
-		error(EXIT_FAILURE, errno, "fflush");
+		err(EXIT_FAILURE, "fflush");
 
 	if (fclose(out_file) < 0)
-		error(EXIT_FAILURE, errno, "fclose");
+		err(EXIT_FAILURE, "fclose");
 
 	lcfs_node_unref(root);
 

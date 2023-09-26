@@ -5,6 +5,7 @@
 #include "config.h"
 
 #include <assert.h>
+#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -47,18 +48,6 @@ const uint8_t *erofs_xattrdata;
 uint64_t erofs_build_time;
 uint32_t erofs_build_time_nsec;
 int basedir_fd;
-
-static void printexit(const char *format, ...) __attribute__((noreturn));
-static void printexit(const char *format, ...)
-{
-	va_list args;
-
-	va_start(args, format);
-	vfprintf(stderr, format, args);
-	va_end(args);
-
-	exit(1);
-}
 
 struct cfs_data {
 	const char *source;
@@ -1171,34 +1160,34 @@ int main(int argc, char *argv[])
 
 	fd = open(data.source, O_RDONLY | O_CLOEXEC);
 	if (fd < 0) {
-		printexit("Failed to open %s\n", data.source);
+		errx(EXIT_FAILURE, "Failed to open %s\n", data.source);
 	}
 
 	r = fstat(fd, &s);
 	if (r < 0) {
-		printexit("Failed to stat %s\n", data.source);
+		errx(EXIT_FAILURE, "Failed to stat %s\n", data.source);
 	}
 	erofs_data_size = s.st_size;
 
 	if (erofs_data_size < EROFS_BLKSIZ) {
-		printexit("To small image\n");
+		errx(EXIT_FAILURE, "To small image\n");
 	}
 
 	/* Memory-map the file. */
 	erofs_data = mmap(0, erofs_data_size, PROT_READ, MAP_PRIVATE, fd, 0);
 	if (erofs_data == MAP_FAILED) {
-		printexit("Failed to mmap %s\n", argv[1]);
+		errx(EXIT_FAILURE, "Failed to mmap %s\n", argv[1]);
 	}
 	close(fd);
 
 	basedir_fd = open(data.basedir, O_RDONLY | O_PATH);
 	if (basedir_fd < 0) {
-		printexit("Failed to open basedir  %s\n", data.basedir);
+		errx(EXIT_FAILURE, "Failed to open basedir  %s\n", data.basedir);
 	}
 
 	cfs_header = (struct lcfs_erofs_header_s *)(erofs_data);
 	if (lcfs_u32_from_file(cfs_header->magic) != LCFS_EROFS_MAGIC) {
-		printexit("Wrong cfs magic");
+		errx(EXIT_FAILURE, "Wrong cfs magic");
 	}
 
 	cfs_flags = lcfs_u32_from_file(cfs_header->flags);
@@ -1208,7 +1197,7 @@ int main(int argc, char *argv[])
 	erofs_super = (struct erofs_super_block *)(erofs_data + EROFS_SUPER_OFFSET);
 
 	if (lcfs_u32_from_file(erofs_super->magic) != EROFS_SUPER_MAGIC_V1) {
-		printexit("Wrong erofs magic");
+		errx(EXIT_FAILURE, "Wrong erofs magic");
 	}
 
 	erofs_metadata = erofs_data + lcfs_u32_from_file(erofs_super->meta_blkaddr) *

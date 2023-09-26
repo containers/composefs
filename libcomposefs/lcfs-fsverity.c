@@ -24,7 +24,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <endian.h>
 #include <assert.h>
 #include <string.h>
 #include <sys/param.h>
@@ -298,6 +297,7 @@ static void sha256_sum_close(Sha256sum *sha256, uint8_t *digest)
 
 #endif /* SHA256 fallback implementation */
 
+#include "lcfs-internal.h" /* for endian.h */
 #include "lcfs-fsverity.h"
 
 struct fsverity_descriptor {
@@ -306,7 +306,7 @@ struct fsverity_descriptor {
 	uint8_t log_blocksize;
 	uint8_t salt_size;
 	uint32_t reserved1;
-	uint64_t data_size_be;
+	uint64_t data_size_le;
 	uint8_t root_hash[64];
 	uint8_t salt[32];
 	uint8_t reserved2[144];
@@ -448,7 +448,7 @@ void lcfs_fsverity_context_get_digest(FsVerityContext *ctx,
 	descriptor.hash_algorithm = 1;
 	descriptor.log_blocksize = 12;
 	descriptor.salt_size = 0;
-	descriptor.data_size_be = htole64(ctx->file_size);
+	descriptor.data_size_le = htole64(ctx->file_size);
 
 	do_sha256(ctx, ctx->buffer[ctx->max_level], FSVERITY_BLOCK_SIZE,
 		  descriptor.root_hash);

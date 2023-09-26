@@ -25,7 +25,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <err.h>
-#include <error.h>
 #include <errno.h>
 #include <fcntl.h>
 
@@ -80,13 +79,13 @@ int main(int argc, char **argv)
 
 	FILE *out_file = fopen(dst_path, "we");
 	if (out_file == NULL)
-		error(EXIT_FAILURE, errno, "failed to open '%s'", dst_path);
+		err(EXIT_FAILURE, "failed to open '%s'", dst_path);
 
 	options.file = out_file;
 	options.file_write_cb = write_cb;
 
 	if (lcfs_write_to(root, &options) < 0)
-		error(EXIT_FAILURE, errno, "cannot write file");
+		err(EXIT_FAILURE, "cannot write file");
 
 	lcfs_node_unref(root);
 

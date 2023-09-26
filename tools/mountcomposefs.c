@@ -19,6 +19,7 @@
 
 #include "config.h"
 
+#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -36,18 +37,6 @@
 #include <linux/fsverity.h>
 
 #include "libcomposefs/lcfs-mount.h"
-
-static void printexit(const char *format, ...) __attribute__((noreturn));
-static void printexit(const char *format, ...)
-{
-	va_list args;
-
-	va_start(args, format);
-	vfprintf(stderr, format, args);
-	va_end(args);
-
-	exit(1);
-}
 
 static void usage(const char *argv0)
 {
@@ -136,7 +125,8 @@ int main(int argc, char **argv)
 		switch (opt) {
 		case 't':
 			if (strcmp(optarg, "composefs") != 0)
-				printexit("Unsupported fs type '%s'\n", optarg);
+				errx(EXIT_FAILURE, "Unsupported fs type '%s'\n",
+				     optarg);
 			break;
 		case 'o':
 			mount_options = optarg;
@@ -173,32 +163,37 @@ int main(int argc, char **argv)
 
 		if (strcmp("basedir", key) == 0) {
 			if (value == NULL)
-				printexit("No value specified for basedir option\n");
+				errx(EXIT_FAILURE,
+				     "No value specified for basedir option\n");
 			opt_basedir = value;
 		} else if (strcmp("digest", key) == 0) {
 			if (value == NULL)
-				printexit("No value specified for digest option\n");
+				errx(EXIT_FAILURE,
+				     "No value specified for digest option\n");
 			opt_digest = value;
 		} else if (strcmp("verity", key) == 0) {
 			opt_verity = true;
 		} else if (strcmp("upperdir", key) == 0) {
 			if (value == NULL)
-				printexit("No value specified for upperdir option\n");
+				errx(EXIT_FAILURE,
+				     "No value specified for upperdir option\n");
 			opt_upperdir = value;
 		} else if (strcmp("workdir", key) == 0) {
 			if (value == NULL)
-				printexit("No value specified for workdir option\n");
+				errx(EXIT_FAILURE,
+				     "No value specified for workdir option\n");
 			opt_workdir = value;
 		} else if (strcmp("idmap", key) == 0) {
 			if (value == NULL)
-				printexit("No value specified for workdir option\n");
+				errx(EXIT_FAILURE,
+				     "No value specified for workdir option\n");
 			opt_idmap = value;
 		} else if (strcmp("rw", key) == 0) {
 			opt_ro = false;
 		} else if (strcmp("ro", key) == 0) {
 			opt_ro = true;
 		} else {
-			printexit("Unsupported option %s\n", key);
+			errx(EXIT_FAILURE, "Unsupported option %s\n", key);
 		}
 	}
 
@@ -214,7 +209,7 @@ int main(int argc, char **argv)
 
 		options.objdirs = calloc(options.n_objdirs, sizeof(char *));
 		if (options.objdirs == NULL)
-			printexit("Out of memory\n");
+			errx(EXIT_FAILURE, "Out of memory\n");
 
 		for (i = 0, str = (char *)opt_basedir;; i++, str = NULL) {
 			token = strtok_r(str, ":", &saveptr);
@@ -231,7 +226,8 @@ int main(int argc, char **argv)
 	}
 
 	if ((opt_upperdir && !opt_workdir) || (!opt_upperdir && opt_workdir)) {
-		printexit("Both workdir and upperdir must be specified if used\n");
+		errx(EXIT_FAILURE,
+		     "Both workdir and upperdir must be specified if used\n");
 	}
 	options.upperdir = opt_upperdir;
 	options.workdir = opt_workdir;
@@ -246,32 +242,36 @@ int main(int argc, char **argv)
 	if (opt_idmap != NULL) {
 		userns_fd = open(opt_idmap, O_RDONLY | O_CLOEXEC | O_NOCTTY);
 		if (userns_fd < 0)
-			printexit("Failed to open userns %s: %s\n", opt_idmap,
-				  strerror(errno));
+			errx(EXIT_FAILURE, "Failed to open userns %s: %s\n",
+			     opt_idmap, strerror(errno));
 		options.flags |= LCFS_MOUNT_FLAGS_IDMAP;
 		options.idmap_fd = userns_fd;
 	}
 
 	fd = open(image_path, O_RDONLY | O_CLOEXEC);
 	if (fd < 0)
-		printexit("Failed to open %s: %s\n", image_path, strerror(errno));
+		errx(EXIT_FAILURE, "Failed to open %s: %s\n", image_path,
+		     strerror(errno));
 
 	res = lcfs_mount_fd(fd, mount_path, &options);
 	if (res < 0) {
 		int errsv = errno;
 
 		if (errsv == ENOVERITY)
-			printexit("Failed to mount composefs %s: Image has no fs-verity\n",
-				  image_path);
+			errx(EXIT_FAILURE,
+			     "Failed to mount composefs %s: Image has no fs-verity\n",
+			     image_path);
 		else if (errsv == EWRONGVERITY)
-			printexit("Failed to mount composefs %s: Image has wrong fs-verity\n",
-				  image_path);
+			errx(EXIT_FAILURE,
+			     "Failed to mount composefs %s: Image has wrong fs-verity\n",
+			     image_path);
 		else if (errsv == ENOSIGNATURE)
-			printexit("Failed to mount composefs %s: Image was not signed\n",
-				  image_path);
+			errx(EXIT_FAILURE,
+			     "Failed to mount composefs %s: Image was not signed\n",
+			     image_path);
 
-		printexit("Failed to mount composefs %s: %s\n", image_path,
-			  strerror(errno));
+		errx(EXIT_FAILURE, "Failed to mount composefs %s: %s\n",
+		     image_path, strerror(errno));
 	}
 
 	free(options.objdirs);
