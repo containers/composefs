@@ -19,4 +19,4 @@ libcomposefs_la_SOURCES = \
                         $(COMPOSEFSDIR)/lcfs-mount.h \
                         $(COMPOSEFSDIR)/xalloc-oversized.h
 libcomposefs_la_CFLAGS = $(WARN_CFLAGS) $(COMPOSEFS_HASH_CFLAGS) $(LCFS_DEP_CRYPTO_CFLAGS) $(HIDDEN_VISIBILITY_CFLAGS)
-libcomposefs_la_LIBADD = $(LCFS_DEP_CRYPTO_LIBS)
+libcomposefs_la_LIBADD = $(LCFS_DEP_CRYPTO_LIBS) $(LIBCOMPOSEFS_RELEASE_ARGS)

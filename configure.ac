@@ -4,10 +4,39 @@ AC_CONFIG_SRCDIR([tools/mkcomposefs.c])
 AC_CONFIG_HEADERS([config.h])
 AC_SYS_LARGEFILE
 
+# Library soname versioning:
+#
+# Note that this is different from the package version, as the package
+# version is more of a human-oriented version for the tools, and does
+# not encode library compatibility.
+#
+# Making releases:
+#  If library added functions or features:
+#   LIBCOMPOSEFS_VERSION_MICRO = 0;
+#   LIBCOMPOSEFS_VERSION_MINOR += 1;
+# else, if library code changes:
+#   LIBCOMPOSEFS_VERSION_MICRO += 1;
+#
+# Only touch LIBCOMPOSEFS_VERSION_MAJOR if breaking ABI.
+# (And never do that lightly)
+
+m4_define([LIBCOMPOSEFS_VERSION_MAJOR], [1])
+m4_define([LIBCOMPOSEFS_VERSION_MINOR], [0])
+m4_define([LIBCOMPOSEFS_VERSION_MICRO], [0])
+
 LT_PREREQ([2.2.6])
 LT_INIT()
 
 AM_INIT_AUTOMAKE([1.11.2 -Wno-portability foreign tar-ustar no-dist-gzip dist-xz subdir-objects])
+
+m4_define([lt_current], [m4_eval(LIBCOMPOSEFS_VERSION_MINOR + LIBCOMPOSEFS_VERSION_MAJOR)])
+m4_define([lt_revision], [LIBCOMPOSEFS_VERSION_MICRO])
+m4_define([lt_age], [LIBCOMPOSEFS_VERSION_MINOR])
+LT_VERSION_INFO="lt_current:lt_revision:lt_age"
+AC_SUBST(LT_VERSION_INFO)
+
+LIBCOMPOSEFS_RELEASE_ARGS="-version-info $LT_VERSION_INFO"
+AC_SUBST([LIBCOMPOSEFS_RELEASE_ARGS])
 
 AC_PROG_CC
 PKG_PROG_PKG_CONFIG
