@@ -248,7 +248,7 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 		/* Try to enable fsverity */
 		dfd = open(tmppath, O_CLOEXEC | O_RDONLY);
 		if (dfd < 0) {
-			return res;
+			return -1;
 		}
 
 		if (fstat(dfd, &statbuf) == 0) {
