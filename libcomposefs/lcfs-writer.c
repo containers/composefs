@@ -112,7 +112,7 @@ int lcfs_clone_root(struct lcfs_ctx_s *ctx)
 
 	clone = lcfs_node_clone_deep(ctx->root);
 	if (clone == NULL) {
-		errno = -EINVAL;
+		errno = EINVAL;
 		return -1;
 	}
 
@@ -345,7 +345,7 @@ int lcfs_write_to(struct lcfs_node_s *root, struct lcfs_write_options_s *options
 
 	/* Check for unknown flags */
 	if ((options->flags & ~LCFS_FLAGS_MASK) != 0) {
-		errno = -EINVAL;
+		errno = EINVAL;
 		return -1;
 	}
 
@@ -358,7 +358,7 @@ int lcfs_write_to(struct lcfs_node_s *root, struct lcfs_write_options_s *options
 	if (format == LCFS_FORMAT_EROFS)
 		res = lcfs_write_erofs_to(ctx);
 	else {
-		errno = -EINVAL;
+		errno = EINVAL;
 		res = -1;
 	}
 

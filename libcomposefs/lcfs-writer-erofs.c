@@ -1307,7 +1307,7 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 	uint64_t data_block_start;
 
 	if (ctx->options->version != 0) {
-		errno = -EINVAL;
+		errno = EINVAL;
 		return -1;
 	}
 
@@ -1702,7 +1702,7 @@ static struct lcfs_node_s *lcfs_build_node_from_image(struct lcfs_image_data *da
 		char name_buf[PATH_MAX];
 
 		if (file_size >= PATH_MAX || !tailpacked) {
-			errno = -EINVAL;
+			errno = EINVAL;
 			return NULL;
 		}
 
