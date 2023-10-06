@@ -226,7 +226,7 @@ static const char *abs_to_rel_path(const char *path)
 	return path;
 }
 
-static void get_objects(struct lcfs_node_s *node, PrintData *data, int basedir_fd)
+static void get_objects(struct lcfs_node_s *node, PrintData *data, int basedir_fd, bool fsck)
 {
 	uint32_t mode = lcfs_node_get_mode(node);
 	uint32_t type = mode & S_IFMT;
@@ -234,17 +234,47 @@ static void get_objects(struct lcfs_node_s *node, PrintData *data, int basedir_f
 
 	if (type == S_IFREG && payload && hash_lookup(data->ht, payload) == NULL) {
 		struct stat st;
-		if (basedir_fd == -1 || fstatat(basedir_fd, abs_to_rel_path(payload),
+		const char *path = abs_to_rel_path(payload);
+		if (basedir_fd == -1 || fstatat(basedir_fd, path,
 						&st, AT_EMPTY_PATH) < 0) {
-			char *dup = strdup(payload);
+			char *dup;
+			if (fsck) {
+				asprintf(&dup, "%s\tMissing", payload);
+			} else {
+				dup = strdup(payload);
+			}
 			if (dup == NULL || hash_insert(data->ht, dup) == NULL)
 				oom();
+		} else if (basedir_fd != -1 && fsck) {
+		        int fd = openat(basedir_fd, path, O_RDONLY | O_CLOEXEC);
+			if (fd < 0) {
+			    err(EXIT_FAILURE, "Can't open `%s`\n", path);
+			}
+
+			const uint8_t* digest = lcfs_node_get_fsverity_digest(node);
+			uint8_t orig_digest[LCFS_DIGEST_SIZE];
+			memcpy(orig_digest, digest, LCFS_DIGEST_SIZE);
+
+			if (lcfs_node_set_fsverity_from_fd(node, fd) == 0) {
+				digest = lcfs_node_get_fsverity_digest(node);
+				if (digest == NULL || memcmp(orig_digest, digest, LCFS_DIGEST_SIZE) != 0) {
+					char *dup;
+					asprintf(&dup, "%s\tBad checksum", payload);
+					if (dup == NULL || hash_insert(data->ht, dup) == NULL)
+						oom();
+				}
+			} else {
+					char *dup;
+					asprintf(&dup, "%s\tUnable to calculate checksum", payload);
+					if (dup == NULL || hash_insert(data->ht, dup) == NULL)
+						oom();
+			}
 		}
 	}
 
 	for (size_t i = 0; i < lcfs_node_get_n_children(node); i++) {
 		struct lcfs_node_s *child = lcfs_node_get_child(node, i);
-		get_objects(child, data, basedir_fd);
+		get_objects(child, data, basedir_fd, fsck);
 	}
 }
 
@@ -282,13 +312,19 @@ static void *print_objects_handler_init(void)
 static void print_objects_handler(struct lcfs_node_s *node, void *_data)
 {
 	PrintData *data = _data;
-	get_objects(node, data, -1);
+	get_objects(node, data, -1, false);
 }
 
 static void print_missing_objects_handler(struct lcfs_node_s *node, void *_data)
 {
 	PrintData *data = _data;
-	get_objects(node, data, opt_basedir_fd);
+	get_objects(node, data, opt_basedir_fd, false);
+}
+
+static void print_bad_objects_handler(struct lcfs_node_s *node, void *_data)
+{
+	PrintData *data = _data;
+	get_objects(node, data, opt_basedir_fd, true);
 }
 
 static void print_objects_handler_end(void *_data)
@@ -314,7 +350,7 @@ static void print_objects_handler_end(void *_data)
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage: %s [--basedir=path] [ls|objects|dump|missing-objects] IMAGES...\n",
+		"usage: %s [--basedir=path] [ls|objects|dump|missing-objects|fsck-objects] IMAGES...\n",
 		argv0);
 }
 
@@ -371,6 +407,10 @@ int main(int argc, char **argv)
 		handler_end = print_objects_handler_end;
 	} else if (strcmp(command, "missing-objects") == 0) {
 		handler = print_missing_objects_handler;
+		handler_init = print_objects_handler_init;
+		handler_end = print_objects_handler_end;
+	} else if (strcmp(command, "fsck-objects") == 0) {
+		handler = print_bad_objects_handler;
 		handler_init = print_objects_handler_init;
 		handler_end = print_objects_handler_end;
 	} else {
