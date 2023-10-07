@@ -123,10 +123,9 @@ char *read_file(const char *path, size_t *length)
 		if (buf) {
 			save_errno = errno;
 			free(buf);
+			buf = NULL;
 		}
-		errno = save_errno;
-		return NULL;
 	}
-
+	errno = save_errno;
 	return buf;
 }
