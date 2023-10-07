@@ -186,7 +186,7 @@ int main(int argc, char **argv)
 		} else if (strcmp("idmap", key) == 0) {
 			if (value == NULL)
 				errx(EXIT_FAILURE,
-				     "No value specified for workdir option\n");
+				     "No value specified for idmap option\n");
 			opt_idmap = value;
 		} else if (strcmp("rw", key) == 0) {
 			opt_ro = false;
