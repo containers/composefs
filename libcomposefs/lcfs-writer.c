@@ -243,7 +243,8 @@ int lcfs_compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 	for (node = root; node != NULL; node = node->next) {
 		for (size_t i = 0; i < node->children_size; i++) {
 			struct lcfs_node_s *child = node->children[i];
-			if (child->link_to != NULL && !child->link_to->in_tree) {
+			struct lcfs_node_s *link_to = follow_links(child);
+			if (child->link_to != NULL && !link_to->in_tree) {
 				/* Link to inode outside tree */
 				errno = EINVAL;
 				return -1;
