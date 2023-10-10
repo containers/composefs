@@ -15,6 +15,10 @@ EXTRA_DIST=\
 	composefs.pc.in \
 	composefs.spec.in \
 	composefs.spec \
+	COPYING.LESSERv3 \
+	COPYINGv3 \
+	COPYINGv3 \
+	LICENSE.Apache-2.0 \
 	${MANPAGES}
 
 pkgconfig_DATA = composefs.pc
