@@ -101,6 +101,15 @@ static void print_escaped(const char *val, ssize_t len, int escape)
 	}
 }
 
+static void print_escaped_optional(const char *val, ssize_t len, int escape)
+{
+	if (val == NULL) {
+		printf("-");
+	} else {
+		print_escaped(val, len, escape);
+	}
+}
+
 static void print_node(struct lcfs_node_s *node, char *parent_path)
 {
 	for (size_t i = 0; i < lcfs_node_get_n_children(node); i++) {
@@ -173,7 +182,7 @@ static void dump_node(struct lcfs_node_s *node, char *path)
 	       lcfs_node_get_uid(target), lcfs_node_get_gid(target),
 	       lcfs_node_get_rdev(target), (int64_t)mtime.tv_sec,
 	       (unsigned int)mtime.tv_nsec);
-	print_escaped(payload ? payload : "-", -1, ESCAPE_LONE_DASH);
+	print_escaped_optional(payload, -1, ESCAPE_LONE_DASH);
 
 	if (digest) {
 		char digest_str[LCFS_DIGEST_SIZE * 2 + 1] = { 0 };
