@@ -720,10 +720,13 @@ struct lcfs_node_s *lcfs_load_node_from_fd(int fd)
 
 int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload)
 {
-	char *dup = strdup(payload);
-	if (dup == NULL) {
-		errno = ENOMEM;
-		return -1;
+	char *dup = NULL;
+	if (payload) {
+		dup = strdup(payload);
+		if (dup == NULL) {
+			errno = ENOMEM;
+			return -1;
+		}
 	}
 	free(node->payload);
 	node->payload = dup;
