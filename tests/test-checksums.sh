@@ -45,5 +45,11 @@ for format in erofs ; do
             echo Dump is not reproducible
             exit 1
         fi
+
+        ${VALGRIND_PREFIX} ${BINDIR}/composefs-info dump $tmpfile | ${VALGRIND_PREFIX} ${BINDIR}/mkcomposefs --from-file - $tmpfile2
+        if ! cmp $tmpfile $tmpfile2; then
+            echo Dump is not reproducible via composefs-info dump
+            exit 1
+        fi
     done
 done
