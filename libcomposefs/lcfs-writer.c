@@ -67,9 +67,9 @@ size_t hash_memory(const char *string, size_t len, size_t n_buckets)
 	size_t i, value = 0;
 
 	for (i = 0; i < len; i++) {
-		value = (value * 31 + string[i]) % n_buckets;
+		value = (value * 31 + string[i]);
 	}
-	return value;
+	return value % n_buckets;
 }
 
 static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root,
