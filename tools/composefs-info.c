@@ -162,27 +162,26 @@ static void digest_to_string(const uint8_t *csum, char *buf)
 
 static void dump_node(struct lcfs_node_s *node, char *path)
 {
-	struct lcfs_node_s *target;
-	struct timespec mtime;
-	const char *payload;
-	const uint8_t *digest;
-
-	target = lcfs_node_get_hardlink_target(node);
+	struct lcfs_node_s *target = lcfs_node_get_hardlink_target(node);
 	if (target == NULL)
 		target = node;
 
+	struct timespec mtime;
 	lcfs_node_get_mtime(target, &mtime);
-	payload = lcfs_node_get_payload(target);
-	digest = lcfs_node_get_fsverity_digest(target);
+	const char *payload = lcfs_node_get_payload(target);
+	const uint8_t *digest = lcfs_node_get_fsverity_digest(target);
+	const uint8_t *content = lcfs_node_get_content(target);
+	uint64_t size = lcfs_node_get_size(target);
 
 	print_escaped(*path == 0 ? "/" : path, -1, ESCAPE_STANDARD);
-	printf(" %" PRIu64 " %s%o %u %u %u %u %" PRIi64 ".%u ",
-	       lcfs_node_get_size(target), target == node ? "" : "@",
-	       lcfs_node_get_mode(target), lcfs_node_get_nlink(target),
-	       lcfs_node_get_uid(target), lcfs_node_get_gid(target),
-	       lcfs_node_get_rdev(target), (int64_t)mtime.tv_sec,
-	       (unsigned int)mtime.tv_nsec);
+	printf(" %" PRIu64 " %s%o %u %u %u %u %" PRIi64 ".%u ", size,
+	       target == node ? "" : "@", lcfs_node_get_mode(target),
+	       lcfs_node_get_nlink(target), lcfs_node_get_uid(target),
+	       lcfs_node_get_gid(target), lcfs_node_get_rdev(target),
+	       (int64_t)mtime.tv_sec, (unsigned int)mtime.tv_nsec);
 	print_escaped_optional(payload, -1, ESCAPE_LONE_DASH);
+	printf(" ");
+	print_escaped_optional((char *)content, size, ESCAPE_LONE_DASH);
 
 	if (digest) {
 		char digest_str[LCFS_DIGEST_SIZE * 2 + 1] = { 0 };
