@@ -230,13 +230,13 @@ static bool xattrs_ht_comparator(const void *d1, const void *d2)
 	const struct hasher_xattr_s *v1 = d1;
 	const struct hasher_xattr_s *v2 = d2;
 
-	if (strcmp(v1->xattr->key, v2->xattr->key) != 0)
-		return false;
-
 	if (v1->xattr->value_len != v2->xattr->value_len)
 		return false;
 
-	return memcmp(v1->xattr->value, v2->xattr->value, v1->xattr->value_len) == 0;
+	if (memcmp(v1->xattr->value, v2->xattr->value, v1->xattr->value_len) != 0)
+		return false;
+
+	return strcmp(v1->xattr->key, v2->xattr->key) == 0;
 }
 
 /* Sort alphabetically by key and value to get some canonical order */
@@ -328,9 +328,12 @@ static int compute_erofs_shared_xattrs(struct lcfs_ctx_s *ctx)
 	size_t n_xattrs;
 	uint64_t xattr_offset;
 
-	/* Find the use count for each xattr key/value in use */
+	size_t n_files = 0;
+	for (node = ctx->root; node != NULL; node = node->next)
+		n_files++;
 
-	xattr_hash = hash_initialize(0, NULL, xattrs_ht_hasher,
+	/* Find the use count for each xattr key/value in use */
+	xattr_hash = hash_initialize(n_files, NULL, xattrs_ht_hasher,
 				     xattrs_ht_comparator, free);
 	if (xattr_hash == NULL) {
 		return -1;

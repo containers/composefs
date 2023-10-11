@@ -67,9 +67,9 @@ size_t hash_memory(const char *string, size_t len, size_t n_buckets)
 	size_t i, value = 0;
 
 	for (i = 0; i < len; i++) {
-		value = (value * 31 + string[i]) % n_buckets;
+		value = (value * 31 + string[i]);
 	}
-	return value;
+	return value % n_buckets;
 }
 
 static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root,
@@ -906,7 +906,7 @@ int lcfs_node_add_child(struct lcfs_node_s *parent, struct lcfs_node_s *child,
 			const char *name)
 {
 	struct lcfs_node_s **new_children;
-	size_t new_size;
+	size_t new_capacity;
 	char *name_copy;
 
 	if ((parent->inode.st_mode & S_IFMT) != S_IFDIR) {
@@ -936,20 +936,26 @@ int lcfs_node_add_child(struct lcfs_node_s *parent, struct lcfs_node_s *child,
 		return -1;
 	}
 
-	new_size = parent->children_size + 1;
+	if (parent->children_capacity == parent->children_size) {
+		if (parent->children_size == 0)
+			new_capacity = 16;
+		else
+			new_capacity = parent->children_capacity * 2;
 
-	new_children = reallocarray(parent->children, sizeof(*parent->children),
-				    new_size);
-	if (new_children == NULL) {
-		errno = ENOMEM;
-		free(name_copy);
-		return -1;
+		new_children = reallocarray(parent->children,
+					    sizeof(*parent->children), new_capacity);
+		if (new_children == NULL) {
+			errno = ENOMEM;
+			free(name_copy);
+			return -1;
+		}
+
+		parent->children = new_children;
+		parent->children_capacity = new_capacity;
 	}
 
-	parent->children = new_children;
-
 	parent->children[parent->children_size] = child;
-	parent->children_size = new_size;
+	parent->children_size += 1;
 	child->parent = parent;
 	child->name = name_copy;
 

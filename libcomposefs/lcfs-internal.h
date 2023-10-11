@@ -140,6 +140,7 @@ struct lcfs_node_s {
 	struct lcfs_node_s *parent;
 
 	struct lcfs_node_s **children; /* Owns refs */
+	size_t children_capacity;
 	size_t children_size;
 
 	/* Used to create hard links.  */
