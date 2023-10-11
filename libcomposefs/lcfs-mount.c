@@ -403,6 +403,117 @@ retry:
 	return res;
 }
 
+static int lcfs_mount_ovl(struct lcfs_mount_state_s *state, char *imagemount)
+{
+#ifdef HAVE_NEW_MOUNT_API
+	struct lcfs_mount_options_s *options = state->options;
+
+	bool require_verity =
+		(options->flags & LCFS_MOUNT_FLAGS_REQUIRE_VERITY) != 0;
+	bool readonly = (options->flags & LCFS_MOUNT_FLAGS_READONLY) != 0;
+
+	cleanup_fd int fd_fs = syscall_fsopen("overlay", FSOPEN_CLOEXEC);
+	if (fd_fs < 0)
+		return -errno;
+
+	int res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "metacopy", "on", 0);
+	if (res < 0)
+		return -errno;
+
+	res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "redirect_dir", "on", 0);
+	if (res < 0)
+		return -errno;
+
+	if (require_verity) {
+		res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "verity",
+				       "require", 0);
+		if (res < 0)
+			return -errno;
+	}
+
+	/* Here we're using the new mechanism to append to lowerdir that was added in
+	 * 6.5 (commit b36a5780cb44), because that is the only way to handle escaping
+	 * of commas (i.e. we don't need to in this case) with the new mount api.
+	 * Also, since 6.5 has data-only lowerdir support we can just always use it.
+	 *
+	 * For older kernels a lack of append support will make the mount fail with EINVAL
+	 * and print an "empty lowerdir" error, and a lack of comma in the options will
+	 * cause the fsconfig to fail with EINVAL. If any of these happen we fall back to
+	 * the legacy implementation (via ENOSYS).
+	 */
+	res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "lowerdir", imagemount, 0);
+	/* EINVAL probably the lack of support for commas in options as per above, fallback */
+	if (errno == EINVAL)
+		return -ENOSYS;
+	if (res < 0)
+		return -errno;
+
+	for (size_t i = 0; i < state->options->n_objdirs; i++) {
+		const char *objdir = state->options->objdirs[i];
+		cleanup_free char *opt = malloc(strlen(objdir) + 2 + 1);
+		if (opt == NULL)
+			return -ENOMEM;
+		strcpy(opt, "::"); /* starting with : means we append a dataonly lowerdir */
+		strcat(opt, objdir);
+
+		res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "lowerdir",
+				       opt, 0);
+		if (res < 0) {
+			/* EINVAL probably the lack of support for commas in options as per above, fallback */
+			if (errno == EINVAL)
+				return -ENOSYS;
+			return -errno;
+		}
+	}
+
+	if (options->upperdir) {
+		res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "upperdir",
+				       options->upperdir, 0);
+		if (res < 0) {
+			/* EINVAL probably the lack of support for commas in options as per above, fallback */
+			if (errno == EINVAL)
+				return -ENOSYS;
+			return -errno;
+		}
+	}
+	if (options->workdir) {
+		res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "workdir",
+				       options->workdir, 0);
+		if (res < 0) {
+			/* EINVAL probably the lack of support for commas in options as per above, fallback */
+			if (errno == EINVAL)
+				return -ENOSYS;
+			return -errno;
+		}
+	}
+
+	res = syscall_fsconfig(fd_fs, FSCONFIG_CMD_CREATE, NULL, NULL, 0);
+	if (res < 0) {
+		/* EINVAL probably the lack of support for dataonly dirs as per above, fallback */
+		if (errno == EINVAL)
+			return -ENOSYS;
+		return -errno;
+	}
+
+	int mount_flags = 0;
+	if (readonly)
+		mount_flags |= MS_RDONLY;
+
+	cleanup_fd int fd_mnt = syscall_fsmount(fd_fs, FSMOUNT_CLOEXEC, mount_flags);
+	if (fd_mnt < 0)
+		return -errno;
+
+	res = syscall_move_mount(fd_mnt, "", AT_FDCWD, state->mountpoint,
+				 MOVE_MOUNT_F_EMPTY_PATH);
+	if (res < 0)
+		return -errno;
+
+	return 0;
+#else
+	return -ENOSYS;
+#endif
+}
+
 static int lcfs_mount_erofs(const char *source, const char *target,
 			    uint32_t image_flags, struct lcfs_mount_state_s *state)
 {
@@ -520,7 +631,9 @@ static int lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
 	/* We use the legacy API to mount overlayfs, because the new API doesn't allow use
 	 * to pass in escaped directory names
 	 */
-	res = lcfs_mount_ovl_legacy(state, imagemount);
+	res = lcfs_mount_ovl(state, imagemount);
+	if (res == -ENOSYS)
+		res = lcfs_mount_ovl_legacy(state, imagemount);
 
 	umount2(imagemount, MNT_DETACH);
 	if (created_tmpdir) {
