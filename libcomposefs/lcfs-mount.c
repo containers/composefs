@@ -296,6 +296,186 @@ static char *compute_lower(const char *imagemount,
 	return lower;
 }
 
+static int lcfs_mount_ovl_legacy(struct lcfs_mount_state_s *state, char *imagemount)
+{
+	struct lcfs_mount_options_s *options = state->options;
+
+	bool require_verity =
+		(options->flags & LCFS_MOUNT_FLAGS_REQUIRE_VERITY) != 0;
+	bool readonly = (options->flags & LCFS_MOUNT_FLAGS_READONLY) != 0;
+
+	/* First try new version with :: separating datadirs. */
+	cleanup_free char *lowerdir_1 = compute_lower(imagemount, state, true);
+	if (lowerdir_1 == NULL) {
+		return -ENOMEM;
+	}
+	/* Can point to lowerdir_1 or _2 */
+	const char *lowerdir_target = lowerdir_1;
+
+	/* Then fall back. */
+	cleanup_free char *lowerdir_2 = compute_lower(imagemount, state, false);
+	if (lowerdir_2 == NULL) {
+		return -ENOMEM;
+	}
+
+	cleanup_free char *upperdir = NULL;
+	if (options->upperdir) {
+		upperdir = escape_mount_option(options->upperdir);
+		if (upperdir == NULL) {
+			return -ENOMEM;
+		}
+	}
+	cleanup_free char *workdir = NULL;
+	if (options->workdir) {
+		workdir = escape_mount_option(options->workdir);
+		if (workdir == NULL)
+			return -ENOMEM;
+	}
+
+	int res;
+	cleanup_free char *overlay_options = NULL;
+retry:
+	free(steal_pointer(&overlay_options));
+	res = asprintf(&overlay_options,
+		       "metacopy=on,redirect_dir=on,lowerdir=%s%s%s%s%s%s",
+		       lowerdir_target, upperdir ? ",upperdir=" : "",
+		       upperdir ? upperdir : "", workdir ? ",workdir=" : "",
+		       workdir ? workdir : "",
+		       require_verity ? ",verity=require" : "");
+	if (res < 0)
+		return -ENOMEM;
+
+	int mount_flags = 0;
+	if (readonly)
+		mount_flags |= MS_RDONLY;
+	if (lowerdir_target == lowerdir_1)
+		mount_flags |= MS_SILENT;
+
+	res = mount("overlay", state->mountpoint, "overlay", mount_flags,
+		    overlay_options);
+	if (res != 0) {
+		res = -errno;
+	}
+
+	if (res == -EINVAL && lowerdir_target == lowerdir_1) {
+		lowerdir_target = lowerdir_2;
+		goto retry;
+	}
+
+	return res;
+}
+
+static int lcfs_mount_ovl(struct lcfs_mount_state_s *state, char *imagemount)
+{
+#ifdef HAVE_NEW_MOUNT_API
+	struct lcfs_mount_options_s *options = state->options;
+
+	bool require_verity =
+		(options->flags & LCFS_MOUNT_FLAGS_REQUIRE_VERITY) != 0;
+	bool readonly = (options->flags & LCFS_MOUNT_FLAGS_READONLY) != 0;
+
+	cleanup_fd int fd_fs = syscall_fsopen("overlay", FSOPEN_CLOEXEC);
+	if (fd_fs < 0)
+		return -errno;
+
+	int res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "metacopy", "on", 0);
+	if (res < 0)
+		return -errno;
+
+	res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "redirect_dir", "on", 0);
+	if (res < 0)
+		return -errno;
+
+	if (require_verity) {
+		res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "verity",
+				       "require", 0);
+		if (res < 0)
+			return -errno;
+	}
+
+	/* Here we're using the new mechanism to append to lowerdir that was added in
+	 * 6.5 (commit b36a5780cb44), because that is the only way to handle escaping
+	 * of commas (i.e. we don't need to in this case) with the new mount api.
+	 * Also, since 6.5 has data-only lowerdir support we can just always use it.
+	 *
+	 * For older kernels a lack of append support will make the mount fail with EINVAL
+	 * and print an "empty lowerdir" error, and a lack of comma in the options will
+	 * cause the fsconfig to fail with EINVAL. If any of these happen we fall back to
+	 * the legacy implementation (via ENOSYS).
+	 */
+	res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "lowerdir", imagemount, 0);
+	/* EINVAL probably the lack of support for commas in options as per above, fallback */
+	if (errno == EINVAL)
+		return -ENOSYS;
+	if (res < 0)
+		return -errno;
+
+	for (size_t i = 0; i < state->options->n_objdirs; i++) {
+		const char *objdir = state->options->objdirs[i];
+		cleanup_free char *opt = malloc(strlen(objdir) + 2 + 1);
+		if (opt == NULL)
+			return -ENOMEM;
+		strcpy(opt, "::"); /* starting with : means we append a dataonly lowerdir */
+		strcat(opt, objdir);
+
+		res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "lowerdir",
+				       opt, 0);
+		if (res < 0) {
+			/* EINVAL probably the lack of support for commas in options as per above, fallback */
+			if (errno == EINVAL)
+				return -ENOSYS;
+			return -errno;
+		}
+	}
+
+	if (options->upperdir) {
+		res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "upperdir",
+				       options->upperdir, 0);
+		if (res < 0) {
+			/* EINVAL probably the lack of support for commas in options as per above, fallback */
+			if (errno == EINVAL)
+				return -ENOSYS;
+			return -errno;
+		}
+	}
+	if (options->workdir) {
+		res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "workdir",
+				       options->workdir, 0);
+		if (res < 0) {
+			/* EINVAL probably the lack of support for commas in options as per above, fallback */
+			if (errno == EINVAL)
+				return -ENOSYS;
+			return -errno;
+		}
+	}
+
+	res = syscall_fsconfig(fd_fs, FSCONFIG_CMD_CREATE, NULL, NULL, 0);
+	if (res < 0) {
+		/* EINVAL probably the lack of support for dataonly dirs as per above, fallback */
+		if (errno == EINVAL)
+			return -ENOSYS;
+		return -errno;
+	}
+
+	int mount_flags = 0;
+	if (readonly)
+		mount_flags |= MS_RDONLY;
+
+	cleanup_fd int fd_mnt = syscall_fsmount(fd_fs, FSMOUNT_CLOEXEC, mount_flags);
+	if (fd_mnt < 0)
+		return -errno;
+
+	res = syscall_move_mount(fd_mnt, "", AT_FDCWD, state->mountpoint,
+				 MOVE_MOUNT_F_EMPTY_PATH);
+	if (res < 0)
+		return -errno;
+
+	return 0;
+#else
+	return -ENOSYS;
+#endif
+}
+
 static int lcfs_mount_erofs(const char *source, const char *target,
 			    uint32_t image_flags, struct lcfs_mount_state_s *state)
 {
@@ -383,22 +563,9 @@ static int lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
 	bool created_tmpdir = false;
 	char loopname[PATH_MAX];
 	int res, errsv;
-	cleanup_free char *lowerdir_1 = NULL;
-	cleanup_free char *lowerdir_2 = NULL;
-	cleanup_free char *upperdir = NULL;
-	cleanup_free char *workdir = NULL;
-	cleanup_free char *overlay_options = NULL;
-	/* Can point to lowerdir_1 or _2 */
-	const char *lowerdir_target = NULL;
 	int loopfd;
-	bool require_verity;
-	bool readonly;
-	int mount_flags;
 
 	image_flags = lcfs_u32_from_file(header->flags);
-
-	require_verity = (options->flags & LCFS_MOUNT_FLAGS_REQUIRE_VERITY) != 0;
-	readonly = (options->flags & LCFS_MOUNT_FLAGS_READONLY) != 0;
 
 	loopfd = setup_loopback(state->fd, state->image_path, loopname);
 	if (loopfd < 0)
@@ -426,68 +593,10 @@ static int lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
 	/* We use the legacy API to mount overlayfs, because the new API doesn't allow use
 	 * to pass in escaped directory names
 	 */
+	res = lcfs_mount_ovl(state, imagemount);
+	if (res == -ENOSYS)
+		res = lcfs_mount_ovl_legacy(state, imagemount);
 
-	/* First try new version with :: separating datadirs. */
-	lowerdir_1 = compute_lower(imagemount, state, true);
-	if (lowerdir_1 == NULL) {
-		res = -ENOMEM;
-		goto fail;
-	}
-	lowerdir_target = lowerdir_1;
-
-	/* Then fall back. */
-	lowerdir_2 = compute_lower(imagemount, state, false);
-	if (lowerdir_2 == NULL) {
-		res = -ENOMEM;
-		goto fail;
-	}
-
-	if (options->upperdir) {
-		upperdir = escape_mount_option(options->upperdir);
-		if (upperdir == NULL) {
-			res = -ENOMEM;
-			goto fail;
-		}
-	}
-	if (options->workdir) {
-		workdir = escape_mount_option(options->workdir);
-		if (workdir == NULL) {
-			res = -ENOMEM;
-			goto fail;
-		}
-	}
-
-retry:
-	free(steal_pointer(&overlay_options));
-	res = asprintf(&overlay_options,
-		       "metacopy=on,redirect_dir=on,lowerdir=%s%s%s%s%s%s",
-		       lowerdir_target, upperdir ? ",upperdir=" : "",
-		       upperdir ? upperdir : "", workdir ? ",workdir=" : "",
-		       workdir ? workdir : "",
-		       require_verity ? ",verity=require" : "");
-	if (res < 0) {
-		res = -ENOMEM;
-		goto fail;
-	}
-
-	mount_flags = 0;
-	if (readonly)
-		mount_flags |= MS_RDONLY;
-	if (lowerdir_target == lowerdir_1)
-		mount_flags |= MS_SILENT;
-
-	res = mount("overlay", state->mountpoint, "overlay", mount_flags,
-		    overlay_options);
-	if (res != 0) {
-		res = -errno;
-	}
-
-	if (res == -EINVAL && lowerdir_target == lowerdir_1) {
-		lowerdir_target = lowerdir_2;
-		goto retry;
-	}
-
-fail:
 	umount2(imagemount, MNT_DETACH);
 	if (created_tmpdir) {
 		rmdir(imagemount);
