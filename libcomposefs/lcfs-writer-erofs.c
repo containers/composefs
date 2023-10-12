@@ -336,6 +336,7 @@ static int compute_erofs_shared_xattrs(struct lcfs_ctx_s *ctx)
 	xattr_hash = hash_initialize(n_files, NULL, xattrs_ht_hasher,
 				     xattrs_ht_comparator, free);
 	if (xattr_hash == NULL) {
+		errno = ENOMEM;
 		return -1;
 	}
 
