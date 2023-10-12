@@ -30,6 +30,8 @@
 #include <sys/syscall.h>
 #include <sys/mount.h>
 #include <sys/prctl.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 #ifdef HAVE_SYS_CAPABILITY_H
 #include <sys/capability.h>
 #endif
@@ -91,9 +93,24 @@ static void do_namespace_sandbox(void)
 #endif
 
 	ret = unshare(CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWUTS |
-		      CLONE_NEWIPC | CLONE_NEWNET);
+		      CLONE_NEWIPC | CLONE_NEWNET | CLONE_NEWPID);
 	if (ret < 0)
 		return;
+
+	pid_t pid = fork();
+	if (pid < 0)
+		err(EXIT_FAILURE, "fork");
+	if (pid != 0) {
+		int wstatus;
+		int res = waitpid(pid, &wstatus, 0);
+		if (res == -1)
+			err(EXIT_FAILURE, "waitpid");
+
+		if (!WIFEXITED(wstatus))
+			err(EXIT_FAILURE, "sandbox process died");
+
+		exit(WEXITSTATUS(wstatus));
+	}
 
 	fd = open("/proc/self/setgroups", O_WRONLY | O_CLOEXEC);
 	if (fd < 0)
@@ -142,6 +159,14 @@ static void do_namespace_sandbox(void)
 
 	free(cwd);
 	cwd = NULL;
+
+	ret = mkdir("proc", 0755);
+	if (ret < 0)
+		err(EXIT_FAILURE, "mkdir /proc");
+
+	if (mount("proc", "proc", "proc", MS_NOSUID | MS_NOEXEC | MS_NODEV,
+		  "subset=pid,hidepid=noaccess") != 0)
+		err(EXIT_FAILURE, "mount /proc");
 
 	ret = pivot_root(".", ".");
 	if (ret < 0)
