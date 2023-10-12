@@ -978,7 +978,7 @@ static void cfs_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
 		fd = openat(basedir_fd, redirect,
 			    O_CLOEXEC | O_NOCTTY | O_NOFOLLOW | O_RDONLY, 0);
 		if (fd < 0) {
-			fuse_reply_err(req, -errno);
+			fuse_reply_err(req, errno);
 			return;
 		}
 
