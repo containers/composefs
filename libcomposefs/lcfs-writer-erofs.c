@@ -814,8 +814,10 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 	compute_erofs_xattr_counts(node, &n_shared_xattrs, &unshared_xattrs_size);
 	xattr_size = xattr_erofs_inode_size(n_shared_xattrs, unshared_xattrs_size);
 	xattr_icount = xattr_erofs_icount(xattr_size);
-	if (xattr_icount > UINT16_MAX)
-		return -EINVAL;
+	if (xattr_icount > UINT16_MAX) {
+		errno = EINVAL;
+		return -1;
+	}
 
 	version = node->erofs_compact ? 0 : 1;
 	datalayout = (node->erofs_tailsize > 0) ? EROFS_INODE_FLAT_INLINE :
