@@ -1523,7 +1523,7 @@ static int lcfs_build_node_erofs_xattr(struct lcfs_node_s *node, uint8_t name_in
 			}
 			node->payload = strndup(value, value_size);
 			if (node->payload == NULL) {
-				errno = EINVAL;
+				errno = ENOMEM;
 				return -1;
 			}
 		}

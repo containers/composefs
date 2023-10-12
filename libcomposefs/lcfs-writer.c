@@ -112,7 +112,7 @@ int lcfs_clone_root(struct lcfs_ctx_s *ctx)
 
 	clone = lcfs_node_clone_deep(ctx->root);
 	if (clone == NULL) {
-		errno = EINVAL;
+		errno = ENOMEM;
 		return -1;
 	}
 
