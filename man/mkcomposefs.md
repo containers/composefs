@@ -5,7 +5,7 @@
 mkcomposefs - create a composefs filesystem image
 
 # SYNOPSIS
-**mkcomposefs** *SOURCEDIR* *IMAGE*
+**mkcomposefs** *SOURCE* *IMAGE*
 
 # DESCRIPTION
 
@@ -14,8 +14,9 @@ or more separate directories containing content-addressed backing data
 for regular files.
 
 **mkcomposefs** constructs the mountable "composefs image" using the
-source directory as input. It can also create the backing store
-directory.
+source as input. It can also create the backing store directory.
+Typically the source is a directory, but with *--from-file* it can
+also be a file.
 
 # OPTIONS
 
@@ -55,7 +56,12 @@ will be a mountable composefs image.
 **\-\-user-xattrs**
 :   Only add xattrs with the "user." prefix to files in the image.
 
+**\-\-from-file**
+:   The source is a file in the **composefs-dump(5)** format. If
+    the specified file is "-", the data is read from stdin.
+
 
 # SEE ALSO
+**composefs-info(1)**, **mount.composefs(1)**, **composefs-dump(5)**
 
-- [composefs upstream](https://github.com/containers/composefs)
+[composefs upstream](https://github.com/containers/composefs)

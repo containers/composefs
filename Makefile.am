@@ -2,9 +2,14 @@ SUBDIRS=libcomposefs tools tests
 
 CLEANFILES=
 
-MANPAGES=\
+MAN1PAGES=\
 	man/mount.composefs.md \
-	man/mkcomposefs.md
+	man/mkcomposefs.md \
+	man/composefs-info.md
+MAN5PAGES=\
+	man/composefs-dump.md
+
+MANPAGES=${MAN1PAGES} ${MAN5PAGES}
 
 EXTRA_DIST=\
 	composefs.pc.in \
@@ -20,8 +25,13 @@ man/%.1: man/%.md
 	mkdir -p man
 	${PANDOC} $+ -s -t man > $@
 
-man1_MANS = $(MANPAGES:.md=.1)
+man/%.5: man/%.md
+	mkdir -p man
+	${PANDOC} $+ -s -t man > $@
 
-CLEANFILES += ${man1_MANS}
+man1_MANS = $(MAN1PAGES:.md=.1)
+man5_MANS = $(MAN5PAGES:.md=.5)
+
+CLEANFILES += ${man1_MANS} ${man5_MANS}
 
 endif

@@ -62,5 +62,6 @@ options when passed via the `-o OPTIONS` argument.
 :  Specifies an overlayfs workdir to go with **upperdir**.
 
 # SEE ALSO
+**composefs-info(1)**, **mount.composefs(1)**
 
-- [composefs upstream](https://github.com/containers/composefs)
+[composefs upstream](https://github.com/containers/composefs)

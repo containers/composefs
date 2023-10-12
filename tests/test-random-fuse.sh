@@ -42,6 +42,15 @@ test_random() {
         exit 1
     fi
 
+    # dump + mkcomposefs should produce the identical results
+    echo Dumping composefs image
+    ${VALGRIND_PREFIX} ${BINDIR}/composefs-info dump $workdir/root.cfs | ${VALGRIND_PREFIX} ${BINDIR}/mkcomposefs --from-file - $workdir/dump.cfs
+    if ! cmp $workdir/root.cfs $workdir/dump.cfs; then
+        echo Dump + mkcomposefs is not reproducible
+        diff -u <(${BINDIR}/composefs-info dump $workdir/root.cfs) <(${BINDIR}/composefs-info dump $workdir/dump.cfs)
+        exit 1
+    fi
+
     if [ $has_fuse == 'n' ]; then
         return;
     fi

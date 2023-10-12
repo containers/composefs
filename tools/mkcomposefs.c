@@ -21,6 +21,7 @@
 
 #include "libcomposefs/lcfs-writer.h"
 #include "libcomposefs/lcfs-utils.h"
+#include "libcomposefs/lcfs-internal.h"
 
 #include <stdio.h>
 #include <linux/limits.h>
@@ -35,6 +36,11 @@
 #include <sys/ioctl.h>
 #include <linux/fsverity.h>
 #include <linux/fs.h>
+
+static void oom(void)
+{
+	errx(EXIT_FAILURE, "Out of memory");
+}
 
 static void digest_to_string(const uint8_t *csum, char *buf)
 {
@@ -310,14 +316,15 @@ static void usage(const char *argv0)
 {
 	const char *bin = basename(argv0);
 	fprintf(stderr,
-		"Usage: %s [OPTIONS] SOURCEDIR IMAGE\n"
+		"Usage: %s [OPTIONS] SOURCE IMAGE\n"
 		"Options:\n"
 		"  --digest-store=PATH   Store content files in this directory\n"
 		"  --use-epoch           Make all mtimes zero\n"
 		"  --skip-xattrs         Don't store file xattrs\n"
 		"  --user-xattrs         Only store user.* xattrs\n"
 		"  --print-digest        Print the digest of the image\n"
-		"  --print-digest-only   Print the digest of the image, don't write image\n",
+		"  --print-digest-only   Print the digest of the image, don't write image\n"
+		"  --from-file           The source is a dump file, not a directory\n",
 		bin);
 }
 
@@ -328,12 +335,495 @@ static void usage(const char *argv0)
 #define OPT_PRINT_DIGEST 109
 #define OPT_PRINT_DIGEST_ONLY 111
 #define OPT_USER_XATTRS 112
+#define OPT_FROM_FILE 113
 
 static ssize_t write_cb(void *_file, void *buf, size_t count)
 {
 	FILE *file = _file;
 
 	return fwrite(buf, 1, count, file);
+}
+
+static size_t split_at(const char **start, size_t *length, char split_char,
+		       bool *partial)
+{
+	char *end = memchr(*start, split_char, *length);
+	if (end == NULL) {
+		size_t part_len = *length;
+		*start = *start + *length;
+		;
+		*length = 0;
+		if (partial)
+			*partial = true;
+		return part_len;
+	}
+
+	size_t part_len = end - *start;
+	*start += part_len + 1;
+	*length -= part_len + 1;
+	if (partial)
+		*partial = false;
+
+	return part_len;
+}
+
+enum {
+	FIELD_PATH,
+	FIELD_SIZE,
+	FIELD_MODE,
+	FIELD_NLINK,
+	FIELD_UID,
+	FIELD_GID,
+	FIELD_RDEV,
+	FIELD_MTIME,
+	FIELD_PAYLOAD,
+	FIELD_CONTENT,
+	FIELD_DIGEST,
+
+	FIELD_XATTRS_START,
+};
+
+const char *names[] = {
+	"PATH",		"SIZE",	 "MODE",    "NLINK",   "UID",	 "GID",
+	"RDEV",		"MTIME", "PAYLOAD", "CONTENT", "DIGEST",
+
+	"XATTRS_START",
+};
+
+static char *unescape_string(const char *escaped, size_t escaped_size,
+			     size_t *unescaped_size)
+{
+	const char *escaped_end = escaped + escaped_size;
+	char *res = malloc(escaped_size + 1);
+	if (res == NULL)
+		oom();
+
+	char *out = res;
+
+	while (escaped < escaped_end) {
+		char c = *escaped++;
+		if (c == '\\') {
+			if (escaped >= escaped_end)
+				errx(EXIT_FAILURE, "No character after escape");
+			c = *escaped++;
+			switch (c) {
+			case '\\':
+				*out++ = '\\';
+				break;
+			case 'n':
+				*out++ = '\n';
+				break;
+			case 'r':
+				*out++ = '\r';
+				break;
+			case 't':
+				*out++ = '\t';
+				break;
+			case 'x':
+				if (escaped >= escaped_end)
+					errx(EXIT_FAILURE,
+					     "No hex characters after hex escape");
+				int x1 = hexdigit(*escaped++);
+				if (escaped >= escaped_end)
+					errx(EXIT_FAILURE,
+					     "No hex characters after hex escape");
+				int x2 = hexdigit(*escaped++);
+				if (x1 < 0 || x2 < 0)
+					errx(EXIT_FAILURE,
+					     "Invalid hex characters after hex escape");
+
+				*out++ = x1 << 4 | x2;
+				break;
+			default:
+				errx(EXIT_FAILURE, "Unsupported escape type %c", c);
+			}
+		} else {
+			*out++ = c;
+		}
+	}
+
+	if (unescaped_size)
+		*unescaped_size = out - res;
+
+	*out = 0; /* Null terminate */
+
+	return res;
+}
+
+static char *unescape_optional_string(const char *escaped, size_t escaped_size,
+				      size_t *unescaped_size)
+{
+	/* Optional */
+	if (escaped_size == 1 && escaped[0] == '-')
+		return NULL;
+
+	return unescape_string(escaped, escaped_size, unescaped_size);
+}
+
+static struct lcfs_node_s *lookup_parent_path(struct lcfs_node_s *node,
+					      const char *path, const char **name_out)
+{
+	while (*path == '/')
+		path++;
+
+	const char *start = path;
+	while (*path != 0 && *path != '/')
+		path++;
+
+	if (*path == 0) {
+		*name_out = start;
+		return node;
+	}
+
+	cleanup_free char *name = strndup(start, path - start);
+
+	struct lcfs_node_s *child = lcfs_node_lookup_child(node, name);
+	if (child == NULL)
+		return NULL;
+
+	return lookup_parent_path(child, path, name_out);
+}
+
+static struct lcfs_node_s *lookup_path(struct lcfs_node_s *node, const char *path)
+{
+	while (*path == '/')
+		path++;
+
+	if (*path == 0)
+		return node;
+
+	const char *start = path;
+	while (*path != 0 && *path != '/')
+		path++;
+
+	cleanup_free char *name = strndup(start, path - start);
+
+	struct lcfs_node_s *child = lcfs_node_lookup_child(node, name);
+	if (child == NULL)
+		return NULL;
+
+	return lookup_path(child, path);
+}
+
+static uint64_t parse_int_field(const char *str, size_t length, int base)
+{
+	cleanup_free char *s = strndup(str, length);
+	if (s == NULL)
+		oom();
+
+	char *endptr = NULL;
+	unsigned long long v = strtoull(s, &endptr, base);
+	if (*s == 0 || *endptr != 0)
+		errx(EXIT_FAILURE, "Invalid integer %s\n", s);
+
+	return (uint64_t)v;
+}
+
+static void parse_mtime(const char *str, size_t length, struct timespec *mtime)
+{
+	const char *mtime_sec_s = str;
+	size_t mtime_sec_len = split_at(&str, &length, '.', NULL);
+	uint64_t mtime_sec = parse_int_field(mtime_sec_s, mtime_sec_len, 10);
+	uint64_t mtime_nsec = parse_int_field(str, length, 10);
+	mtime->tv_sec = mtime_sec;
+	mtime->tv_nsec = mtime_nsec;
+}
+
+static void parse_xattr(const char *data, size_t data_len, struct lcfs_node_s *node)
+{
+	const char *xattr_name = data;
+	size_t xattr_name_len = split_at(&data, &data_len, '=', NULL);
+
+	cleanup_free char *key = unescape_string(xattr_name, xattr_name_len, NULL);
+	size_t value_len;
+	cleanup_free char *value = unescape_string(data, data_len, &value_len);
+
+	if (lcfs_node_set_xattr(node, key, value, value_len) != 0)
+		errx(EXIT_FAILURE, "Can't set xattr");
+}
+
+typedef struct hardlink_fixup hardlink_fixup;
+struct hardlink_fixup {
+	struct lcfs_node_s *node;
+	char *target_path;
+	hardlink_fixup *next;
+};
+
+typedef struct dump_info dump_info;
+struct dump_info {
+	struct lcfs_node_s *root;
+	hardlink_fixup *hardlink_fixups;
+};
+
+typedef struct field_info field_info;
+struct field_info {
+	const char *data;
+	size_t len;
+};
+
+static void tree_add_node(dump_info *info, const char *path, struct lcfs_node_s *node)
+{
+	if (strcmp(path, "/") == 0) {
+		if (!lcfs_node_dirp(node))
+			errx(EXIT_FAILURE, "Root must be a directory");
+
+		if (info->root == NULL)
+			info->root = lcfs_node_ref(node);
+		else
+			errx(EXIT_FAILURE, "Can't have multiple roots");
+	} else {
+		const char *name;
+		struct lcfs_node_s *parent =
+			lookup_parent_path(info->root, path, &name);
+
+		if (parent == NULL)
+			errx(EXIT_FAILURE, "Parent directory missing for %s", path);
+
+		if (!lcfs_node_dirp(parent))
+			errx(EXIT_FAILURE, "Parent must be a directory for %s", path);
+
+		int r = lcfs_node_add_child(parent, node, name);
+		if (r < 0) {
+			if (r == -EEXIST)
+				err(EXIT_FAILURE, "Path %s already exist", path);
+			err(EXIT_FAILURE, "Can't add child");
+		}
+		/* add_child took ownership, ref again */
+		lcfs_node_ref(node);
+	}
+}
+
+static void tree_add_hardlink_fixup(dump_info *info, char *target_path,
+				    struct lcfs_node_s *node)
+{
+	hardlink_fixup *fixup = calloc(1, sizeof(hardlink_fixup));
+	if (fixup == NULL)
+		oom();
+
+	fixup->node = node;
+	fixup->target_path = target_path; /* Takes ownership */
+
+	fixup->next = info->hardlink_fixups;
+	info->hardlink_fixups = fixup;
+}
+
+static void tree_resolve_hardlinks(dump_info *info)
+{
+	hardlink_fixup *fixup = info->hardlink_fixups;
+	while (fixup != NULL) {
+		hardlink_fixup *next = fixup->next;
+		struct lcfs_node_s *target =
+			lookup_path(info->root, fixup->target_path);
+		if (target == NULL)
+			errx(EXIT_FAILURE, "No target at %s for hardlink",
+			     fixup->target_path);
+
+		/* Don't override existing value from image for target nlink */
+		uint32_t old_nlink = lcfs_node_get_nlink(target);
+
+		lcfs_node_make_hardlink(fixup->node, target);
+
+		lcfs_node_set_nlink(target, old_nlink);
+
+		free(fixup->target_path);
+		free(fixup);
+
+		fixup = next;
+	}
+}
+
+static void tree_from_dump_line(dump_info *info, const char *line, size_t line_len)
+{
+	/* Split out all fixed fields */
+	field_info fields[FIELD_XATTRS_START];
+	for (int i = 0; i < FIELD_XATTRS_START; i++) {
+		fields[i].data = line;
+		fields[i].len = split_at(&line, &line_len, ' ', NULL);
+	}
+
+	cleanup_free char *path = unescape_string(fields[FIELD_PATH].data,
+						  fields[FIELD_PATH].len, NULL);
+
+	bool is_hardlink = false;
+	/* First char in mode is @ if hardlink */
+	if (fields[FIELD_MODE].len > 0 && fields[FIELD_MODE].data[0] == '@') {
+		is_hardlink = true;
+		fields[FIELD_MODE].len -= 1;
+		fields[FIELD_MODE].data += 1;
+	}
+	uint64_t mode = parse_int_field(fields[FIELD_MODE].data,
+					fields[FIELD_MODE].len, 8);
+
+	cleanup_node struct lcfs_node_s *node = lcfs_node_new();
+	lcfs_node_set_mode(node, mode);
+
+	tree_add_node(info, path, node);
+
+	/* For hardlinks, bail out early and handle in a fixup at the
+         * end when we can resolve the target path. */
+	if (is_hardlink) {
+		if (lcfs_node_dirp(node))
+			errx(EXIT_FAILURE, "Directories can't be hardlinked");
+		cleanup_free char *target_path =
+			unescape_optional_string(fields[FIELD_PAYLOAD].data,
+						 fields[FIELD_PAYLOAD].len, NULL);
+		tree_add_hardlink_fixup(info, steal_pointer(&target_path), node);
+		return;
+	}
+
+	/* Handle regular files/dir data from fixed fields */
+	uint64_t size = parse_int_field(fields[FIELD_SIZE].data,
+					fields[FIELD_SIZE].len, 10);
+	uint64_t nlink = parse_int_field(fields[FIELD_NLINK].data,
+					 fields[FIELD_NLINK].len, 10);
+	uint64_t uid =
+		parse_int_field(fields[FIELD_UID].data, fields[FIELD_UID].len, 10);
+	uint64_t gid =
+		parse_int_field(fields[FIELD_GID].data, fields[FIELD_GID].len, 10);
+	uint64_t rdev = parse_int_field(fields[FIELD_RDEV].data,
+					fields[FIELD_RDEV].len, 10);
+
+	struct timespec mtime;
+	parse_mtime(fields[FIELD_MTIME].data, fields[FIELD_MTIME].len, &mtime);
+
+	cleanup_free char *payload = unescape_optional_string(
+		fields[FIELD_PAYLOAD].data, fields[FIELD_PAYLOAD].len, NULL);
+	size_t content_len;
+	cleanup_free char *content =
+		unescape_optional_string(fields[FIELD_CONTENT].data,
+					 fields[FIELD_CONTENT].len, &content_len);
+	if (content && content_len != size)
+		errx(EXIT_FAILURE, "Invalid content size %lld, must match size %lld",
+		     (long long)content_len, (long long)size);
+
+	cleanup_free char *digest = unescape_optional_string(
+		fields[FIELD_DIGEST].data, fields[FIELD_DIGEST].len, NULL);
+
+	lcfs_node_set_mode(node, mode);
+	lcfs_node_set_size(node, size);
+	lcfs_node_set_nlink(node, nlink);
+	lcfs_node_set_uid(node, uid);
+	lcfs_node_set_gid(node, gid);
+	lcfs_node_set_rdev(node, rdev);
+	lcfs_node_set_mtime(node, &mtime);
+	lcfs_node_set_payload(node, payload);
+	if (content)
+		lcfs_node_set_content(node, (uint8_t *)content, size);
+
+	if (digest) {
+		uint8_t raw[LCFS_DIGEST_SIZE];
+		digest_to_raw(digest, raw, LCFS_DIGEST_SIZE);
+		lcfs_node_set_fsverity_digest(node, raw);
+	}
+
+	/* Handle trailing xattrs */
+	while (line_len > 0) {
+		const char *xattr = line;
+		size_t xattr_len = split_at(&line, &line_len, ' ', NULL);
+
+		parse_xattr(xattr, xattr_len, node);
+	}
+}
+
+struct buffer {
+	char *buf;
+	size_t size;
+	size_t capacity;
+};
+
+static void buffer_ensure_space(struct buffer *buf, size_t free_size_needed)
+{
+	size_t min_capacity = buf->size + free_size_needed;
+	if (buf->capacity >= min_capacity)
+		return;
+
+	/* No space, grow */
+	if (buf->capacity == 0)
+		buf->capacity = 64 * 1024;
+	else
+		buf->capacity = buf->capacity * 2;
+
+	if (buf->capacity < min_capacity)
+		buf->capacity = min_capacity;
+
+	buf->buf = realloc(buf->buf, buf->capacity);
+	if (buf->buf == NULL)
+		oom();
+}
+
+/* Fills buffer and returns the amount read. 0 on file end */
+static size_t buffer_fill(struct buffer *buf, FILE *input)
+{
+	/* Grow buffer if needed */
+	buffer_ensure_space(buf, 1);
+
+	size_t bytes_read =
+		fread(buf->buf + buf->size, 1, buf->capacity - buf->size, input);
+	if (bytes_read == 0 && ferror(input))
+		errx(EXIT_FAILURE, "Error reading from file");
+	buf->size += bytes_read;
+
+	return bytes_read;
+}
+
+static void buffer_reset(struct buffer *buf)
+{
+	/* NOTE: Leaves buffer data as is, just modified size */
+	buf->size = 0;
+}
+
+static void buffer_add(struct buffer *buf, const char *src, size_t len)
+{
+	buffer_ensure_space(buf, len);
+
+	/* memmove, as src may be in the buf */
+	memmove(buf->buf + buf->size, src, len);
+	buf->size += len;
+}
+
+static void buffer_free(struct buffer *buf)
+{
+	free(buf->buf);
+}
+
+static struct lcfs_node_s *tree_from_dump(FILE *input)
+{
+	dump_info info = { NULL };
+
+	struct buffer buf = { NULL };
+
+	while (!feof(input)) {
+		size_t bytes_read = buffer_fill(&buf, input);
+		bool short_read = bytes_read == 0;
+
+		const char *data = buf.buf;
+		size_t remaining_data = buf.size;
+		buffer_reset(&buf);
+
+		while (remaining_data > 0) {
+			const char *line = data;
+			bool partial;
+			size_t line_len =
+				split_at(&data, &remaining_data, '\n', &partial);
+
+			if (!partial || short_read) {
+				tree_from_dump_line(&info, line, line_len);
+			} else {
+				/* Last line didn't have a newline and
+				 * this wasn't a short read, so keep
+				 * this for next read.
+				 */
+				buffer_add(&buf, line, line_len);
+			}
+		}
+	}
+
+	buffer_free(&buf);
+
+	/* Fixup hardlinks now that we have all other files */
+	tree_resolve_hardlinks(&info);
+
+	return info.root;
 }
 
 int main(int argc, char **argv)
@@ -381,6 +871,12 @@ int main(int argc, char **argv)
 			flag: NULL,
 			val: OPT_PRINT_DIGEST_ONLY
 		},
+		{
+			name: "from-file",
+			has_arg: no_argument,
+			flag: NULL,
+			val: OPT_FROM_FILE
+		},
 		{},
 	};
 	struct lcfs_write_options_s options = { 0 };
@@ -388,9 +884,10 @@ int main(int argc, char **argv)
 	int buildflags = 0;
 	bool print_digest = false;
 	bool print_digest_only = false;
+	bool from_file = false;
 	struct lcfs_node_s *root;
 	const char *out = NULL;
-	const char *dir_path = NULL;
+	const char *src_path = NULL;
 	const char *digest_store_path = NULL;
 	cleanup_free char *pathbuf = NULL;
 	uint8_t digest[LCFS_DIGEST_SIZE];
@@ -424,6 +921,9 @@ int main(int argc, char **argv)
 		case OPT_PRINT_DIGEST_ONLY:
 			print_digest = print_digest_only = true;
 			break;
+		case OPT_FROM_FILE:
+			from_file = true;
+			break;
 		case ':':
 			fprintf(stderr, "option needs a value\n");
 			exit(EXIT_FAILURE);
@@ -441,9 +941,9 @@ int main(int argc, char **argv)
 		usage(bin);
 		exit(1);
 	}
-	dir_path = argv[0];
+	src_path = argv[0];
 
-	if (dir_path[0] == '\0')
+	if (src_path[0] == '\0')
 		errx(EXIT_FAILURE, "Empty source path specified");
 
 	if (argc > 2) {
@@ -481,12 +981,33 @@ int main(int argc, char **argv)
 			err(EXIT_FAILURE, "failed to open output file");
 	}
 
-	root = lcfs_build(AT_FDCWD, dir_path, buildflags, &failed_path);
-	if (root == NULL)
-		err(EXIT_FAILURE, "error accessing %s", failed_path);
+	if (from_file) {
+		FILE *input = NULL;
+		bool close_input = false;
+		if (strcmp(src_path, "-") == 0) {
+			input = stdin;
+		} else {
+			input = fopen(src_path, "r");
+			if (input == NULL)
+				err(EXIT_FAILURE, "open `%s`", src_path);
+			close_input = true;
+		}
 
-	if (digest_store_path && fill_store(root, dir_path, digest_store_path) < 0)
-		err(EXIT_FAILURE, "cannot fill store");
+		root = tree_from_dump(input);
+		if (root == NULL)
+			errx(EXIT_FAILURE, "No files in dump file");
+
+		if (close_input)
+			fclose(input);
+	} else {
+		root = lcfs_build(AT_FDCWD, src_path, buildflags, &failed_path);
+		if (root == NULL)
+			err(EXIT_FAILURE, "error accessing %s", failed_path);
+
+		if (digest_store_path &&
+		    fill_store(root, src_path, digest_store_path) < 0)
+			err(EXIT_FAILURE, "cannot fill store");
+	}
 
 	if (out_file) {
 		options.file = out_file;
