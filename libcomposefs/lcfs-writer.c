@@ -364,6 +364,7 @@ int lcfs_write_to(struct lcfs_node_s *root, struct lcfs_write_options_s *options
 	}
 
 	if (res < 0) {
+		PROTECT_ERRNO;
 		lcfs_close(ctx);
 		return res;
 	}
