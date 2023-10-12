@@ -56,8 +56,8 @@ static void do_seccomp_sandbox(void)
 		SCMP_SYS(brk),	      SCMP_SYS(close),	SCMP_SYS(exit),
 		SCMP_SYS(exit_group), SCMP_SYS(fstat),	SCMP_SYS(lseek),
 		SCMP_SYS(mmap),	      SCMP_SYS(mremap), SCMP_SYS(munmap),
-		SCMP_SYS(newfstatat), SCMP_SYS(read),	SCMP_SYS(sysinfo),
-		SCMP_SYS(write),
+		SCMP_SYS(newfstatat), SCMP_SYS(read),	SCMP_SYS(readv),
+		SCMP_SYS(sysinfo),    SCMP_SYS(write),	SCMP_SYS(writev),
 	};
 
 	ctx = seccomp_init(SCMP_ACT_ERRNO(ENOSYS));
