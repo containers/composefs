@@ -60,6 +60,10 @@ will be a mountable composefs image.
 :   The source is a file in the **composefs-dump(5)** format. If
     the specified file is "-", the data is read from stdin.
 
+**\-\-no-sandbox**
+:   Normally, when using **--from-file** a sandbox is set up to protect
+    the parsing code. This option disables this.
+
 
 # SEE ALSO
 **composefs-info(1)**, **mount.composefs(1)**, **composefs-dump(5)**

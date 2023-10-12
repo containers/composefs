@@ -14,8 +14,8 @@ endif
 
 AM_CFLAGS = $(WARN_CFLAGS) -I$(top_srcdir)/
 
-mkcomposefs_SOURCES = mkcomposefs.c
-mkcomposefs_LDADD =  ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)
+mkcomposefs_SOURCES = mkcomposefs.c sandbox.c sandbox.h
+mkcomposefs_LDADD =  ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS) $(LIBS_SECCOMP)
 
 mount_composefs_SOURCES = mountcomposefs.c
 mount_composefs_LDADD = ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)

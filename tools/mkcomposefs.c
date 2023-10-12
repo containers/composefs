@@ -22,6 +22,7 @@
 #include "libcomposefs/lcfs-writer.h"
 #include "libcomposefs/lcfs-utils.h"
 #include "libcomposefs/lcfs-internal.h"
+#include "sandbox.h"
 
 #include <stdio.h>
 #include <linux/limits.h>
@@ -325,7 +326,8 @@ static void usage(const char *argv0)
 		"  --user-xattrs         Only store user.* xattrs\n"
 		"  --print-digest        Print the digest of the image\n"
 		"  --print-digest-only   Print the digest of the image, don't write image\n"
-		"  --from-file           The source is a dump file, not a directory\n",
+		"  --from-file           The source is a dump file, not a directory\n"
+		"  --no-sandbox          Disable sandboxing code\n",
 		bin);
 }
 
@@ -337,6 +339,7 @@ static void usage(const char *argv0)
 #define OPT_PRINT_DIGEST_ONLY 111
 #define OPT_USER_XATTRS 112
 #define OPT_FROM_FILE 113
+#define OPT_NO_SANDBOX 114
 
 static ssize_t write_cb(void *_file, void *buf, size_t count)
 {
@@ -878,6 +881,12 @@ int main(int argc, char **argv)
 			flag: NULL,
 			val: OPT_FROM_FILE
 		},
+		{
+			name: "no-sandbox",
+			has_arg: no_argument,
+			flag: NULL,
+			val: OPT_NO_SANDBOX
+		},
 		{},
 	};
 	struct lcfs_write_options_s options = { 0 };
@@ -886,6 +895,7 @@ int main(int argc, char **argv)
 	bool print_digest = false;
 	bool print_digest_only = false;
 	bool from_file = false;
+	bool no_sandbox = false;
 	struct lcfs_node_s *root;
 	const char *out = NULL;
 	const char *src_path = NULL;
@@ -924,6 +934,9 @@ int main(int argc, char **argv)
 			break;
 		case OPT_FROM_FILE:
 			from_file = true;
+			break;
+		case OPT_NO_SANDBOX:
+			no_sandbox = true;
 			break;
 		case ':':
 			fprintf(stderr, "option needs a value\n");
@@ -993,6 +1006,9 @@ int main(int argc, char **argv)
 				err(EXIT_FAILURE, "open `%s`", src_path);
 			close_input = true;
 		}
+
+		if (!no_sandbox)
+			sandbox();
 
 		root = tree_from_dump(input);
 		if (root == NULL)
