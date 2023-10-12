@@ -336,6 +336,7 @@ static int compute_erofs_shared_xattrs(struct lcfs_ctx_s *ctx)
 	xattr_hash = hash_initialize(n_files, NULL, xattrs_ht_hasher,
 				     xattrs_ht_comparator, free);
 	if (xattr_hash == NULL) {
+		errno = ENOMEM;
 		return -1;
 	}
 
@@ -813,8 +814,10 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 	compute_erofs_xattr_counts(node, &n_shared_xattrs, &unshared_xattrs_size);
 	xattr_size = xattr_erofs_inode_size(n_shared_xattrs, unshared_xattrs_size);
 	xattr_icount = xattr_erofs_icount(xattr_size);
-	if (xattr_icount > UINT16_MAX)
-		return -EINVAL;
+	if (xattr_icount > UINT16_MAX) {
+		errno = EINVAL;
+		return -1;
+	}
 
 	version = node->erofs_compact ? 0 : 1;
 	datalayout = (node->erofs_tailsize > 0) ? EROFS_INODE_FLAT_INLINE :
@@ -1523,7 +1526,7 @@ static int lcfs_build_node_erofs_xattr(struct lcfs_node_s *node, uint8_t name_in
 			}
 			node->payload = strndup(value, value_size);
 			if (node->payload == NULL) {
-				errno = EINVAL;
+				errno = ENOMEM;
 				return -1;
 			}
 		}

@@ -112,7 +112,7 @@ int lcfs_clone_root(struct lcfs_ctx_s *ctx)
 
 	clone = lcfs_node_clone_deep(ctx->root);
 	if (clone == NULL) {
-		errno = EINVAL;
+		errno = ENOMEM;
 		return -1;
 	}
 
@@ -364,6 +364,7 @@ int lcfs_write_to(struct lcfs_node_s *root, struct lcfs_write_options_s *options
 	}
 
 	if (res < 0) {
+		PROTECT_ERRNO;
 		lcfs_close(ctx);
 		return res;
 	}

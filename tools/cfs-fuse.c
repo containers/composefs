@@ -695,8 +695,8 @@ static const char *cfs_xattr_rewrite(int name_index, const char *name,
 	return name;
 }
 
-static int cfs_listxattr_element(const struct erofs_xattr_entry *entry,
-				 char *buf, size_t *buf_size, size_t max_buf_size)
+static errint_t cfs_listxattr_element(const struct erofs_xattr_entry *entry,
+				      char *buf, size_t *buf_size, size_t max_buf_size)
 {
 	const char *name = (const char *)entry + sizeof(struct erofs_xattr_entry);
 	uint8_t name_len = entry->e_name_len;
@@ -747,7 +747,7 @@ static void cfs_listxattr(fuse_req_t req, fuse_ino_t ino, size_t max_size)
 	const uint8_t *xattrs_inline;
 	const uint8_t *xattrs_start;
 	const uint8_t *xattrs_end;
-	int res;
+	errint_t err;
 
 	if (cino == NULL) {
 		fuse_reply_err(req, ENOENT);
@@ -788,9 +788,9 @@ static void cfs_listxattr(fuse_req_t req, fuse_ino_t ino, size_t max_size)
 		size_t el_size = round_up(
 			sizeof(struct erofs_xattr_entry) + name_len + value_size, 4);
 
-		res = cfs_listxattr_element(entry, buf, &buf_size, max_size);
-		if (res < 0) {
-			fuse_reply_err(req, -res);
+		err = cfs_listxattr_element(entry, buf, &buf_size, max_size);
+		if (err < 0) {
+			fuse_reply_err(req, -err);
 			return;
 		}
 		xattrs_inline += el_size;
@@ -802,9 +802,9 @@ static void cfs_listxattr(fuse_req_t req, fuse_ino_t ino, size_t max_size)
 		const struct erofs_xattr_entry *entry =
 			(const struct erofs_xattr_entry *)(erofs_xattrdata + idx * 4);
 
-		res = cfs_listxattr_element(entry, buf, &buf_size, max_size);
-		if (res < 0) {
-			fuse_reply_err(req, -res);
+		err = cfs_listxattr_element(entry, buf, &buf_size, max_size);
+		if (err < 0) {
+			fuse_reply_err(req, -err);
 			return;
 		}
 	}
@@ -978,7 +978,7 @@ static void cfs_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
 		fd = openat(basedir_fd, redirect,
 			    O_CLOEXEC | O_NOCTTY | O_NOFOLLOW | O_RDONLY, 0);
 		if (fd < 0) {
-			fuse_reply_err(req, -errno);
+			fuse_reply_err(req, errno);
 			return;
 		}
 
