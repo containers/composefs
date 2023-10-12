@@ -20,7 +20,7 @@ mkcomposefs_LDADD =  ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)
 mount_composefs_SOURCES = mountcomposefs.c
 mount_composefs_LDADD = ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)
 
-composefs_from_json_SOURCES = composefs-from-json.c read-file.c read-file.h
+composefs_from_json_SOURCES = composefs-from-json.c read-file.c read-file.h sandbox.c sandbox.h
 composefs_from_json_LDADD = ../libcomposefs/libcomposefs.la $(LIBS_YAJL) $(LIBCRYPTO_LIBS) $(LIBS_SECCOMP)
 
 composefs_info_SOURCES = composefs-info.c ../libcomposefs/hash.c
