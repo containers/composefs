@@ -33,6 +33,9 @@
 #include "lcfs-fsverity.h"
 #include "hash.h"
 
+/* This is used for (internal) functions that return zero or -errno, functions that set errno return int */
+typedef int errint_t;
+
 /* When using LCFS_BUILD_INLINE_SMALL in lcfs_load_node_from_file() inline files below this size
  * We pick 64 which is the size of a sha256 digest that would otherwise be used as a redirect
  * xattr, so the inlined file is smaller.

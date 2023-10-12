@@ -170,7 +170,7 @@ static char *escape_mount_option(const char *str)
 	return res;
 }
 
-static int lcfs_validate_mount_options(struct lcfs_mount_state_s *state)
+static errint_t lcfs_validate_mount_options(struct lcfs_mount_state_s *state)
 {
 	struct lcfs_mount_options_s *options = state->options;
 
@@ -200,7 +200,7 @@ static int lcfs_validate_mount_options(struct lcfs_mount_state_s *state)
 	return 0;
 }
 
-static int lcfs_validate_verity_fd(struct lcfs_mount_state_s *state)
+static errint_t lcfs_validate_verity_fd(struct lcfs_mount_state_s *state)
 {
 	struct {
 		struct fsverity_digest fsv;
@@ -225,7 +225,7 @@ static int lcfs_validate_verity_fd(struct lcfs_mount_state_s *state)
 	return 0;
 }
 
-static int setup_loopback(int fd, const char *image_path, char *loopname)
+static errint_t setup_loopback(int fd, const char *image_path, char *loopname)
 {
 	struct loop_config loopconfig = { 0 };
 	int loopctlfd, loopfd;
@@ -296,7 +296,7 @@ static char *compute_lower(const char *imagemount,
 	return lower;
 }
 
-static int lcfs_mount_ovl_legacy(struct lcfs_mount_state_s *state, char *imagemount)
+static errint_t lcfs_mount_ovl_legacy(struct lcfs_mount_state_s *state, char *imagemount)
 {
 	struct lcfs_mount_options_s *options = state->options;
 
@@ -351,21 +351,22 @@ retry:
 	if (lowerdir_target == lowerdir_1)
 		mount_flags |= MS_SILENT;
 
+	errint_t err = 0;
 	res = mount("overlay", state->mountpoint, "overlay", mount_flags,
 		    overlay_options);
 	if (res != 0) {
-		res = -errno;
+		err = -errno;
 	}
 
-	if (res == -EINVAL && lowerdir_target == lowerdir_1) {
+	if (err == -EINVAL && lowerdir_target == lowerdir_1) {
 		lowerdir_target = lowerdir_2;
 		goto retry;
 	}
 
-	return res;
+	return err;
 }
 
-static int lcfs_mount_ovl(struct lcfs_mount_state_s *state, char *imagemount)
+static errint_t lcfs_mount_ovl(struct lcfs_mount_state_s *state, char *imagemount)
 {
 #ifdef HAVE_NEW_MOUNT_API
 	struct lcfs_mount_options_s *options = state->options;
@@ -476,8 +477,9 @@ static int lcfs_mount_ovl(struct lcfs_mount_state_s *state, char *imagemount)
 #endif
 }
 
-static int lcfs_mount_erofs(const char *source, const char *target,
-			    uint32_t image_flags, struct lcfs_mount_state_s *state)
+static errint_t lcfs_mount_erofs(const char *source, const char *target,
+				 uint32_t image_flags,
+				 struct lcfs_mount_state_s *state)
 {
 	bool image_has_acls = (image_flags & LCFS_EROFS_FLAGS_HAS_ACL) != 0;
 	bool use_idmap = (state->options->flags & LCFS_MOUNT_FLAGS_IDMAP) != 0;
@@ -553,8 +555,8 @@ fallback:
 
 #define HEADER_SIZE sizeof(struct lcfs_erofs_header_s)
 
-static int lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
-				struct lcfs_erofs_header_s *header)
+static errint_t lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
+				     struct lcfs_erofs_header_s *header)
 {
 	struct lcfs_mount_options_s *options = state->options;
 	uint32_t image_flags;
@@ -562,7 +564,8 @@ static int lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
 	char *imagemount;
 	bool created_tmpdir = false;
 	char loopname[PATH_MAX];
-	int res, errsv;
+	int errsv;
+	errint_t err;
 	int loopfd;
 
 	image_flags = lcfs_u32_from_file(header->flags);
@@ -583,37 +586,38 @@ static int lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
 		created_tmpdir = true;
 	}
 
-	res = lcfs_mount_erofs(loopname, imagemount, image_flags, state);
+	err = lcfs_mount_erofs(loopname, imagemount, image_flags, state);
 	close(loopfd);
-	if (res < 0) {
+	if (err < 0) {
 		rmdir(imagemount);
-		return res;
+		return err;
 	}
 
 	/* We use the legacy API to mount overlayfs, because the new API doesn't allow use
 	 * to pass in escaped directory names
 	 */
-	res = lcfs_mount_ovl(state, imagemount);
-	if (res == -ENOSYS)
-		res = lcfs_mount_ovl_legacy(state, imagemount);
+	err = lcfs_mount_ovl(state, imagemount);
+	if (err == -ENOSYS)
+		err = lcfs_mount_ovl_legacy(state, imagemount);
 
 	umount2(imagemount, MNT_DETACH);
 	if (created_tmpdir) {
 		rmdir(imagemount);
 	}
 
-	return res;
+	return err;
 }
 
-static int lcfs_mount(struct lcfs_mount_state_s *state)
+static errint_t lcfs_mount(struct lcfs_mount_state_s *state)
 {
 	uint8_t header_data[HEADER_SIZE];
 	struct lcfs_erofs_header_s *erofs_header;
+	int err;
 	int res;
 
-	res = lcfs_validate_verity_fd(state);
-	if (res < 0)
-		return res;
+	err = lcfs_validate_verity_fd(state);
+	if (err < 0)
+		return err;
 
 	res = pread(state->fd, &header_data, HEADER_SIZE, 0);
 	if (res < 0)
@@ -631,11 +635,12 @@ int lcfs_mount_fd(int fd, const char *mountpoint, struct lcfs_mount_options_s *o
 	struct lcfs_mount_state_s state = { .mountpoint = mountpoint,
 					    .options = options,
 					    .fd = fd };
+	errint_t err;
 	int res;
 
-	res = lcfs_validate_mount_options(&state);
-	if (res < 0) {
-		errno = -res;
+	err = lcfs_validate_mount_options(&state);
+	if (err < 0) {
+		errno = -err;
 		return -1;
 	}
 
@@ -654,11 +659,12 @@ int lcfs_mount_image(const char *path, const char *mountpoint,
 					    .mountpoint = mountpoint,
 					    .options = options,
 					    .fd = -1 };
+	errint_t err;
 	int fd, res;
 
-	res = lcfs_validate_mount_options(&state);
-	if (res < 0) {
-		errno = -res;
+	err = lcfs_validate_mount_options(&state);
+	if (err < 0) {
+		errno = -err;
 		return -1;
 	}
 

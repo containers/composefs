@@ -165,7 +165,7 @@ static int join_paths(char **out, const char *path1, const char *path2)
 	return asprintf(out, "%.*s%s%s", len, path1, sep, path2);
 }
 
-static int enable_verity(int fd)
+static errint_t enable_verity(int fd)
 {
 	struct fsverity_enable_arg arg = {};
 
@@ -200,6 +200,7 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 	cleanup_free char *pathbuf = NULL;
 	cleanup_unlink_free char *tmppath = NULL;
 	int ret, res;
+	errint_t err;
 	cleanup_fd int sfd = -1;
 	cleanup_fd int dfd = -1;
 	struct stat statbuf;
@@ -258,8 +259,8 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 		}
 
 		if (fstat(dfd, &statbuf) == 0) {
-			res = enable_verity(dfd);
-			if (res < 0) {
+			err = enable_verity(dfd);
+			if (err < 0) {
 				/* Ignore errors, we're only trying to enable it */
 			}
 		}
