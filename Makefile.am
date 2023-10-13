@@ -19,6 +19,7 @@ EXTRA_DIST=\
 	COPYINGv3 \
 	COPYINGv3 \
 	LICENSE.Apache-2.0 \
+	BSD-2-Clause.txt \
 	${MANPAGES}
 
 pkgconfig_DATA = composefs.pc
