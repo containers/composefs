@@ -53,6 +53,7 @@ rm -rf %{buildroot}%{_libdir}/libcomposefs.la
 %{_libdir}/pkgconfig/%{name}.pc
 
 %files libs
+%license COPYING COPYING.LIB COPYING.LESSERv3 COPYINGv3 LICENSE.Apache-2.0 BSD-2-Clause.txt
 %{_libdir}/libcomposefs.so.*
 
 %files
@@ -61,8 +62,16 @@ rm -rf %{buildroot}%{_libdir}/libcomposefs.la
 %{_bindir}/mkcomposefs
 %{_bindir}/composefs-info
 %{_sbindir}/mount.composefs
-%{_mandir}/man*/*.gz
+%{_mandir}/man*/*
 
 %changelog
+* Mon Oct 16 2023 Stephen Smoogen <ssmoogen@redhat.com>
+- Take in fixes from reviwers to fix man page compression types
+- Take in fixes from reviwers to move licenses to lib subpackage
+
+* Fri Oct 13 2023 Stephen Smoogen <ssmoogen@redhat.com>
+- Update to 1.0.1
+- Confirm license is in SPDX format
+
 * Fri Apr 21 2023 Alexander Larsson <alexl@redhat.com>
 - Initial version
