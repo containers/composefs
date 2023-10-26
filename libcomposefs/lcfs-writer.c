@@ -145,14 +145,6 @@ int node_get_dtype(struct lcfs_node_s *node)
 	}
 }
 
-static int cmp_nodes(const void *a, const void *b)
-{
-	const struct lcfs_node_s *na = *((const struct lcfs_node_s **)a);
-	const struct lcfs_node_s *nb = *((const struct lcfs_node_s **)b);
-
-	return strcmp(na->name, nb->name);
-}
-
 static int cmp_xattr(const void *a, const void *b)
 {
 	const struct lcfs_xattr_s *na = a;
@@ -199,9 +191,6 @@ int lcfs_compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 		}
 
 		/* Canonical order */
-		if (node->children)
-			qsort(node->children, node->children_size,
-			      sizeof(node->children[0]), cmp_nodes);
 		if (node->xattrs)
 			qsort(node->xattrs, node->n_xattrs,
 			      sizeof(node->xattrs[0]), cmp_xattr);
@@ -876,18 +865,52 @@ void lcfs_node_get_mtime(struct lcfs_node_s *node, struct timespec *time)
 	time->tv_nsec = node->inode.st_mtim_nsec;
 }
 
-struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node, const char *name)
+static struct lcfs_node_s *lcfs_node_bsearch_child(struct lcfs_node_s *node,
+						   const char *name, size_t *pos)
 {
-	size_t i;
+	size_t start = 0, end = node->children_size;
 
-	for (i = 0; i < node->children_size; ++i) {
-		struct lcfs_node_s *child = node->children[i];
-
-		if (child->name && strcmp(child->name, name) == 0)
+	/* We start by looking at the end, as this is common when we insert in sorted order */
+	if (end > 0) {
+		struct lcfs_node_s *child = node->children[end - 1];
+		int cmp = strcmp(name, child->name);
+		if (cmp == 0) {
+			if (pos)
+				*pos = end - 1;
 			return child;
+		}
+		if (cmp > 0) {
+			if (pos)
+				*pos = end;
+			return NULL;
+		}
 	}
 
+	while (end > start) {
+		size_t mid = (start + end) / 2;
+		struct lcfs_node_s *child = node->children[mid];
+
+		int cmp = strcmp(name, child->name);
+		if (cmp == 0) {
+			if (pos)
+				*pos = mid;
+			return child;
+		}
+		if (cmp < 0) {
+			end = mid;
+		} else {
+			start = mid + 1;
+		}
+	}
+
+	if (pos)
+		*pos = start;
 	return NULL;
+}
+
+struct lcfs_node_s *lcfs_node_lookup_child(struct lcfs_node_s *node, const char *name)
+{
+	return lcfs_node_bsearch_child(node, name, NULL);
 }
 
 struct lcfs_node_s *lcfs_node_get_parent(struct lcfs_node_s *node)
@@ -912,7 +935,6 @@ int lcfs_node_add_child(struct lcfs_node_s *parent, struct lcfs_node_s *child,
 {
 	struct lcfs_node_s **new_children;
 	size_t new_capacity;
-	char *name_copy;
 
 	if ((parent->inode.st_mode & S_IFMT) != S_IFDIR) {
 		errno = ENOTDIR;
@@ -930,17 +952,6 @@ int lcfs_node_add_child(struct lcfs_node_s *parent, struct lcfs_node_s *child,
 		return -1;
 	}
 
-	if (lcfs_node_lookup_child(parent, name) != NULL) {
-		errno = EEXIST;
-		return -1;
-	}
-
-	name_copy = strdup(name);
-	if (name_copy == NULL) {
-		errno = ENOMEM;
-		return -1;
-	}
-
 	if (parent->children_capacity == parent->children_size) {
 		if (parent->children_size == 0)
 			new_capacity = 16;
@@ -951,7 +962,6 @@ int lcfs_node_add_child(struct lcfs_node_s *parent, struct lcfs_node_s *child,
 					    sizeof(*parent->children), new_capacity);
 		if (new_children == NULL) {
 			errno = ENOMEM;
-			free(name_copy);
 			return -1;
 		}
 
@@ -959,7 +969,27 @@ int lcfs_node_add_child(struct lcfs_node_s *parent, struct lcfs_node_s *child,
 		parent->children_capacity = new_capacity;
 	}
 
-	parent->children[parent->children_size] = child;
+	size_t insert_pos;
+	struct lcfs_node_s *existing =
+		lcfs_node_bsearch_child(parent, name, &insert_pos);
+	if (existing != NULL) {
+		errno = EEXIST;
+		return -1;
+	}
+
+	char *name_copy = strdup(name);
+	if (name_copy == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	if (insert_pos < parent->children_size)
+		memmove(parent->children + insert_pos + 1,
+			parent->children + insert_pos,
+			(parent->children_size - insert_pos) *
+				sizeof(struct lcfs_node_s *));
+
+	parent->children[insert_pos] = child;
 	parent->children_size += 1;
 	child->parent = parent;
 	child->name = name_copy;
