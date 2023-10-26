@@ -1,9 +1,9 @@
 TEST_ASSETS_SMALL = \
-	config.json.gz config-with-hard-link.json.gz special.json
+	config.dump.gz config-with-hard-link.dump.gz special.dump
 
 TEST_ASSETS = ${TEST_ASSETS_SMALL} \
-	cs9-x86_64-developer.json.gz cs9-x86_64-minimal.json.gz	\
-	f36-x86_64-silverblue.json.gz
+	cs9-x86_64-developer.dump.gz cs9-x86_64-minimal.dump.gz	\
+	f36-x86_64-silverblue.dump.gz
 
 if ENABLE_VALGRIND
 VALGRIND_PREFIX=libtool --mode=execute ${VALGRIND} --quiet --leak-check=yes --error-exitcode=42
@@ -17,7 +17,7 @@ EXTRA_DIST = \
 	test-random-fuse.sh \
 	test-checksums.sh \
 	integration.sh \
-	$(patsubst %,assets/%,${TEST_ASSETS_SMALL}) $(patsubst %,assets/%.sha256_erofs,${TEST_ASSETS_SMALL})
+	$(patsubst %,assets/%,${TEST_ASSETS_SMALL}) $(patsubst %,assets/%.sha256,${TEST_ASSETS_SMALL})
 
 check-checksums:
 	VALGRIND_PREFIX="${VALGRIND_PREFIX}" $(srcdir)/test-checksums.sh "$(builddir)/../tools/" "$(srcdir)/assets" "${TEST_ASSETS}"

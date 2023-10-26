@@ -154,9 +154,3 @@ Mount options:
 - `upperdir`: Specify an upperdir for the overlayfs filesystem.
 - `workdir`: Specify an upperdir for the overlayfs filesystem.
 - `idmap`: Specify a path to a user namespace that is used as an idmap.
-
-## Experimental user space tools
-
-The directory `tools/` contains some experimental user space tools for working with composefs images.
-
-- `composefs-from-json`: convert from a [CRFS](https://github.com/google/crfs) metadata file to the binary blob.
