@@ -18,15 +18,15 @@ for format in erofs ; do
         if [ ! -f $ASSET_DIR/$file ] ; then
             continue;
         fi
-        echo Verifying $file with $format
-        EXPECTED_SHA=$(cat $ASSET_DIR/$file.sha256_${format});
+        echo Verifying $file
+        EXPECTED_SHA=$(cat $ASSET_DIR/$file.sha256);
         if [[ $file == *.gz ]] ; then
             CAT=zcat
         else
             CAT=cat
         fi
 
-        $CAT $ASSET_DIR/$file | ${VALGRIND_PREFIX} ${BINDIR}/composefs-from-json --format=$format --out=$tmpfile -
+        $CAT $ASSET_DIR/$file | ${VALGRIND_PREFIX} ${BINDIR}/mkcomposefs --from-file - $tmpfile
         SHA=$(sha256sum $tmpfile | awk "{print \$1}")
 
         # Run fsck.erofs to make sure we're not generating anything weird
