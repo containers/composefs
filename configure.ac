@@ -185,44 +185,6 @@ CC_CHECK_FLAGS_APPEND([WARN_CFLAGS], [CFLAGS], [\
 ])])
 AC_SUBST(WARN_CFLAGS)
 
-AC_ARG_WITH(seccomp,
-        AS_HELP_STRING([--with-seccomp], [Build with seccomp support [default=auto]]),
-        , with_seccomp=auto)
-if test "x$with_seccomp" != "xno"; then
-  old_LIBS=$LIBS
-  AC_SEARCH_LIBS(seccomp_rule_add, [seccomp], [have_libseccomp=yes], [have_libseccomp=no])
-  LIBS=$old_LIBS
-  if test $have_libseccomp = yes; then
-    AC_DEFINE(HAVE_LIBSECCOMP, 1, [Define if libseccomp is available])
-    LIBS_SECCOMP=$ac_cv_search_seccomp_rule_add
-    AC_SUBST([LIBS_SECCOMP])
-  elif test "x$with_seccomp" == "xyes"; then
-    AC_MSG_ERROR([seccomp was requested but it could not be found])
-  fi
-else
-  have_libseccomp=no
-fi
-AM_CONDITIONAL([USE_SECCOMP],[test "$have_libseccomp" = "yes"])
-
-AC_ARG_WITH(yajl,
-        AS_HELP_STRING([--with-yajl], [Build with yajl support [default=auto]]),
-        , with_yajl=auto)
-if test "x$with_yajl" != "xno"; then
-  old_LIBS=$LIBS
-  AC_SEARCH_LIBS(yajl_tree_get, [yajl], [have_libyajl=yes], [have_libyajl=no])
-  LIBS=$old_LIBS
-  if test $have_libyajl = yes; then
-    AC_DEFINE(HAVE_LIBYAJL, 1, [Define if libyajl is available])
-    LIBS_YAJL=$ac_cv_search_yajl_tree_get
-    AC_SUBST([LIBS_YAJL])
-  elif test "x$with_yajl" == "xyes"; then
-    AC_MSG_ERROR([yajl was requested but it could not be found])
-  fi
-else
-  have_libyajl=no
-fi
-AM_CONDITIONAL([USE_YAJL],[test "$have_libyajl" = "yes"])
-
 AC_ARG_WITH(fuse,
         AS_HELP_STRING([--with-fuse], [Build fuse support [default=auto]]),
         , with_fuse=auto)

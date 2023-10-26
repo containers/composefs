@@ -4,10 +4,6 @@ bin_PROGRAMS = mkcomposefs composefs-info
 sbin_PROGRAMS = mount.composefs
 noinst_PROGRAMS = composefs-dump
 
-if USE_YAJL
-noinst_PROGRAMS += composefs-from-json
-endif
-
 if USE_FUSE3
 noinst_PROGRAMS += composefs-fuse
 endif
@@ -19,9 +15,6 @@ mkcomposefs_LDADD =  ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)
 
 mount_composefs_SOURCES = mountcomposefs.c
 mount_composefs_LDADD = ../libcomposefs/libcomposefs.la $(LIBCRYPTO_LIBS)
-
-composefs_from_json_SOURCES = composefs-from-json.c read-file.c read-file.h
-composefs_from_json_LDADD = ../libcomposefs/libcomposefs.la $(LIBS_YAJL) $(LIBCRYPTO_LIBS) $(LIBS_SECCOMP)
 
 composefs_info_SOURCES = composefs-info.c ../libcomposefs/hash.c
 composefs_info_CFLAGS = $(AM_CFLAGS) $(COMPOSEFS_HASH_CFLAGS)
