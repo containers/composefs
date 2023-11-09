@@ -104,10 +104,10 @@ AC_ARG_ENABLE(man,
               enable_man=maybe)
 
 AS_IF([test "$enable_man" != no], [
-  AC_PATH_PROG([PANDOC], [pandoc])
-  AS_IF([test -z "$PANDOC"], [
+  AC_PATH_PROG([MD2MAN], [go-md2man])
+  AS_IF([test -z "$MD2MAN"], [
     AS_IF([test "$enable_man" = yes], [
-      AC_MSG_ERROR([pandoc is required for --enable-man])
+      AC_MSG_ERROR([go-md2man is required for --enable-man])
     ])
     enable_man=no
   ],[

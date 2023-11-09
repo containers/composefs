@@ -28,11 +28,11 @@ if ENABLE_MAN
 
 man/%.1: man/%.md
 	mkdir -p man
-	${PANDOC} $+ -s -t man > $@
+	${MD2MAN} -in $^ -out $@
 
 man/%.5: man/%.md
 	mkdir -p man
-	${PANDOC} $+ -s -t man > $@
+	${MD2MAN} -in $^ -out $@
 
 man1_MANS = $(MAN1PAGES:.md=.1)
 man5_MANS = $(MAN5PAGES:.md=.5)
