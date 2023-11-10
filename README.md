@@ -8,7 +8,7 @@ mountable filesystem trees, stacking on top of an underlying
 The key technologies composefs uses are:
 
 - [overlayfs](https://www.kernel.org/doc/Documentation/filesystems/overlayfs.txt) as the kernel interface
-- [EROFS](https://www.kernel.org/doc/Documentation/filesystems/erofs.txt) for a mountable metadata tree
+- [EROFS](https://erofs.docs.kernel.org) for a mountable metadata tree
 - [fs-verity](https://www.kernel.org/doc/html/next/filesystems/fsverity.html) (optional) from the lower filesystem
 
 The manner in which these technologies are combined is important.
@@ -24,7 +24,7 @@ store "data" (i.e. non-empty regular files) distinct from "metadata"
 (i.e. everything else).
 
 composefs reads and writes a filesystem image which is really
-just an [EROFS](https://www.kernel.org/doc/Documentation/filesystems/erofs.txt)
+just an [EROFS](https://erofs.docs.kernel.org)
 which today is loopback mounted.
 
 However, this EROFS filesystem tree is just metadata; the underlying
