@@ -42,6 +42,21 @@ static inline char *memdup(const char *s, size_t len)
 	return s2;
 }
 
+static inline bool size_multiply_overflow(size_t size, size_t nmemb)
+{
+	return nmemb != 0 && size > (SIZE_MAX / nmemb);
+}
+
+#ifndef HAVE_REALLOCARRAY
+static inline void *reallocarray(void *ptr, size_t nmemb, size_t size)
+{
+	if (size_multiply_overflow(size, nmemb))
+		return NULL;
+
+	return realloc(ptr, size * nmemb ?: 1);
+}
+#endif
+
 static inline int hexdigit(char c)
 {
 	if (c >= '0' && c <= '9')
