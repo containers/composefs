@@ -1389,6 +1389,11 @@ int lcfs_node_set_xattr(struct lcfs_node_s *node, const char *name,
 		return 0;
 	}
 
+	if (node->n_xattrs == UINT16_MAX) {
+		errno = EINVAL;
+		return -1;
+	}
+
 	xattrs = realloc(node->xattrs,
 			 (node->n_xattrs + 1) * sizeof(struct lcfs_xattr_s));
 	if (xattrs == NULL) {
