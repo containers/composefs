@@ -48,6 +48,8 @@ enum lcfs_flags_t {
 	LCFS_FLAGS_MASK = 0,
 };
 
+#define LCFS_VERSION_MAX 0
+
 typedef ssize_t (*lcfs_read_cb)(void *file, void *buf, size_t count);
 typedef ssize_t (*lcfs_write_cb)(void *file, void *buf, size_t count);
 

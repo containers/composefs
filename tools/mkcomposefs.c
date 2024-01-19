@@ -325,8 +325,9 @@ static void usage(const char *argv0)
 		"  --user-xattrs         Only store user.* xattrs\n"
 		"  --print-digest        Print the digest of the image\n"
 		"  --print-digest-only   Print the digest of the image, don't write image\n"
-		"  --from-file           The source is a dump file, not a directory\n",
-		bin);
+		"  --from-file           The source is a dump file, not a directory\n"
+		"  --format-version=N    Use this format version (default=%d)\n",
+		bin, LCFS_VERSION_MAX);
 }
 
 #define OPT_SKIP_XATTRS 102
@@ -337,6 +338,7 @@ static void usage(const char *argv0)
 #define OPT_PRINT_DIGEST_ONLY 111
 #define OPT_USER_XATTRS 112
 #define OPT_FROM_FILE 113
+#define OPT_FORMAT_VERSION 114
 
 static ssize_t write_cb(void *_file, void *buf, size_t count)
 {
@@ -878,6 +880,12 @@ int main(int argc, char **argv)
 			flag: NULL,
 			val: OPT_FROM_FILE
 		},
+		{
+			name: "format-version",
+			has_arg: required_argument,
+			flag: NULL,
+			val: OPT_FORMAT_VERSION
+		},
 		{},
 	};
 	struct lcfs_write_options_s options = { 0 };
@@ -895,6 +903,8 @@ int main(int argc, char **argv)
 	int opt;
 	FILE *out_file;
 	char *failed_path;
+	long format_version = LCFS_VERSION_MAX;
+	char *end;
 
 	/* We always compute the digest and reference by digest */
 	buildflags |= LCFS_BUILD_COMPUTE_DIGEST | LCFS_BUILD_BY_DIGEST;
@@ -924,6 +934,13 @@ int main(int argc, char **argv)
 			break;
 		case OPT_FROM_FILE:
 			from_file = true;
+			break;
+		case OPT_FORMAT_VERSION:
+			format_version = strtol(optarg, &end, 10);
+			if (*optarg == 0 || *end != 0) {
+				fprintf(stderr, "Invalid format version %s\n", optarg);
+				exit(EXIT_FAILURE);
+			}
 			break;
 		case ':':
 			fprintf(stderr, "option needs a value\n");
@@ -1018,6 +1035,7 @@ int main(int argc, char **argv)
 		options.digest_out = digest;
 
 	options.format = LCFS_FORMAT_EROFS;
+	options.version = (int)format_version;
 
 	if (lcfs_write_to(root, &options) < 0)
 		err(EXIT_FAILURE, "cannot write file");

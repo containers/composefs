@@ -18,7 +18,15 @@ for format in erofs ; do
         if [ ! -f $ASSET_DIR/$file ] ; then
             continue;
         fi
-        echo Verifying $file
+
+        VERSION=""
+        VERSION_ARG=""
+        if test -f $ASSET_DIR/$file.version ; then
+            VERSION="$(cat $ASSET_DIR/$file.version)"
+            VERSION_ARG="--format-version=$VERSION"
+        fi
+
+        echo Verifying $file $VERSION_ARG
         EXPECTED_SHA=$(cat $ASSET_DIR/$file.sha256);
         if [[ $file == *.gz ]] ; then
             CAT=zcat
@@ -26,7 +34,7 @@ for format in erofs ; do
             CAT=cat
         fi
 
-        $CAT $ASSET_DIR/$file | ${VALGRIND_PREFIX} ${BINDIR}/mkcomposefs --from-file - $tmpfile
+        $CAT $ASSET_DIR/$file | ${VALGRIND_PREFIX} ${BINDIR}/mkcomposefs $VERSION_ARG --from-file - $tmpfile
         SHA=$(sha256sum $tmpfile | awk "{print \$1}")
 
         # Run fsck.erofs to make sure we're not generating anything weird
@@ -40,13 +48,13 @@ for format in erofs ; do
         fi
 
         # Ensure dump reproduces the same file
-        ${VALGRIND_PREFIX} ${BINDIR}/composefs-dump $tmpfile $tmpfile2
+        ${VALGRIND_PREFIX} ${BINDIR}/composefs-dump $tmpfile $tmpfile2 $VERSION
         if ! cmp $tmpfile $tmpfile2; then
             echo Dump is not reproducible
             exit 1
         fi
 
-        ${VALGRIND_PREFIX} ${BINDIR}/composefs-info dump $tmpfile | ${VALGRIND_PREFIX} ${BINDIR}/mkcomposefs --from-file - $tmpfile2
+        ${VALGRIND_PREFIX} ${BINDIR}/composefs-info dump $tmpfile | ${VALGRIND_PREFIX} ${BINDIR}/mkcomposefs $VERSION_ARG --from-file - $tmpfile2
         if ! cmp $tmpfile $tmpfile2; then
             echo Dump is not reproducible via composefs-info dump
             exit 1

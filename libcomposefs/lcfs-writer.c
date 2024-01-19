@@ -339,6 +339,11 @@ int lcfs_write_to(struct lcfs_node_s *root, struct lcfs_write_options_s *options
 		return -1;
 	}
 
+	if (options->version > LCFS_VERSION_MAX) {
+		errno = EINVAL;
+		return -1;
+	}
+
 	ctx = lcfs_new_ctx(root, options);
 	if (ctx == NULL) {
 		errno = ENOMEM;

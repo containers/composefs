@@ -1312,11 +1312,6 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 	int ret = 0;
 	uint64_t data_block_start;
 
-	if (ctx->options->version != 0) {
-		errno = EINVAL;
-		return -1;
-	}
-
 	/* Clone root so we can make required modifications to it */
 	ret = lcfs_clone_root(ctx);
 	if (ret < 0)

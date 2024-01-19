@@ -48,6 +48,7 @@ int main(int argc, char **argv)
 	const char *src_path = NULL;
 	const char *dst_path = NULL;
 	struct lcfs_write_options_s options = { 0 };
+	int format_version = LCFS_VERSION_MAX;
 
 	if (argc <= 1) {
 		fprintf(stderr, "No source path specified\n");
@@ -63,6 +64,10 @@ int main(int argc, char **argv)
 	}
 	dst_path = argv[2];
 
+	if (argc > 3) {
+		format_version = atoi(argv[3]);
+	}
+
 	fd = open(src_path, O_RDONLY | O_CLOEXEC);
 	if (fd < 0) {
 		err(EXIT_FAILURE, "Failed to open '%s'", src_path);
@@ -76,6 +81,7 @@ int main(int argc, char **argv)
 	close(fd);
 
 	options.format = LCFS_FORMAT_EROFS;
+	options.version = format_version;
 
 	FILE *out_file = fopen(dst_path, "we");
 	if (out_file == NULL)
