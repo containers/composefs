@@ -48,7 +48,11 @@ enum lcfs_flags_t {
 	LCFS_FLAGS_MASK = 0,
 };
 
-#define LCFS_VERSION_MAX 0
+#define LCFS_VERSION_MAX 1
+/* Version history:
+ * 0 - Initial version
+ * 1 - Mark xwhitouts using the new opaque=x format as needed by Linux 6.8
+ */
 
 typedef ssize_t (*lcfs_read_cb)(void *file, void *buf, size_t count);
 typedef ssize_t (*lcfs_write_cb)(void *file, void *buf, size_t count);

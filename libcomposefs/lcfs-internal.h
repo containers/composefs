@@ -58,11 +58,13 @@ typedef int errint_t;
 
 #define OVERLAY_XATTR_ESCAPED_WHITEOUT OVERLAY_XATTR_ESCAPE_PREFIX "whiteout"
 #define OVERLAY_XATTR_ESCAPED_WHITEOUTS OVERLAY_XATTR_ESCAPE_PREFIX "whiteouts"
+#define OVERLAY_XATTR_ESCAPED_OPAQUE OVERLAY_XATTR_ESCAPE_PREFIX "opaque"
 
 #define OVERLAY_XATTR_USERXATTR_WHITEOUT                                       \
 	OVERLAY_XATTR_USERXATTR_PREFIX "whiteout"
 #define OVERLAY_XATTR_USERXATTR_WHITEOUTS                                      \
 	OVERLAY_XATTR_USERXATTR_PREFIX "whiteouts"
+#define OVERLAY_XATTR_USERXATTR_OPAQUE OVERLAY_XATTR_USERXATTR_PREFIX "opaque"
 
 #define ALIGN_TO(_offset, _align_size)                                         \
 	(((_offset) + _align_size - 1) & ~(_align_size - 1))
