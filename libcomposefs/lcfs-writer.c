@@ -537,6 +537,8 @@ static int read_content(int fd, size_t size, uint8_t *buf)
 
 		if (bytes_read == 0)
 			break;
+		else if (bytes_read < 0)
+			return -1;
 
 		size -= bytes_read;
 		buf += bytes_read;
