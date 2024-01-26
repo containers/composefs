@@ -326,8 +326,9 @@ static void usage(const char *argv0)
 		"  --print-digest        Print the digest of the image\n"
 		"  --print-digest-only   Print the digest of the image, don't write image\n"
 		"  --from-file           The source is a dump file, not a directory\n"
-		"  --format-version=N    Use this format version (default=%d)\n",
-		bin, LCFS_VERSION_MAX);
+		"  --min-version=N       Use this minimal format version (default=%d)\n"
+		"  --max-version=N       Use this maxium format version (default=%d)\n",
+		bin, LCFS_DEFAULT_VERSION_MIN, LCFS_DEFAULT_VERSION_MAX);
 }
 
 #define OPT_SKIP_XATTRS 102
@@ -338,7 +339,8 @@ static void usage(const char *argv0)
 #define OPT_PRINT_DIGEST_ONLY 111
 #define OPT_USER_XATTRS 112
 #define OPT_FROM_FILE 113
-#define OPT_FORMAT_VERSION 114
+#define OPT_MIN_VERSION 114
+#define OPT_MAX_VERSION 115
 
 static ssize_t write_cb(void *_file, void *buf, size_t count)
 {
@@ -881,10 +883,16 @@ int main(int argc, char **argv)
 			val: OPT_FROM_FILE
 		},
 		{
-			name: "format-version",
+			name: "max-version",
 			has_arg: required_argument,
 			flag: NULL,
-			val: OPT_FORMAT_VERSION
+			val: OPT_MAX_VERSION
+		},
+		{
+			name: "min-version",
+			has_arg: required_argument,
+			flag: NULL,
+			val: OPT_MIN_VERSION
 		},
 		{},
 	};
@@ -903,7 +911,8 @@ int main(int argc, char **argv)
 	int opt;
 	FILE *out_file;
 	char *failed_path;
-	long format_version = LCFS_VERSION_MAX;
+	long min_version = LCFS_DEFAULT_VERSION_MIN;
+	long max_version = LCFS_DEFAULT_VERSION_MAX;
 	char *end;
 
 	/* We always compute the digest and reference by digest */
@@ -935,10 +944,17 @@ int main(int argc, char **argv)
 		case OPT_FROM_FILE:
 			from_file = true;
 			break;
-		case OPT_FORMAT_VERSION:
-			format_version = strtol(optarg, &end, 10);
+		case OPT_MIN_VERSION:
+			min_version = strtol(optarg, &end, 10);
 			if (*optarg == 0 || *end != 0) {
-				fprintf(stderr, "Invalid format version %s\n", optarg);
+				fprintf(stderr, "Invalid min version %s\n", optarg);
+				exit(EXIT_FAILURE);
+			}
+			break;
+		case OPT_MAX_VERSION:
+			max_version = strtol(optarg, &end, 10);
+			if (*optarg == 0 || *end != 0) {
+				fprintf(stderr, "Invalid max version %s\n", optarg);
 				exit(EXIT_FAILURE);
 			}
 			break;
@@ -1035,7 +1051,8 @@ int main(int argc, char **argv)
 		options.digest_out = digest;
 
 	options.format = LCFS_FORMAT_EROFS;
-	options.version = (int)format_version;
+	options.version = (int)min_version;
+	options.max_version = (int)max_version;
 
 	if (lcfs_write_to(root, &options) < 0)
 		err(EXIT_FAILURE, "cannot write file");

@@ -23,7 +23,7 @@ for format in erofs ; do
         VERSION_ARG=""
         if test -f $ASSET_DIR/$file.version ; then
             VERSION="$(cat $ASSET_DIR/$file.version)"
-            VERSION_ARG="--format-version=$VERSION"
+            VERSION_ARG="--min-version=$VERSION --max-version=$VERSION"
         fi
 
         echo Verifying $file $VERSION_ARG

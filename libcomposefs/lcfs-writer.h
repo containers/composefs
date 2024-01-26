@@ -54,6 +54,10 @@ enum lcfs_flags_t {
  * 1 - Mark xwhitouts using the new opaque=x format as needed by Linux 6.8
  */
 
+/* Default value used by tooling, update with care */
+#define LCFS_DEFAULT_VERSION_MIN 0
+#define LCFS_DEFAULT_VERSION_MAX 1
+
 typedef ssize_t (*lcfs_read_cb)(void *file, void *buf, size_t count);
 typedef ssize_t (*lcfs_write_cb)(void *file, void *buf, size_t count);
 
@@ -64,7 +68,8 @@ struct lcfs_write_options_s {
 	uint8_t *digest_out;
 	void *file;
 	lcfs_write_cb file_write_cb;
-	uint32_t reserved[4];
+	uint32_t max_version;
+	uint32_t reserved[3];
 	void *reserved2[4];
 };
 

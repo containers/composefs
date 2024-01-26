@@ -36,6 +36,7 @@
 #include <sys/param.h>
 #include <assert.h>
 #include <sys/mman.h>
+#include <sys/sysmacros.h>
 
 static void lcfs_node_remove_all_children(struct lcfs_node_s *node);
 static void lcfs_node_destroy(struct lcfs_node_s *node);
@@ -328,6 +329,27 @@ static int lcfs_close(struct lcfs_ctx_s *ctx)
 	return 0;
 }
 
+static void lcfs_write_update_version(struct lcfs_node_s *node,
+				      struct lcfs_write_options_s *options)
+{
+	/* Version 1 changed how whiteouts are handled */
+	if (options->version < 1 && options->max_version >= 1) {
+		int type = node->inode.st_mode & S_IFMT;
+
+		if (type == S_IFCHR && node->inode.st_rdev == makedev(0, 0)) {
+			options->version = 1;
+		}
+	}
+
+	for (size_t i = 0; i < node->children_size; ++i) {
+		struct lcfs_node_s *child = node->children[i];
+		if (child->link_to != NULL) {
+			continue;
+		}
+		lcfs_write_update_version(child, options);
+	}
+}
+
 int lcfs_write_to(struct lcfs_node_s *root, struct lcfs_write_options_s *options)
 {
 	enum lcfs_format_t format = options->format;
@@ -340,10 +362,18 @@ int lcfs_write_to(struct lcfs_node_s *root, struct lcfs_write_options_s *options
 		return -1;
 	}
 
-	if (options->version > LCFS_VERSION_MAX) {
+	if (options->version > LCFS_VERSION_MAX ||
+	    options->max_version > LCFS_VERSION_MAX) {
 		errno = EINVAL;
 		return -1;
 	}
+
+	if (options->max_version < options->version) {
+		options->max_version = options->version;
+	}
+
+	/* Update options->version up to options->max_version if needed */
+	lcfs_write_update_version(root, options);
 
 	ctx = lcfs_new_ctx(root, options);
 	if (ctx == NULL) {
