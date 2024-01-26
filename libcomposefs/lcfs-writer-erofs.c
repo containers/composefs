@@ -1316,6 +1316,7 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 	struct lcfs_erofs_header_s header = {
 		.magic = lcfs_u32_to_file(LCFS_EROFS_MAGIC),
 		.version = lcfs_u32_to_file(LCFS_EROFS_VERSION),
+		.composefs_version = lcfs_u32_to_file(ctx->options->version),
 	};
 	uint32_t header_flags;
 	struct erofs_super_block superblock = {

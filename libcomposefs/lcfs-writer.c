@@ -22,6 +22,7 @@
 #include "lcfs-writer.h"
 #include "lcfs-utils.h"
 #include "lcfs-fsverity.h"
+#include "lcfs-erofs.h"
 #include "hash.h"
 
 #include <errno.h>
@@ -678,6 +679,24 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 	}
 
 	return steal_pointer(&ret);
+}
+
+int lcfs_version_from_fd(int fd)
+{
+	struct lcfs_erofs_header_s *header;
+
+	header = mmap(0, sizeof(struct lcfs_erofs_header_s), PROT_READ,
+		      MAP_PRIVATE, fd, 0);
+	if (header == MAP_FAILED) {
+		return -1;
+	}
+	if (lcfs_u32_from_file(header->magic) != LCFS_EROFS_MAGIC ||
+	    lcfs_u32_from_file(header->version) != LCFS_EROFS_VERSION) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	return lcfs_u32_from_file(header->composefs_version);
 }
 
 struct lcfs_node_s *lcfs_load_node_from_fd(int fd)

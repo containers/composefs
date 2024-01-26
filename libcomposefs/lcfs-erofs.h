@@ -30,7 +30,8 @@ struct lcfs_erofs_header_s {
 	uint32_t magic;
 	uint32_t version;
 	uint32_t flags;
-	uint32_t unused[5];
+	uint32_t composefs_version;
+	uint32_t unused[4];
 } __attribute__((__packed__));
 
 #endif

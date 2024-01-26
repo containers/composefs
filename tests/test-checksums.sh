@@ -48,7 +48,7 @@ for format in erofs ; do
         fi
 
         # Ensure dump reproduces the same file
-        ${VALGRIND_PREFIX} ${BINDIR}/composefs-dump $tmpfile $tmpfile2 $VERSION
+        ${VALGRIND_PREFIX} ${BINDIR}/composefs-dump $tmpfile $tmpfile2
         if ! cmp $tmpfile $tmpfile2; then
             echo Dump is not reproducible
             exit 1
