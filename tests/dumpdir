@@ -37,6 +37,8 @@ def dumpfile(file, root):
     if stat.S_ISDIR(st_mode) and has_whiteout_child(file):
         xattrs["trusted.overlay.overlay.whiteouts"] = b''
         xattrs["user.overlay.whiteouts"] = b''
+        xattrs["trusted.overlay.overlay.opaque"] = b'x'
+        xattrs["user.overlay.opaque"] = b'x'
 
     nlink = s.st_nlink;
     if args.no_nlink or (args.no_root_nlink and file == root):

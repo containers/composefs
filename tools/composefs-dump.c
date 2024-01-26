@@ -43,7 +43,7 @@ static ssize_t write_cb(void *_file, void *buf, size_t count)
 int main(int argc, char **argv)
 {
 	const char *bin = argv[0];
-	int fd;
+	int fd, version;
 	struct lcfs_node_s *root;
 	const char *src_path = NULL;
 	const char *dst_path = NULL;
@@ -68,6 +68,11 @@ int main(int argc, char **argv)
 		err(EXIT_FAILURE, "Failed to open '%s'", src_path);
 	}
 
+	version = lcfs_version_from_fd(fd);
+	if (version < 0) {
+		err(EXIT_FAILURE, "Failed to get image version '%s'", src_path);
+	}
+
 	root = lcfs_load_node_from_fd(fd);
 	if (root == NULL) {
 		err(EXIT_FAILURE, "Failed to load '%s'", src_path);
@@ -76,6 +81,7 @@ int main(int argc, char **argv)
 	close(fd);
 
 	options.format = LCFS_FORMAT_EROFS;
+	options.version = version;
 
 	FILE *out_file = fopen(dst_path, "we");
 	if (out_file == NULL)

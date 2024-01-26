@@ -48,6 +48,16 @@ enum lcfs_flags_t {
 	LCFS_FLAGS_MASK = 0,
 };
 
+#define LCFS_VERSION_MAX 1
+/* Version history:
+ * 0 - Initial version
+ * 1 - Mark xwhitouts using the new opaque=x format as needed by Linux 6.8
+ */
+
+/* Default value used by tooling, update with care */
+#define LCFS_DEFAULT_VERSION_MIN 0
+#define LCFS_DEFAULT_VERSION_MAX 1
+
 typedef ssize_t (*lcfs_read_cb)(void *file, void *buf, size_t count);
 typedef ssize_t (*lcfs_write_cb)(void *file, void *buf, size_t count);
 
@@ -58,7 +68,8 @@ struct lcfs_write_options_s {
 	uint8_t *digest_out;
 	void *file;
 	lcfs_write_cb file_write_cb;
-	uint32_t reserved[4];
+	uint32_t max_version;
+	uint32_t reserved[3];
 	void *reserved2[4];
 };
 
@@ -72,6 +83,7 @@ LCFS_EXTERN struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *
 LCFS_EXTERN struct lcfs_node_s *lcfs_load_node_from_image(const uint8_t *image_data,
 							  size_t image_data_size);
 LCFS_EXTERN struct lcfs_node_s *lcfs_load_node_from_fd(int fd);
+LCFS_EXTERN int lcfs_version_from_fd(int fd);
 
 LCFS_EXTERN const char *lcfs_node_get_xattr(struct lcfs_node_s *node,
 					    const char *name, size_t *length);

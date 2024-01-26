@@ -1067,7 +1067,7 @@ static int write_erofs_shared_xattrs(struct lcfs_ctx_s *ctx)
 	return 0;
 }
 
-static int add_overlayfs_xattrs(struct lcfs_node_s *node)
+static int add_overlayfs_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 {
 	int type = node->inode.st_mode & S_IFMT;
 	int ret;
@@ -1148,6 +1148,18 @@ static int add_overlayfs_xattrs(struct lcfs_node_s *node)
 					  "", 0);
 		if (ret < 0)
 			return ret;
+
+		/* Mark dir containing whiteouts with new format as of version 1 */
+		if (ctx->options->version >= 1) {
+			ret = lcfs_node_set_xattr(
+				parent, OVERLAY_XATTR_ESCAPED_OPAQUE, "x", 1);
+			if (ret < 0)
+				return ret;
+			ret = lcfs_node_set_xattr(
+				parent, OVERLAY_XATTR_USERXATTR_OPAQUE, "x", 1);
+			if (ret < 0)
+				return ret;
+		}
 	}
 
 	return 0;
@@ -1206,12 +1218,13 @@ static int add_overlay_whiteouts(struct lcfs_node_s *root)
 	return 0;
 }
 
-static int rewrite_tree_node_for_erofs(struct lcfs_node_s *node,
+static int rewrite_tree_node_for_erofs(struct lcfs_ctx_s *ctx,
+				       struct lcfs_node_s *node,
 				       struct lcfs_node_s *parent)
 {
 	int ret;
 
-	ret = add_overlayfs_xattrs(node);
+	ret = add_overlayfs_xattrs(ctx, node);
 	if (ret < 0)
 		return ret;
 
@@ -1256,7 +1269,7 @@ static int rewrite_tree_node_for_erofs(struct lcfs_node_s *node,
 				continue;
 			}
 
-			ret = rewrite_tree_node_for_erofs(child, node);
+			ret = rewrite_tree_node_for_erofs(ctx, child, node);
 			if (ret < 0) {
 				return -1;
 			}
@@ -1277,11 +1290,11 @@ static int set_overlay_opaque(struct lcfs_node_s *node)
 	return 0;
 }
 
-static int rewrite_tree_for_erofs(struct lcfs_node_s *root)
+static int rewrite_tree_for_erofs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 {
 	int res;
 
-	res = rewrite_tree_node_for_erofs(root, root);
+	res = rewrite_tree_node_for_erofs(ctx, root, root);
 	if (res < 0)
 		return res;
 
@@ -1303,6 +1316,7 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 	struct lcfs_erofs_header_s header = {
 		.magic = lcfs_u32_to_file(LCFS_EROFS_MAGIC),
 		.version = lcfs_u32_to_file(LCFS_EROFS_VERSION),
+		.composefs_version = lcfs_u32_to_file(ctx->options->version),
 	};
 	uint32_t header_flags;
 	struct erofs_super_block superblock = {
@@ -1312,11 +1326,6 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 	int ret = 0;
 	uint64_t data_block_start;
 
-	if (ctx->options->version != 0) {
-		errno = EINVAL;
-		return -1;
-	}
-
 	/* Clone root so we can make required modifications to it */
 	ret = lcfs_clone_root(ctx);
 	if (ret < 0)
@@ -1325,7 +1334,7 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 	root = ctx->root; /* After we cloned it */
 
 	/* Rewrite cloned tree as needed for erofs */
-	ret = rewrite_tree_for_erofs(root);
+	ret = rewrite_tree_for_erofs(ctx, root);
 	if (ret < 0)
 		return ret;
 

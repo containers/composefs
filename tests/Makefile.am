@@ -1,5 +1,5 @@
 TEST_ASSETS_SMALL = \
-	config.dump.gz config-with-hard-link.dump.gz special.dump
+	config.dump.gz config-with-hard-link.dump.gz special.dump special_v1.dump
 
 TEST_ASSETS = ${TEST_ASSETS_SMALL} \
 	cs9-x86_64-developer.dump.gz cs9-x86_64-minimal.dump.gz	\
