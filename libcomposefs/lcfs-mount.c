@@ -379,7 +379,14 @@ static errint_t lcfs_mount_ovl(struct lcfs_mount_state_s *state, char *imagemoun
 	if (fd_fs < 0)
 		return -errno;
 
-	int res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "metacopy", "on", 0);
+	/* Ensure overlayfs is fully supporting the new mount api, not just
+	   via the legacy mechanism that doesn't validate options */
+	int res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "unsupported",
+				   "unsupported", 0);
+	if (res == 0)
+		return -ENOSYS;
+
+	res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "metacopy", "on", 0);
 	if (res < 0)
 		return -errno;
 
@@ -395,34 +402,29 @@ static errint_t lcfs_mount_ovl(struct lcfs_mount_state_s *state, char *imagemoun
 	}
 
 	/* Here we're using the new mechanism to append to lowerdir that was added in
-	 * 6.5 (commit b36a5780cb44), because that is the only way to handle escaping
+	 * 6.7 (24e16e385f227), because that is the only way to handle escaping
 	 * of commas (i.e. we don't need to in this case) with the new mount api.
-	 * Also, since 6.5 has data-only lowerdir support we can just always use it.
+	 * Also, since 6.7 has data-only lowerdir support we can just always use it.
 	 *
-	 * For older kernels a lack of append support will make the mount fail with EINVAL
-	 * and print an "empty lowerdir" error, and a lack of comma in the options will
-	 * cause the fsconfig to fail with EINVAL. If any of these happen we fall back to
+	 * For older kernels a lack of append support will make the mount fail with EINVAL,
+	 * and a lack of comma in the options will cause the fsconfig to fail with EINVAL. If any of these happen we fall back to
 	 * the legacy implementation (via ENOSYS).
 	 */
-	res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "lowerdir", imagemount, 0);
-	/* EINVAL probably the lack of support for commas in options as per above, fallback */
-	if (errno == EINVAL)
-		return -ENOSYS;
-	if (res < 0)
+	res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "lowerdir+",
+			       imagemount, 0);
+	if (res < 0) {
+		/* EINVAL lack of support for appending as per above, fallback */
+		if (errno == EINVAL)
+			return -ENOSYS;
 		return -errno;
+	}
 
 	for (size_t i = 0; i < state->options->n_objdirs; i++) {
 		const char *objdir = state->options->objdirs[i];
-		cleanup_free char *opt = malloc(strlen(objdir) + 2 + 1);
-		if (opt == NULL)
-			return -ENOMEM;
-		strcpy(opt, "::"); /* starting with : means we append a dataonly lowerdir */
-		strcat(opt, objdir);
-
-		res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "lowerdir",
-				       opt, 0);
+		res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "datadir+",
+				       objdir, 0);
 		if (res < 0) {
-			/* EINVAL probably the lack of support for commas in options as per above, fallback */
+			/* EINVAL lack of support for appending as per above, fallback */
 			if (errno == EINVAL)
 				return -ENOSYS;
 			return -errno;
@@ -433,7 +435,7 @@ static errint_t lcfs_mount_ovl(struct lcfs_mount_state_s *state, char *imagemoun
 		res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "upperdir",
 				       options->upperdir, 0);
 		if (res < 0) {
-			/* EINVAL probably the lack of support for commas in options as per above, fallback */
+			/* EINVAL lack of support for appending as per above, fallback */
 			if (errno == EINVAL)
 				return -ENOSYS;
 			return -errno;
