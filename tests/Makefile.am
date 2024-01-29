@@ -1,6 +1,9 @@
 TEST_ASSETS_SMALL = \
 	config.dump.gz config-with-hard-link.dump.gz special.dump special_v1.dump
 
+TEST_ASSETS_SMALL_EXTRA = \
+	special.dump.version special_v1.dump.version
+
 TEST_ASSETS = ${TEST_ASSETS_SMALL} \
 	cs9-x86_64-developer.dump.gz cs9-x86_64-minimal.dump.gz	\
 	f36-x86_64-silverblue.dump.gz
@@ -17,6 +20,7 @@ EXTRA_DIST = \
 	test-random-fuse.sh \
 	test-checksums.sh \
 	integration.sh \
+	$(patsubst %,assets/%,${TEST_ASSETS_SMALL_EXTRA}) \
 	$(patsubst %,assets/%,${TEST_ASSETS_SMALL}) $(patsubst %,assets/%.sha256,${TEST_ASSETS_SMALL})
 
 check-checksums:
