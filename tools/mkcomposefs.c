@@ -282,8 +282,12 @@ static void tree_add_node(dump_info *info, const char *path, struct lcfs_node_s 
 			errx(EXIT_FAILURE, "Can't have multiple roots");
 	} else {
 		const char *name;
-		struct lcfs_node_s *parent =
-			lookup_parent_path(info->root, path, &name);
+		struct lcfs_node_s *parent;
+
+		if (info->root == NULL)
+			errx(EXIT_FAILURE, "Root node not present");
+
+		parent = lookup_parent_path(info->root, path, &name);
 
 		if (parent == NULL)
 			errx(EXIT_FAILURE, "Parent directory missing for %s", path);
