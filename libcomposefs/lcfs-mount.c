@@ -300,6 +300,9 @@ static errint_t lcfs_mount_ovl_legacy(struct lcfs_mount_state_s *state, char *im
 {
 	struct lcfs_mount_options_s *options = state->options;
 
+	/* Note: We ignore the TRY_VERITY option for legacy mounts, as
+	   it is hard to check if the option is supported. */
+
 	bool require_verity =
 		(options->flags & LCFS_MOUNT_FLAGS_REQUIRE_VERITY) != 0;
 	bool readonly = (options->flags & LCFS_MOUNT_FLAGS_READONLY) != 0;
@@ -373,6 +376,7 @@ static errint_t lcfs_mount_ovl(struct lcfs_mount_state_s *state, char *imagemoun
 
 	bool require_verity =
 		(options->flags & LCFS_MOUNT_FLAGS_REQUIRE_VERITY) != 0;
+	bool try_verity = (options->flags & LCFS_MOUNT_FLAGS_TRY_VERITY) != 0;
 	bool readonly = (options->flags & LCFS_MOUNT_FLAGS_READONLY) != 0;
 
 	cleanup_fd int fd_fs = syscall_fsopen("overlay", FSOPEN_CLOEXEC);
@@ -394,10 +398,10 @@ static errint_t lcfs_mount_ovl(struct lcfs_mount_state_s *state, char *imagemoun
 	if (res < 0)
 		return -errno;
 
-	if (require_verity) {
+	if (require_verity || try_verity) {
 		res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "verity",
 				       "require", 0);
-		if (res < 0)
+		if (res < 0 && require_verity)
 			return -errno;
 	}
 
