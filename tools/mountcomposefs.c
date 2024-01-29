@@ -52,6 +52,7 @@ static void usage(const char *argv0)
 		"  basedir=PATH[:PATH]    Specify location of basedir(s)\n"
 		"  digest=DIGEST          Specify required image digest\n"
 		"  verity                 Require all files to have specified and valid fs-verity digests\n"
+		"  tryverity              If supported by kernel, require fs-verity\n"
 		"  ro                     Read only\n"
 		"  rw                     Read/write\n"
 		"  upperdir               Overlayfs upperdir\n"
@@ -118,6 +119,7 @@ int main(int argc, char **argv)
 	const char *opt_upperdir = NULL;
 	const char *opt_workdir = NULL;
 	bool opt_verity = false;
+	bool opt_tryverity = false;
 	bool opt_ro = false;
 	int opt, fd, res, userns_fd;
 
@@ -173,6 +175,8 @@ int main(int argc, char **argv)
 			opt_digest = value;
 		} else if (strcmp("verity", key) == 0) {
 			opt_verity = true;
+		} else if (strcmp("tryverity", key) == 0) {
+			opt_tryverity = true;
 		} else if (strcmp("upperdir", key) == 0) {
 			if (value == NULL)
 				errx(EXIT_FAILURE,
@@ -236,6 +240,8 @@ int main(int argc, char **argv)
 
 	if (opt_verity || opt_digest != NULL)
 		options.flags |= LCFS_MOUNT_FLAGS_REQUIRE_VERITY;
+	else if (opt_tryverity)
+		options.flags |= LCFS_MOUNT_FLAGS_TRY_VERITY;
 	if (opt_ro)
 		options.flags |= LCFS_MOUNT_FLAGS_READONLY;
 
