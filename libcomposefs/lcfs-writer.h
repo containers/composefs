@@ -51,7 +51,7 @@ enum lcfs_flags_t {
 #define LCFS_VERSION_MAX 1
 /* Version history:
  * 0 - Initial version
- * 1 - Mark xwhitouts using the new opaque=x format as needed by Linux 6.8
+ * 1 - Mark xwhitouts using the opaque=x format (1.0.3)
  */
 
 /* Default value used by tooling, update with care */
