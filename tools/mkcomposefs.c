@@ -27,6 +27,7 @@
 #include <linux/limits.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <err.h>
 #include <errno.h>
 #include <unistd.h>
@@ -40,6 +41,19 @@
 static void oom(void)
 {
 	errx(EXIT_FAILURE, "Out of memory");
+}
+
+static __attribute__((format(printf, 1, 2))) char *make_error(const char *fmt, ...)
+{
+	va_list ap;
+	char *res;
+
+	va_start(ap, fmt);
+	if (vasprintf(&res, fmt, ap) < 0)
+		oom();
+	va_end(ap);
+
+	return res;
 }
 
 #define OPT_SKIP_XATTRS 102
@@ -100,20 +114,23 @@ const char *names[] = {
 };
 
 static char *unescape_string(const char *escaped, size_t escaped_size,
-			     size_t *unescaped_size)
+			     size_t *unescaped_size, char **err)
 {
 	const char *escaped_end = escaped + escaped_size;
 	char *res = malloc(escaped_size + 1);
 	if (res == NULL)
 		oom();
-
 	char *out = res;
+
+	*err = NULL;
 
 	while (escaped < escaped_end) {
 		char c = *escaped++;
 		if (c == '\\') {
-			if (escaped >= escaped_end)
-				errx(EXIT_FAILURE, "No character after escape");
+			if (escaped >= escaped_end) {
+				*err = make_error("No character after escape");
+				return NULL;
+			}
 			c = *escaped++;
 			switch (c) {
 			case '\\':
@@ -129,22 +146,31 @@ static char *unescape_string(const char *escaped, size_t escaped_size,
 				*out++ = '\t';
 				break;
 			case 'x':
-				if (escaped >= escaped_end)
-					errx(EXIT_FAILURE,
-					     "No hex characters after hex escape");
+				if (escaped >= escaped_end) {
+					*err = make_error(
+						"No hex characters after hex escape");
+					return NULL;
+				}
 				int x1 = hexdigit(*escaped++);
-				if (escaped >= escaped_end)
-					errx(EXIT_FAILURE,
-					     "No hex characters after hex escape");
+				if (escaped >= escaped_end) {
+					*err = make_error(
+						"No hex characters after hex escape");
+					return NULL;
+				}
 				int x2 = hexdigit(*escaped++);
-				if (x1 < 0 || x2 < 0)
-					errx(EXIT_FAILURE,
-					     "Invalid hex characters after hex escape");
+				if (x1 < 0 || x2 < 0) {
+					*err = make_error(
+						"Invalid hex characters after hex escape");
+
+					return NULL;
+				}
 
 				*out++ = x1 << 4 | x2;
 				break;
-			default:
-				errx(EXIT_FAILURE, "Unsupported escape type %c", c);
+			default: {
+				*err = make_error("Unsupported escape type %c", c);
+				return NULL;
+			}
 			}
 		} else {
 			*out++ = c;
@@ -160,13 +186,14 @@ static char *unescape_string(const char *escaped, size_t escaped_size,
 }
 
 static char *unescape_optional_string(const char *escaped, size_t escaped_size,
-				      size_t *unescaped_size)
+				      size_t *unescaped_size, char **err)
 {
+	*err = NULL;
 	/* Optional */
 	if (escaped_size == 1 && escaped[0] == '-')
 		return NULL;
 
-	return unescape_string(escaped, escaped_size, unescaped_size);
+	return unescape_string(escaped, escaped_size, unescaped_size, err);
 }
 
 static struct lcfs_node_s *lookup_parent_path(struct lcfs_node_s *node,
@@ -214,7 +241,7 @@ static struct lcfs_node_s *lookup_path(struct lcfs_node_s *node, const char *pat
 	return lookup_path(child, path);
 }
 
-static uint64_t parse_int_field(const char *str, size_t length, int base)
+static uint64_t parse_int_field(const char *str, size_t length, int base, char **err)
 {
 	cleanup_free char *s = strndup(str, length);
 	if (s == NULL)
@@ -222,33 +249,48 @@ static uint64_t parse_int_field(const char *str, size_t length, int base)
 
 	char *endptr = NULL;
 	unsigned long long v = strtoull(s, &endptr, base);
-	if (*s == 0 || *endptr != 0)
-		errx(EXIT_FAILURE, "Invalid integer %s\n", s);
+	if (*s == 0 || *endptr != 0) {
+		*err = make_error("Invalid integer %s\n", s);
+		return 0;
+	}
 
 	return (uint64_t)v;
 }
 
-static void parse_mtime(const char *str, size_t length, struct timespec *mtime)
+static char *parse_mtime(const char *str, size_t length, struct timespec *mtime)
 {
+	char *err = NULL;
 	const char *mtime_sec_s = str;
 	size_t mtime_sec_len = split_at(&str, &length, '.', NULL);
-	uint64_t mtime_sec = parse_int_field(mtime_sec_s, mtime_sec_len, 10);
-	uint64_t mtime_nsec = parse_int_field(str, length, 10);
+	uint64_t mtime_sec = parse_int_field(mtime_sec_s, mtime_sec_len, 10, &err);
+	if (mtime_sec == 0 && err)
+		return err;
+	uint64_t mtime_nsec = parse_int_field(str, length, 10, &err);
+	if (mtime_nsec == 0 && err)
+		return err;
 	mtime->tv_sec = mtime_sec;
 	mtime->tv_nsec = mtime_nsec;
+	return NULL;
 }
 
-static void parse_xattr(const char *data, size_t data_len, struct lcfs_node_s *node)
+static char *parse_xattr(const char *data, size_t data_len, struct lcfs_node_s *node)
 {
 	const char *xattr_name = data;
 	size_t xattr_name_len = split_at(&data, &data_len, '=', NULL);
 
-	cleanup_free char *key = unescape_string(xattr_name, xattr_name_len, NULL);
+	char *err = NULL;
+	cleanup_free char *key =
+		unescape_string(xattr_name, xattr_name_len, NULL, &err);
+	if (key == NULL && err)
+		return err;
 	size_t value_len;
-	cleanup_free char *value = unescape_string(data, data_len, &value_len);
+	cleanup_free char *value = unescape_string(data, data_len, &value_len, &err);
+	if (value == NULL && err)
+		return err;
 
 	if (lcfs_node_set_xattr(node, key, value, value_len) != 0)
-		errx(EXIT_FAILURE, "Can't set xattr");
+		return make_error("Can't set xattr");
+	return NULL;
 }
 
 typedef struct hardlink_fixup hardlink_fixup;
@@ -270,40 +312,41 @@ struct field_info {
 	size_t len;
 };
 
-static void tree_add_node(dump_info *info, const char *path, struct lcfs_node_s *node)
+static char *tree_add_node(dump_info *info, const char *path, struct lcfs_node_s *node)
 {
 	if (strcmp(path, "/") == 0) {
 		if (!lcfs_node_dirp(node))
-			errx(EXIT_FAILURE, "Root must be a directory");
+			return make_error("Root must be a directory");
 
 		if (info->root == NULL)
 			info->root = lcfs_node_ref(node);
 		else
-			errx(EXIT_FAILURE, "Can't have multiple roots");
+			return make_error("Can't have multiple roots");
 	} else {
 		const char *name;
 		struct lcfs_node_s *parent;
 
 		if (info->root == NULL)
-			errx(EXIT_FAILURE, "Root node not present");
+			return make_error("Root node not present");
 
 		parent = lookup_parent_path(info->root, path, &name);
 
 		if (parent == NULL)
-			errx(EXIT_FAILURE, "Parent directory missing for %s", path);
+			return make_error("Parent directory missing for %s", path);
 
 		if (!lcfs_node_dirp(parent))
-			errx(EXIT_FAILURE, "Parent must be a directory for %s", path);
+			return make_error("Parent must be a directory for %s", path);
 
 		int r = lcfs_node_add_child(parent, node, name);
 		if (r < 0) {
 			if (r == -EEXIST)
-				err(EXIT_FAILURE, "Path %s already exist", path);
-			err(EXIT_FAILURE, "Can't add child");
+				return make_error("Path %s already exist", path);
+			return make_error("Can't add child");
 		}
 		/* add_child took ownership, ref again */
 		lcfs_node_ref(node);
 	}
+	return NULL;
 }
 
 static void tree_add_hardlink_fixup(dump_info *info, char *target_path,
@@ -320,7 +363,7 @@ static void tree_add_hardlink_fixup(dump_info *info, char *target_path,
 	info->hardlink_fixups = fixup;
 }
 
-static void tree_resolve_hardlinks(dump_info *info)
+static char *tree_resolve_hardlinks(dump_info *info)
 {
 	hardlink_fixup *fixup = info->hardlink_fixups;
 	while (fixup != NULL) {
@@ -328,8 +371,8 @@ static void tree_resolve_hardlinks(dump_info *info)
 		struct lcfs_node_s *target =
 			lookup_path(info->root, fixup->target_path);
 		if (target == NULL)
-			errx(EXIT_FAILURE, "No target at %s for hardlink",
-			     fixup->target_path);
+			return make_error("No target at %s for hardlink",
+					  fixup->target_path);
 
 		/* Don't override existing value from image for target nlink */
 		uint32_t old_nlink = lcfs_node_get_nlink(target);
@@ -343,9 +386,10 @@ static void tree_resolve_hardlinks(dump_info *info)
 
 		fixup = next;
 	}
+	return NULL;
 }
 
-static void tree_from_dump_line(dump_info *info, const char *line, size_t line_len)
+static char *tree_from_dump_line(dump_info *info, const char *line, size_t line_len)
 {
 	/* Split out all fixed fields */
 	field_info fields[FIELD_XATTRS_START];
@@ -354,8 +398,11 @@ static void tree_from_dump_line(dump_info *info, const char *line, size_t line_l
 		fields[i].len = split_at(&line, &line_len, ' ', NULL);
 	}
 
-	cleanup_free char *path = unescape_string(fields[FIELD_PATH].data,
-						  fields[FIELD_PATH].len, NULL);
+	char *err = NULL;
+	cleanup_free char *path = unescape_string(
+		fields[FIELD_PATH].data, fields[FIELD_PATH].len, NULL, &err);
+	if (path == NULL && err)
+		return err;
 
 	bool is_hardlink = false;
 	/* First char in mode is @ if hardlink */
@@ -365,52 +412,80 @@ static void tree_from_dump_line(dump_info *info, const char *line, size_t line_l
 		fields[FIELD_MODE].data += 1;
 	}
 	uint64_t mode = parse_int_field(fields[FIELD_MODE].data,
-					fields[FIELD_MODE].len, 8);
+					fields[FIELD_MODE].len, 8, &err);
+	if (mode == 0 && err)
+		return err;
 
 	cleanup_node struct lcfs_node_s *node = lcfs_node_new();
 	lcfs_node_set_mode(node, mode);
 
-	tree_add_node(info, path, node);
+	err = tree_add_node(info, path, node);
+	if (err)
+		return err;
 
 	/* For hardlinks, bail out early and handle in a fixup at the
          * end when we can resolve the target path. */
 	if (is_hardlink) {
 		if (lcfs_node_dirp(node))
-			errx(EXIT_FAILURE, "Directories can't be hardlinked");
+			return make_error("Directories can't be hardlinked");
+		err = NULL;
 		cleanup_free char *target_path =
 			unescape_optional_string(fields[FIELD_PAYLOAD].data,
-						 fields[FIELD_PAYLOAD].len, NULL);
+						 fields[FIELD_PAYLOAD].len,
+						 NULL, &err);
+		if (target_path == NULL && err)
+			return err;
 		tree_add_hardlink_fixup(info, steal_pointer(&target_path), node);
-		return;
+		return NULL;
 	}
 
 	/* Handle regular files/dir data from fixed fields */
 	uint64_t size = parse_int_field(fields[FIELD_SIZE].data,
-					fields[FIELD_SIZE].len, 10);
+					fields[FIELD_SIZE].len, 10, &err);
+	if (size == 0 && err)
+		return err;
 	uint64_t nlink = parse_int_field(fields[FIELD_NLINK].data,
-					 fields[FIELD_NLINK].len, 10);
-	uint64_t uid =
-		parse_int_field(fields[FIELD_UID].data, fields[FIELD_UID].len, 10);
-	uint64_t gid =
-		parse_int_field(fields[FIELD_GID].data, fields[FIELD_GID].len, 10);
+					 fields[FIELD_NLINK].len, 10, &err);
+	if (nlink == 0 && err)
+		return err;
+	uint64_t uid = parse_int_field(fields[FIELD_UID].data,
+				       fields[FIELD_UID].len, 10, &err);
+	if (uid == 0 && err)
+		return err;
+	uint64_t gid = parse_int_field(fields[FIELD_GID].data,
+				       fields[FIELD_GID].len, 10, &err);
+	if (uid == 0 && err)
+		return err;
 	uint64_t rdev = parse_int_field(fields[FIELD_RDEV].data,
-					fields[FIELD_RDEV].len, 10);
+					fields[FIELD_RDEV].len, 10, &err);
+	if (uid == 0 && err)
+		return err;
 
 	struct timespec mtime;
-	parse_mtime(fields[FIELD_MTIME].data, fields[FIELD_MTIME].len, &mtime);
+	err = parse_mtime(fields[FIELD_MTIME].data, fields[FIELD_MTIME].len, &mtime);
+	if (err)
+		return err;
 
-	cleanup_free char *payload = unescape_optional_string(
-		fields[FIELD_PAYLOAD].data, fields[FIELD_PAYLOAD].len, NULL);
+	cleanup_free char *payload =
+		unescape_optional_string(fields[FIELD_PAYLOAD].data,
+					 fields[FIELD_PAYLOAD].len, NULL, &err);
+	if (payload == NULL && err)
+		return err;
 	size_t content_len;
 	cleanup_free char *content =
 		unescape_optional_string(fields[FIELD_CONTENT].data,
-					 fields[FIELD_CONTENT].len, &content_len);
+					 fields[FIELD_CONTENT].len,
+					 &content_len, &err);
+	if (content == NULL && err)
+		return err;
 	if (content && content_len != size)
-		errx(EXIT_FAILURE, "Invalid content size %lld, must match size %lld",
-		     (long long)content_len, (long long)size);
+		return make_error("Invalid content size %lld, must match size %lld",
+				  (long long)content_len, (long long)size);
 
 	cleanup_free char *digest = unescape_optional_string(
-		fields[FIELD_DIGEST].data, fields[FIELD_DIGEST].len, NULL);
+		fields[FIELD_DIGEST].data, fields[FIELD_DIGEST].len, NULL, &err);
+	if (digest == NULL && err)
+		return err;
 
 	lcfs_node_set_mode(node, mode);
 	lcfs_node_set_size(node, size);
@@ -434,8 +509,11 @@ static void tree_from_dump_line(dump_info *info, const char *line, size_t line_l
 		const char *xattr = line;
 		size_t xattr_len = split_at(&line, &line_len, ' ', NULL);
 
-		parse_xattr(xattr, xattr_len, node);
+		err = parse_xattr(xattr, xattr_len, node);
+		if (err)
+			return err;
 	}
+	return NULL;
 }
 
 struct buffer {
@@ -499,7 +577,7 @@ static void buffer_free(struct buffer *buf)
 	free(buf->buf);
 }
 
-static struct lcfs_node_s *tree_from_dump(FILE *input)
+static struct lcfs_node_s *tree_from_dump(FILE *input, char **out_err)
 {
 	dump_info info = { NULL };
 
@@ -520,7 +598,12 @@ static struct lcfs_node_s *tree_from_dump(FILE *input)
 				split_at(&data, &remaining_data, '\n', &partial);
 
 			if (!partial || short_read) {
-				tree_from_dump_line(&info, line, line_len);
+				char *err = tree_from_dump_line(&info, line, line_len);
+				if (err != NULL) {
+					*out_err = err;
+					buffer_free(&buf);
+					return NULL;
+				}
 			} else {
 				/* Last line didn't have a newline and
 				 * this wasn't a short read, so keep
@@ -534,7 +617,11 @@ static struct lcfs_node_s *tree_from_dump(FILE *input)
 	buffer_free(&buf);
 
 	/* Fixup hardlinks now that we have all other files */
-	tree_resolve_hardlinks(&info);
+	char *err = tree_resolve_hardlinks(&info);
+	if (err) {
+		*out_err = err;
+		return NULL;
+	}
 
 	return info.root;
 }
@@ -543,8 +630,10 @@ static struct lcfs_node_s *tree_from_dump(FILE *input)
 static int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 {
 	struct lcfs_node_s *tree;
+	char *err = NULL;
 	FILE *f = fmemopen(buf, len, "r");
-	tree = tree_from_dump(f);
+	tree = tree_from_dump(f, &err);
+	free(err);
 	if (tree)
 		lcfs_node_unref(tree);
 	fclose(f);
@@ -1065,9 +1154,14 @@ int main(int argc, char **argv)
 			close_input = true;
 		}
 
-		root = tree_from_dump(input);
-		if (root == NULL)
-			errx(EXIT_FAILURE, "No files in dump file");
+		char *err = NULL;
+		root = tree_from_dump(input, &err);
+		if (root == NULL) {
+			if (err)
+				errx(EXIT_FAILURE, "%s", err);
+			else
+				errx(EXIT_FAILURE, "No files in dump file");
+		}
 
 		if (close_input)
 			fclose(input);
