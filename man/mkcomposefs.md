@@ -64,13 +64,13 @@ will be a mountable composefs image.
 :   The base version to use for the image format.
 
 **\-\-max-version**
-:   If this specifies a version higher than --versions, then the
+:   If this specifies a version higher than \-\-version, then the
     actual image format version used will be adjusted upwards if that
-    is benefitial for the image, up to the max version.
+    is beneficial for the image, up to the max version.
 
 # FORMAT VERSIONING
 
-Composefs iamges are binary reproduceable, meaning that for a given
+Composefs images are binary reproduceable, meaning that for a given
 input the result is always the same, giving the same digest of the
 image. This is important as the digest is used to validate the image,
 even if the image was re-created rather than transferred as
@@ -87,7 +87,7 @@ used will be increased. This allows us to introduce new features and
 fix bugs in a later version and migrate to that using max versions,
 but still keeping the digests identical for unaffected images.
 
-If you need 100% binary reproducibliliy over time, specify the same
+If you need 100% binary reproducibility over time, specify the same
 version and a max version each time.
 
 Format version history:
