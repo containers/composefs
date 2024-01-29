@@ -98,3 +98,14 @@ jobs:
         run: |
           sudo docker build -t clang-format hacking/clang-format
           sudo docker run --rm -w /src -v ${PWD}:/src clang-format
+  distcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Install dependencies
+        run: sudo ./hacking/installdeps.sh
+      - name: Configure
+        run: ./autogen.sh && ./configure CFLAGS='-Wall -Werror'
+      - name: Run make distcheck
+        run: make -j$(nproc) distcheck
