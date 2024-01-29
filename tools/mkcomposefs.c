@@ -911,8 +911,9 @@ int main(int argc, char **argv)
 	int opt;
 	FILE *out_file;
 	char *failed_path;
-	long min_version = LCFS_DEFAULT_VERSION_MIN;
-	long max_version = LCFS_DEFAULT_VERSION_MAX;
+	bool version_set = false;
+	long min_version = 0;
+	long max_version = 0;
 	char *end;
 
 	/* We always compute the digest and reference by digest */
@@ -945,6 +946,7 @@ int main(int argc, char **argv)
 			from_file = true;
 			break;
 		case OPT_MIN_VERSION:
+			version_set = true;
 			min_version = strtol(optarg, &end, 10);
 			if (*optarg == 0 || *end != 0) {
 				fprintf(stderr, "Invalid min version %s\n", optarg);
@@ -952,6 +954,7 @@ int main(int argc, char **argv)
 			}
 			break;
 		case OPT_MAX_VERSION:
+			version_set = true;
 			max_version = strtol(optarg, &end, 10);
 			if (*optarg == 0 || *end != 0) {
 				fprintf(stderr, "Invalid max version %s\n", optarg);
@@ -965,6 +968,11 @@ int main(int argc, char **argv)
 			usage(bin);
 			exit(1);
 		}
+	}
+
+	if (!version_set) {
+		min_version = LCFS_DEFAULT_VERSION_MIN;
+		max_version = LCFS_DEFAULT_VERSION_MAX;
 	}
 
 	argv += optind;
