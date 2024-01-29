@@ -42,295 +42,6 @@ static void oom(void)
 	errx(EXIT_FAILURE, "Out of memory");
 }
 
-static void digest_to_string(const uint8_t *csum, char *buf)
-{
-	static const char hexchars[] = "0123456789abcdef";
-	uint32_t i, j;
-
-	for (i = 0, j = 0; i < LCFS_DIGEST_SIZE; i++, j += 2) {
-		uint8_t byte = csum[i];
-		buf[j] = hexchars[byte >> 4];
-		buf[j + 1] = hexchars[byte & 0xF];
-	}
-	buf[j] = '\0';
-}
-
-static int ensure_dir(const char *path, mode_t mode)
-{
-	struct stat buf;
-
-	/* We check this ahead of time, otherwise
-	   the mkdir call can fail in the read-only
-	   case with EROFS instead of EEXIST on some
-	   filesystems (such as NFS) */
-	if (stat(path, &buf) == 0) {
-		if (!S_ISDIR(buf.st_mode)) {
-			errno = ENOTDIR;
-			return -1;
-		}
-
-		return 0;
-	}
-
-	if (mkdir(path, mode) == -1 && errno != EEXIST)
-		return -1;
-
-	return 0;
-}
-
-static int mkdir_parents(const char *pathname, int mode)
-{
-	cleanup_free char *fn = strdup(pathname);
-	if (fn == NULL) {
-		errno = ENOMEM;
-		return -1;
-	}
-
-	char *p = fn;
-	while (*p == '/')
-		p++;
-
-	do {
-		while (*p && *p != '/')
-			p++;
-
-		if (!*p)
-			break;
-		*p = '\0';
-
-		if (ensure_dir(fn, mode) != 0) {
-			return -1;
-		}
-
-		*p++ = '/';
-		while (*p && *p == '/')
-			p++;
-	} while (p);
-
-	return 0;
-}
-
-static int write_to_fd(int fd, const char *content, ssize_t len)
-{
-	ssize_t res;
-
-	while (len > 0) {
-		res = write(fd, content, len);
-		if (res < 0 && errno == EINTR)
-			continue;
-		if (res <= 0) {
-			if (res == 0) /* Unexpected short write, should not happen when writing to a file */
-				errno = ENOSPC;
-			return -1;
-		}
-		len -= res;
-		content += res;
-	}
-
-	return 0;
-}
-
-#define BUFSIZE 8192
-static int copy_file_data(int sfd, int dfd)
-{
-	char buffer[BUFSIZE];
-	ssize_t bytes_read;
-
-	while (true) {
-		bytes_read = read(sfd, buffer, BUFSIZE);
-		if (bytes_read == -1) {
-			if (errno == EINTR)
-				continue;
-			return -1;
-		}
-
-		if (bytes_read == 0)
-			break;
-
-		if (write_to_fd(dfd, buffer, bytes_read) != 0)
-			return -1;
-	}
-
-	return 0;
-}
-
-static int join_paths(char **out, const char *path1, const char *path2)
-{
-	const char *sep = (path1[0] == '\0') ? "" : "/";
-	int len = strlen(path1);
-
-	while (len && path1[len - 1] == '/')
-		len--;
-
-	return asprintf(out, "%.*s%s%s", len, path1, sep, path2);
-}
-
-static errint_t enable_verity(int fd)
-{
-	struct fsverity_enable_arg arg = {};
-
-	arg.version = 1;
-	arg.hash_algorithm = FS_VERITY_HASH_ALG_SHA256;
-	arg.block_size = 4096;
-	arg.salt_size = 0;
-	arg.salt_ptr = 0;
-	arg.sig_size = 0;
-	arg.sig_ptr = 0;
-
-	if (ioctl(fd, FS_IOC_ENABLE_VERITY, &arg) != 0) {
-		return -errno;
-	}
-	return 0;
-}
-
-static void cleanup_unlink_freep(void *pp)
-{
-	char *filename = *(char **)pp;
-	if (!filename)
-		return;
-	PROTECT_ERRNO;
-	(void)unlink(filename);
-	free(filename);
-}
-#define cleanup_unlink_free __attribute__((cleanup(cleanup_unlink_freep)))
-
-static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
-					 const char *dst, bool try_enable_fsverity)
-{
-	cleanup_free char *pathbuf = NULL;
-	cleanup_unlink_free char *tmppath = NULL;
-	int ret, res;
-	errint_t err;
-	cleanup_fd int sfd = -1;
-	cleanup_fd int dfd = -1;
-	struct stat statbuf;
-
-	ret = join_paths(&pathbuf, dst_base, dst);
-	if (ret < 0)
-		return ret;
-
-	ret = mkdir_parents(pathbuf, 0755);
-	if (ret < 0)
-		return ret;
-
-	if (lstat(pathbuf, &statbuf) == 0)
-		return 0; /* Already exists, no need to copy */
-
-	ret = join_paths(&tmppath, dst_base, ".tmpXXXXXX");
-	if (ret < 0)
-		return ret;
-
-	dfd = mkostemp(tmppath, O_CLOEXEC);
-	if (dfd == -1)
-		return -1;
-
-	sfd = open(src, O_CLOEXEC | O_RDONLY);
-	if (sfd == -1) {
-		return -1;
-	}
-
-	// First try reflinking, which is fast and efficient if available.
-	if (ioctl(dfd, FICLONE, sfd) != 0) {
-		// Fall back to copying bits by hand
-		res = copy_file_data(sfd, dfd);
-		if (res < 0) {
-			return res;
-		}
-	}
-	cleanup_fdp(&sfd);
-
-	/* Make sure file is readable by all */
-	res = fchmod(dfd, 0644);
-	if (res < 0) {
-		return res;
-	}
-
-	res = fsync(dfd);
-	if (res < 0) {
-		return res;
-	}
-	cleanup_fdp(&dfd);
-
-	if (try_enable_fsverity) {
-		/* Try to enable fsverity */
-		dfd = open(tmppath, O_CLOEXEC | O_RDONLY);
-		if (dfd < 0) {
-			return -1;
-		}
-
-		if (fstat(dfd, &statbuf) == 0) {
-			err = enable_verity(dfd);
-			if (err < 0) {
-				/* Ignore errors, we're only trying to enable it */
-			}
-		}
-	}
-
-	res = rename(tmppath, pathbuf);
-	if (res < 0) {
-		return res;
-	}
-	// Avoid a spurious extra unlink() from the cleanup
-	free(steal_pointer(&tmppath));
-
-	return 0;
-}
-
-static int fill_store(struct lcfs_node_s *node, const char *path,
-		      const char *digest_store_path)
-{
-	cleanup_free char *tmp_path = NULL;
-	const char *fname;
-	int ret;
-
-	fname = lcfs_node_get_name(node);
-	if (fname) {
-		ret = join_paths(&tmp_path, path, fname);
-		if (ret < 0)
-			return ret;
-		path = tmp_path;
-	}
-
-	if (lcfs_node_dirp(node)) {
-		size_t n_children = lcfs_node_get_n_children(node);
-		for (size_t i = 0; i < n_children; i++) {
-			struct lcfs_node_s *child = lcfs_node_get_child(node, i);
-			ret = fill_store(child, path, digest_store_path);
-			if (ret < 0)
-				return ret;
-		}
-	} else if ((lcfs_node_get_mode(node) & S_IFMT) == S_IFREG &&
-		   lcfs_node_get_content(node) == NULL &&
-		   lcfs_node_get_payload(node) != NULL) {
-		const char *payload = lcfs_node_get_payload(node);
-
-		ret = copy_file_with_dirs_if_needed(path, digest_store_path,
-						    payload, true);
-		if (ret < 0)
-			return ret;
-	}
-
-	return 0;
-}
-
-static void usage(const char *argv0)
-{
-	const char *bin = basename(argv0);
-	fprintf(stderr,
-		"Usage: %s [OPTIONS] SOURCE IMAGE\n"
-		"Options:\n"
-		"  --digest-store=PATH   Store content files in this directory\n"
-		"  --use-epoch           Make all mtimes zero\n"
-		"  --skip-xattrs         Don't store file xattrs\n"
-		"  --user-xattrs         Only store user.* xattrs\n"
-		"  --print-digest        Print the digest of the image\n"
-		"  --print-digest-only   Print the digest of the image, don't write image\n"
-		"  --from-file           The source is a dump file, not a directory\n"
-		"  --min-version=N       Use this minimal format version (default=%d)\n"
-		"  --max-version=N       Use this maxium format version (default=%d)\n",
-		bin, LCFS_DEFAULT_VERSION_MIN, LCFS_DEFAULT_VERSION_MAX);
-}
-
 #define OPT_SKIP_XATTRS 102
 #define OPT_USE_EPOCH 103
 #define OPT_SKIP_DEVICES 104
@@ -341,13 +52,6 @@ static void usage(const char *argv0)
 #define OPT_FROM_FILE 113
 #define OPT_MIN_VERSION 114
 #define OPT_MAX_VERSION 115
-
-static ssize_t write_cb(void *_file, void *buf, size_t count)
-{
-	FILE *file = _file;
-
-	return fwrite(buf, 1, count, file);
-}
 
 static size_t split_at(const char **start, size_t *length, char split_char,
 		       bool *partial)
@@ -831,6 +535,325 @@ static struct lcfs_node_s *tree_from_dump(FILE *input)
 	return info.root;
 }
 
+#ifdef FUZZER
+static int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
+{
+	struct lcfs_node_s *tree;
+	FILE *f = fmemopen(buf, len, "r");
+	tree = tree_from_dump(f);
+	if (tree)
+		lcfs_node_unref(tree);
+	fclose(f);
+	return 0;
+}
+
+int main(int argc, char **argv)
+{
+	extern void HF_ITER(uint8_t * *buf, size_t * len);
+	for (;;) {
+		size_t len;
+		uint8_t *buf;
+		HF_ITER(&buf, &len);
+		LLVMFuzzerTestOneInput(buf, len);
+	}
+}
+#else
+static int ensure_dir(const char *path, mode_t mode)
+{
+	struct stat buf;
+
+	/* We check this ahead of time, otherwise
+	   the mkdir call can fail in the read-only
+	   case with EROFS instead of EEXIST on some
+	   filesystems (such as NFS) */
+	if (stat(path, &buf) == 0) {
+		if (!S_ISDIR(buf.st_mode)) {
+			errno = ENOTDIR;
+			return -1;
+		}
+
+		return 0;
+	}
+
+	if (mkdir(path, mode) == -1 && errno != EEXIST)
+		return -1;
+
+	return 0;
+}
+
+static int join_paths(char **out, const char *path1, const char *path2)
+{
+	const char *sep = (path1[0] == '\0') ? "" : "/";
+	int len = strlen(path1);
+
+	while (len && path1[len - 1] == '/')
+		len--;
+
+	return asprintf(out, "%.*s%s%s", len, path1, sep, path2);
+}
+
+static errint_t enable_verity(int fd)
+{
+	struct fsverity_enable_arg arg = {};
+
+	arg.version = 1;
+	arg.hash_algorithm = FS_VERITY_HASH_ALG_SHA256;
+	arg.block_size = 4096;
+	arg.salt_size = 0;
+	arg.salt_ptr = 0;
+	arg.sig_size = 0;
+	arg.sig_ptr = 0;
+
+	if (ioctl(fd, FS_IOC_ENABLE_VERITY, &arg) != 0) {
+		return -errno;
+	}
+	return 0;
+}
+
+static void cleanup_unlink_freep(void *pp)
+{
+	char *filename = *(char **)pp;
+	if (!filename)
+		return;
+	PROTECT_ERRNO;
+	(void)unlink(filename);
+	free(filename);
+}
+
+#define cleanup_unlink_free __attribute__((cleanup(cleanup_unlink_freep)))
+static int mkdir_parents(const char *pathname, int mode)
+{
+	cleanup_free char *fn = strdup(pathname);
+	if (fn == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	char *p = fn;
+	while (*p == '/')
+		p++;
+
+	do {
+		while (*p && *p != '/')
+			p++;
+
+		if (!*p)
+			break;
+		*p = '\0';
+
+		if (ensure_dir(fn, mode) != 0) {
+			return -1;
+		}
+
+		*p++ = '/';
+		while (*p && *p == '/')
+			p++;
+	} while (p);
+
+	return 0;
+}
+
+static int write_to_fd(int fd, const char *content, ssize_t len)
+{
+	ssize_t res;
+
+	while (len > 0) {
+		res = write(fd, content, len);
+		if (res < 0 && errno == EINTR)
+			continue;
+		if (res <= 0) {
+			if (res == 0) /* Unexpected short write, should not happen when writing to a file */
+				errno = ENOSPC;
+			return -1;
+		}
+		len -= res;
+		content += res;
+	}
+
+	return 0;
+}
+
+#define BUFSIZE 8192
+static int copy_file_data(int sfd, int dfd)
+{
+	char buffer[BUFSIZE];
+	ssize_t bytes_read;
+
+	while (true) {
+		bytes_read = read(sfd, buffer, BUFSIZE);
+		if (bytes_read == -1) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+
+		if (bytes_read == 0)
+			break;
+
+		if (write_to_fd(dfd, buffer, bytes_read) != 0)
+			return -1;
+	}
+
+	return 0;
+}
+
+static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
+					 const char *dst, bool try_enable_fsverity)
+{
+	cleanup_free char *pathbuf = NULL;
+	cleanup_unlink_free char *tmppath = NULL;
+	int ret, res;
+	errint_t err;
+	cleanup_fd int sfd = -1;
+	cleanup_fd int dfd = -1;
+	struct stat statbuf;
+
+	ret = join_paths(&pathbuf, dst_base, dst);
+	if (ret < 0)
+		return ret;
+
+	ret = mkdir_parents(pathbuf, 0755);
+	if (ret < 0)
+		return ret;
+
+	if (lstat(pathbuf, &statbuf) == 0)
+		return 0; /* Already exists, no need to copy */
+
+	ret = join_paths(&tmppath, dst_base, ".tmpXXXXXX");
+	if (ret < 0)
+		return ret;
+
+	dfd = mkostemp(tmppath, O_CLOEXEC);
+	if (dfd == -1)
+		return -1;
+
+	sfd = open(src, O_CLOEXEC | O_RDONLY);
+	if (sfd == -1) {
+		return -1;
+	}
+
+	// First try reflinking, which is fast and efficient if available.
+	if (ioctl(dfd, FICLONE, sfd) != 0) {
+		// Fall back to copying bits by hand
+		res = copy_file_data(sfd, dfd);
+		if (res < 0) {
+			return res;
+		}
+	}
+	cleanup_fdp(&sfd);
+
+	/* Make sure file is readable by all */
+	res = fchmod(dfd, 0644);
+	if (res < 0) {
+		return res;
+	}
+
+	res = fsync(dfd);
+	if (res < 0) {
+		return res;
+	}
+	cleanup_fdp(&dfd);
+
+	if (try_enable_fsverity) {
+		/* Try to enable fsverity */
+		dfd = open(tmppath, O_CLOEXEC | O_RDONLY);
+		if (dfd < 0) {
+			return -1;
+		}
+
+		if (fstat(dfd, &statbuf) == 0) {
+			err = enable_verity(dfd);
+			if (err < 0) {
+				/* Ignore errors, we're only trying to enable it */
+			}
+		}
+	}
+
+	res = rename(tmppath, pathbuf);
+	if (res < 0) {
+		return res;
+	}
+	// Avoid a spurious extra unlink() from the cleanup
+	free(steal_pointer(&tmppath));
+
+	return 0;
+}
+
+static ssize_t write_cb(void *_file, void *buf, size_t count)
+{
+	FILE *file = _file;
+
+	return fwrite(buf, 1, count, file);
+}
+
+static int fill_store(struct lcfs_node_s *node, const char *path,
+		      const char *digest_store_path)
+{
+	cleanup_free char *tmp_path = NULL;
+	const char *fname;
+	int ret;
+
+	fname = lcfs_node_get_name(node);
+	if (fname) {
+		ret = join_paths(&tmp_path, path, fname);
+		if (ret < 0)
+			return ret;
+		path = tmp_path;
+	}
+
+	if (lcfs_node_dirp(node)) {
+		size_t n_children = lcfs_node_get_n_children(node);
+		for (size_t i = 0; i < n_children; i++) {
+			struct lcfs_node_s *child = lcfs_node_get_child(node, i);
+			ret = fill_store(child, path, digest_store_path);
+			if (ret < 0)
+				return ret;
+		}
+	} else if ((lcfs_node_get_mode(node) & S_IFMT) == S_IFREG &&
+		   lcfs_node_get_content(node) == NULL &&
+		   lcfs_node_get_payload(node) != NULL) {
+		const char *payload = lcfs_node_get_payload(node);
+
+		ret = copy_file_with_dirs_if_needed(path, digest_store_path,
+						    payload, true);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+}
+
+static void digest_to_string(const uint8_t *csum, char *buf)
+{
+	static const char hexchars[] = "0123456789abcdef";
+	uint32_t i, j;
+
+	for (i = 0, j = 0; i < LCFS_DIGEST_SIZE; i++, j += 2) {
+		uint8_t byte = csum[i];
+		buf[j] = hexchars[byte >> 4];
+		buf[j + 1] = hexchars[byte & 0xF];
+	}
+	buf[j] = '\0';
+}
+
+static void usage(const char *argv0)
+{
+	const char *bin = basename(argv0);
+	fprintf(stderr,
+		"Usage: %s [OPTIONS] SOURCE IMAGE\n"
+		"Options:\n"
+		"  --digest-store=PATH   Store content files in this directory\n"
+		"  --use-epoch           Make all mtimes zero\n"
+		"  --skip-xattrs         Don't store file xattrs\n"
+		"  --user-xattrs         Only store user.* xattrs\n"
+		"  --print-digest        Print the digest of the image\n"
+		"  --print-digest-only   Print the digest of the image, don't write image\n"
+		"  --from-file           The source is a dump file, not a directory\n"
+		"  --min-version=N       Use this minimal format version (default=%d)\n"
+		"  --max-version=N       Use this maxium format version (default=%d)\n",
+		bin, LCFS_DEFAULT_VERSION_MIN, LCFS_DEFAULT_VERSION_MAX);
+}
+
 int main(int argc, char **argv)
 {
 	const struct option longopts[] = {
@@ -915,6 +938,9 @@ int main(int argc, char **argv)
 	long min_version = 0;
 	long max_version = 0;
 	char *end;
+
+#ifdef FUZZER
+#endif
 
 	/* We always compute the digest and reference by digest */
 	buildflags |= LCFS_BUILD_COMPUTE_DIGEST | LCFS_BUILD_BY_DIGEST;
@@ -1074,3 +1100,4 @@ int main(int argc, char **argv)
 	lcfs_node_unref(root);
 	return 0;
 }
+#endif
