@@ -368,6 +368,8 @@ static char *tree_resolve_hardlinks(dump_info *info)
 	hardlink_fixup *fixup = info->hardlink_fixups;
 	while (fixup != NULL) {
 		hardlink_fixup *next = fixup->next;
+		if (fixup->target_path == NULL)
+			return make_error("No target path for the hardlink");
 		struct lcfs_node_s *target =
 			lookup_path(info->root, fixup->target_path);
 		if (target == NULL)
