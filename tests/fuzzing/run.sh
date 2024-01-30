@@ -6,4 +6,4 @@ set -xeuo pipefail
 
 make -j $(nproc)
 
-bwrap --bind / / --dev-bind /dev/null /dev/null --dev-bind /dev/urandom /dev/urandom --bind ${PWD} ${PWD} --remount-ro / honggfuzz --verifier --linux_perf_instr --threads 4 -s --exit_upon_crash -i tests/fuzzing -- tools/mkcomposefs
+bwrap --bind / / --dev-bind /dev/null /dev/null --dev-bind /dev/urandom /dev/urandom --bind ${PWD} ${PWD} --remount-ro / honggfuzz --verifier --linux_perf_instr --threads $(nproc) -s --exit_upon_crash -i tests/fuzzing -- tools/mkcomposefs
