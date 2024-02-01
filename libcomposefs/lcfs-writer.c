@@ -689,7 +689,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 	} else if ((sb.st_mode & S_IFMT) == S_IFLNK) {
 		char target[PATH_MAX + 1];
 
-		r = readlinkat(dirfd, fname, target, sizeof(target));
+		r = readlinkat(dirfd, fname, target, sizeof(target) - 1);
 		if (r < 0)
 			return NULL;
 
