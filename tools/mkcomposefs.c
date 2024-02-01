@@ -212,6 +212,8 @@ static struct lcfs_node_s *lookup_parent_path(struct lcfs_node_s *node,
 	}
 
 	cleanup_free char *name = strndup(start, path - start);
+	if (name == NULL)
+		oom();
 
 	struct lcfs_node_s *child = lcfs_node_lookup_child(node, name);
 	if (child == NULL)
@@ -233,6 +235,8 @@ static struct lcfs_node_s *lookup_path(struct lcfs_node_s *node, const char *pat
 		path++;
 
 	cleanup_free char *name = strndup(start, path - start);
+	if (name == NULL)
+		oom();
 
 	struct lcfs_node_s *child = lcfs_node_lookup_child(node, name);
 	if (child == NULL)
