@@ -150,7 +150,6 @@ Mount options:
 - `verity`: All image files must specify a fs-verity image.
 - `noverity`: Don't verfy fs-verity digests (useful for example if fs-verity is not supported on basedir).
 - `digest`: A fs-verity sha256 digest that the image file must match. If set, `verity_check` defaults to 2.
-- `signed`: The image file must contain an fs-verity signature.
 - `upperdir`: Specify an upperdir for the overlayfs filesystem.
 - `workdir`: Specify an upperdir for the overlayfs filesystem.
 - `idmap`: Specify a path to a user namespace that is used as an idmap.
