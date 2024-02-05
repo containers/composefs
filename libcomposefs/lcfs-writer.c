@@ -717,18 +717,21 @@ int lcfs_version_from_fd(int fd)
 {
 	struct lcfs_erofs_header_s *header;
 
-	header = mmap(0, sizeof(struct lcfs_erofs_header_s), PROT_READ,
-		      MAP_PRIVATE, fd, 0);
+	const size_t header_size = sizeof(struct lcfs_erofs_header_s);
+	header = mmap(0, header_size, PROT_READ, MAP_PRIVATE, fd, 0);
 	if (header == MAP_FAILED) {
 		return -1;
 	}
 	if (lcfs_u32_from_file(header->magic) != LCFS_EROFS_MAGIC ||
 	    lcfs_u32_from_file(header->version) != LCFS_EROFS_VERSION) {
 		errno = EINVAL;
+		munmap(header, header_size);
 		return -1;
 	}
 
-	return lcfs_u32_from_file(header->composefs_version);
+	int r = lcfs_u32_from_file(header->composefs_version);
+	munmap(header, header_size);
+	return r;
 }
 
 struct lcfs_node_s *lcfs_load_node_from_fd(int fd)
