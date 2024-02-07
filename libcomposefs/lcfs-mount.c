@@ -108,6 +108,7 @@ static int syscall_move_mount(int from_dfd, const char *from_pathname, int to_df
 #endif
 }
 
+#ifdef HAVE_MOUNT_ATTR_IDMAP
 static int syscall_mount_setattr(int dfd, const char *path, unsigned int flags,
 				 struct mount_attr *attr, size_t usize)
 {
@@ -122,6 +123,7 @@ static int syscall_mount_setattr(int dfd, const char *path, unsigned int flags,
 	return -1;
 #endif
 }
+#endif
 
 #define MAX_DIGEST_SIZE 64
 
@@ -526,6 +528,7 @@ static errint_t lcfs_mount_erofs(const char *source, const char *target,
 		return -errno;
 
 	if (use_idmap) {
+#ifdef HAVE_MOUNT_ATTR_IDMAP
 		struct mount_attr attr = {
 			.attr_set = MOUNT_ATTR_IDMAP,
 			.userns_fd = state->options->idmap_fd,
@@ -535,6 +538,9 @@ static errint_t lcfs_mount_erofs(const char *source, const char *target,
 					    sizeof(struct mount_attr));
 		if (res < 0)
 			return -errno;
+#else
+		return -ENOTSUP;
+#endif
 	}
 
 	res = syscall_move_mount(fd_mnt, "", AT_FDCWD, target,
