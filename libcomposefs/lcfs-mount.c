@@ -49,6 +49,20 @@
 #include "lcfs-utils.h"
 #include "lcfs-internal.h"
 
+#ifndef LOOP_CONFIGURE
+/* Snippet from util-linux/include/loopdev.h */
+/*
+ * Since Linux v5.8-rc1 (commit 3448914e8cc550ba792d4ccc74471d1ca4293aae)
+ */
+#define LOOP_CONFIGURE 0x4C0A
+struct loop_config {
+	uint32_t fd;
+	uint32_t block_size;
+	struct loop_info64 info;
+	uint64_t __reserved[8];
+};
+#endif
+
 static int syscall_fsopen(const char *fs_name, unsigned int flags)
 {
 #if defined __NR_fsopen
