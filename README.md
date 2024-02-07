@@ -17,7 +17,7 @@ The underlying metadata and data files must be stored in a valid
 "lower" Linux filesystem.  Usually on most systems, this will be a
 traditional writable persistent Linux filesystem such as `ext4`, `xfs,`, `btrfs` etc.
 
-# Separation between metadata and data
+## Separation between metadata and data
 
 A key aspect of the way composefs works is that it's designed to
 store "data" (i.e. non-empty regular files) distinct from "metadata"
@@ -33,7 +33,7 @@ directory.  The EROFS filesystem includes `trusted.overlay.redirect`
 extended attributes which tell the `overlayfs` mount
 how to find the real underlying files.
 
-# Mounting multiple composefs with a shared backing store
+## Mounting multiple composefs with a shared backing store
 
 The key targeted use case for composefs is versioned, immutable executable
 filesystem trees (i.e. container images and bootable host systems), where
@@ -44,15 +44,15 @@ Composefs ships with a mount helper that allows you to easily mount
 images by passing the image filename and the base directory for
 the content files like this:
 
-```
-# mount -t composefs /path/to/image  -o basedir=/path/to/content /mnt
+```bash
+mount -t composefs /path/to/image  -o basedir=/path/to/content /mnt
 ```
 
 By storing the files content-addressed (e.g. using the hash of the content to name
 the file), shared files only need to be stored once, yet can appear in
-multiple mounts. 
+multiple mounts.
 
-# Backing store shared on disk *and* in page cache
+## Backing store shared on disk *and* in page cache
 
 A crucial advantage of composefs in contrast to other approaches
 is that data files are shared in the [page cache](https://static.lwn.net/kerneldoc/admin-guide/mm/concepts.html#page-cache).
@@ -60,7 +60,7 @@ is that data files are shared in the [page cache](https://static.lwn.net/kerneld
 This allows launching multiple container images that will
 reliably share memory.
 
-# Filesystem integrity
+## Filesystem integrity
 
 Composefs also supports [fs-verity](https://www.kernel.org/doc/html/latest/filesystems/fsverity.html)
 validation of the content files.  When using this, the digest of the
@@ -135,8 +135,8 @@ The mount.composefs helper allows you to mount composefs images (of both types).
 
 The basic use is:
 
-```
-# mount -t composefs /path/to/image.cfs -o basedir=/path/to/datafiles  /mnt
+```bash
+mount -t composefs /path/to/image.cfs -o basedir=/path/to/datafiles  /mnt
 ```
 
 The default behaviour for fs-verity is that any image files that
@@ -150,7 +150,6 @@ Mount options:
 - `verity`: All image files must specify a fs-verity image.
 - `noverity`: Don't verfy fs-verity digests (useful for example if fs-verity is not supported on basedir).
 - `digest`: A fs-verity sha256 digest that the image file must match. If set, `verity_check` defaults to 2.
-- `signed`: The image file must contain an fs-verity signature.
 - `upperdir`: Specify an upperdir for the overlayfs filesystem.
 - `workdir`: Specify an upperdir for the overlayfs filesystem.
 - `idmap`: Specify a path to a user namespace that is used as an idmap.
