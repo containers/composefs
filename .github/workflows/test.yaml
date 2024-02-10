@@ -29,6 +29,23 @@ jobs:
         with:
           name: composefs.tar
           path: composefs.tar
+  build-baseline:
+    runs-on: ubuntu-latest
+    name: "Build on Ubuntu Focal"
+    container: ubuntu:focal
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          apt-get update -y
+          ALLOW_MISSING="libfsverity-dev" ./hacking/installdeps.sh
+      - name: Configure
+        run: |
+          ./autogen.sh
+          ./configure --prefix=/usr --sysconfdir=/etc --libdir=/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH) CFLAGS='-Wall -Werror'
+      - name: Build
+        run: make -j $(nproc) CFLAGS='-fsanitize=address -fsanitize=undefined'
   build-unit-cross:
     runs-on: ubuntu-latest
     name: Build on ${{ matrix.arch }}
