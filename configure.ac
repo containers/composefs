@@ -45,6 +45,17 @@ m4_ifdef([PKG_INSTALLDIR], [PKG_INSTALLDIR], AC_SUBST([pkgconfigdir], ${libdir}/
 PKGCONFIG_REQUIRES=
 PKGCONFIG_REQUIRES_PRIVATELY=
 
+AC_MSG_CHECKING([for MOUNT_ATTR_IDMAP])
+AC_COMPILE_IFELSE(
+	[AC_LANG_PROGRAM([
+			#include <sys/mount.h>
+			#include <linux/mount.h>
+	],[int foo = MOUNT_ATTR_IDMAP;]
+	)],
+	[AC_MSG_RESULT(yes)
+		AC_DEFINE([HAVE_MOUNT_ATTR_IDMAP], 1, [Define if MOUNT_ATTR_IDMAP is available in linux/mount.h])],
+	[AC_MSG_RESULT(no)])
+
 AC_MSG_CHECKING([for new mount API (fsconfig)])
 AC_COMPILE_IFELSE(
 	[AC_LANG_SOURCE([[

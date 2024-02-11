@@ -49,6 +49,20 @@
 #include "lcfs-utils.h"
 #include "lcfs-internal.h"
 
+#ifndef LOOP_CONFIGURE
+/* Snippet from util-linux/include/loopdev.h */
+/*
+ * Since Linux v5.8-rc1 (commit 3448914e8cc550ba792d4ccc74471d1ca4293aae)
+ */
+#define LOOP_CONFIGURE 0x4C0A
+struct loop_config {
+	uint32_t fd;
+	uint32_t block_size;
+	struct loop_info64 info;
+	uint64_t __reserved[8];
+};
+#endif
+
 static int syscall_fsopen(const char *fs_name, unsigned int flags)
 {
 #if defined __NR_fsopen
@@ -108,6 +122,7 @@ static int syscall_move_mount(int from_dfd, const char *from_pathname, int to_df
 #endif
 }
 
+#ifdef HAVE_MOUNT_ATTR_IDMAP
 static int syscall_mount_setattr(int dfd, const char *path, unsigned int flags,
 				 struct mount_attr *attr, size_t usize)
 {
@@ -122,6 +137,7 @@ static int syscall_mount_setattr(int dfd, const char *path, unsigned int flags,
 	return -1;
 #endif
 }
+#endif
 
 #define MAX_DIGEST_SIZE 64
 
@@ -526,6 +542,7 @@ static errint_t lcfs_mount_erofs(const char *source, const char *target,
 		return -errno;
 
 	if (use_idmap) {
+#ifdef HAVE_MOUNT_ATTR_IDMAP
 		struct mount_attr attr = {
 			.attr_set = MOUNT_ATTR_IDMAP,
 			.userns_fd = state->options->idmap_fd,
@@ -535,6 +552,9 @@ static errint_t lcfs_mount_erofs(const char *source, const char *target,
 					    sizeof(struct mount_attr));
 		if (res < 0)
 			return -errno;
+#else
+		return -ENOTSUP;
+#endif
 	}
 
 	res = syscall_move_mount(fd_mnt, "", AT_FDCWD, target,
