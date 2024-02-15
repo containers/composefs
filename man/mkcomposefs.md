@@ -28,10 +28,12 @@ will be a mountable composefs image.
 
 
 **\-\-digest-store**=*PATH*
-:   This path will become a composefs "object store". Non-empty
-    regular files in the *SOURCEDIR* will be copied (reflinked if
-    possible) into this target directory, named after their fsverity
-    digest. If possible, the added files will have fs-verity enabled.
+:   This path will become a composefs "object store". Regular files
+    larger than 64 bytes in the *SOURCEDIR* will be copied (reflinked
+    if possible) into this target directory, named after their
+    fsverity digest. Small files will be inlined into the image
+    metadata. If possible, the added files will have fs-verity
+    enabled.
 
     This directory should be passed to the basedir option when you
     mount the image.
