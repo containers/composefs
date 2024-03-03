@@ -1176,7 +1176,7 @@ int main(int argc, char *argv[])
 	/* Memory-map the file. */
 	erofs_data = mmap(0, erofs_data_size, PROT_READ, MAP_PRIVATE, fd, 0);
 	if (erofs_data == MAP_FAILED) {
-		errx(EXIT_FAILURE, "Failed to mmap %s\n", argv[1]);
+		errx(EXIT_FAILURE, "Failed to mmap %s\n", data.source);
 	}
 	close(fd);
 
