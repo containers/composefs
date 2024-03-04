@@ -5,6 +5,7 @@
 mount.composefs - mount a composefs filesystem image
 
 # SYNOPSIS
+
 **mount.composefs** [-o OPTIONS] *IMAGE* *TARGETDIR*
 
 # DESCRIPTION
@@ -15,7 +16,7 @@ for regular files.
 
 **mount.composefs** mounts such an EROFS file in combination with a given
 set of basedir at the specified location. It can be called directly, or
-as a mount helper by running `mount -t composefst ...`.
+as a mount helper by running `mount -t composefs ...`.
 
 # OPTIONS
 
@@ -62,6 +63,7 @@ options when passed via the `-o OPTIONS` argument.
 :  Specifies an overlayfs workdir to go with **upperdir**.
 
 # SEE ALSO
+
 **composefs-info(1)**, **mount.composefs(1)**
 
 [composefs upstream](https://github.com/containers/composefs)
