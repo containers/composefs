@@ -40,6 +40,10 @@ options when passed via the `-o OPTIONS` argument.
 
     This option also implies **verity**.
 
+**idmap**=*PATH*
+:   Specify a path to a user namespace whose ID mapping should be used.
+    The typical format for this type of path is `/proc/<pid>/ns/user`
+
 **verity**
 :   If this is specified, all files in the *IMAGE* must specify an fs-verity
     digest, and all the files in the base dirs must have a matching fs-verity

@@ -943,6 +943,7 @@ static void usage(const char *argv0)
 		"Options:\n"
 		"  --digest-store=PATH   Store content files in this directory\n"
 		"  --use-epoch           Make all mtimes zero\n"
+		"  --skip-devices        Don't store device nodes\n"
 		"  --skip-xattrs         Don't store file xattrs\n"
 		"  --user-xattrs         Only store user.* xattrs\n"
 		"  --print-digest        Print the digest of the image\n"

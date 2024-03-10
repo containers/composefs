@@ -51,6 +51,7 @@ static void usage(const char *argv0)
 		"Supported options:\n"
 		"  basedir=PATH[:PATH]    Specify location of basedir(s)\n"
 		"  digest=DIGEST          Specify required image digest\n"
+		"  idmap=PATH             Specify path to a user namespace whose ID mapping should be used\n"
 		"  verity                 Require all files to have specified and valid fs-verity digests\n"
 		"  tryverity              If supported by kernel, require fs-verity\n"
 		"  ro                     Read only\n"
