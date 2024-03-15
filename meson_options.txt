@@ -1,0 +1,10 @@
+option(
+  'man',
+  type : 'feature',
+  value : 'auto',
+  description : 'generate man pages')
+option(
+  'fuse',
+  type : 'feature',
+  value : 'auto',
+  description : 'build fuse support')
