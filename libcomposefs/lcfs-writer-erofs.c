@@ -1211,8 +1211,10 @@ static int add_overlay_whiteouts(struct lcfs_node_s *root)
 		}
 
 		res = lcfs_node_add_child(root, child, name);
-		if (res < 0)
+		if (res < 0) {
+			lcfs_node_unref(child);
 			return res;
+		}
 	}
 
 	return 0;

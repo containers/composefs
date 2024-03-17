@@ -1212,8 +1212,10 @@ static struct lcfs_node_s *_lcfs_node_clone_deep(struct lcfs_node_s *node,
 		if (new_child == NULL)
 			return NULL;
 
-		if (lcfs_node_add_child(new, new_child, child->name) < 0)
+		if (lcfs_node_add_child(new, new_child, child->name) < 0) {
+			lcfs_node_unref(new_child);
 			return NULL;
+		}
 	}
 
 	return steal_pointer(&new);
@@ -1349,6 +1351,7 @@ struct lcfs_node_s *lcfs_build(int dirfd, const char *fname, int buildflags,
 		r = lcfs_node_add_child(node, n, de->d_name);
 		if (r < 0) {
 			errsv = errno;
+			lcfs_node_unref(n);
 			goto fail;
 		}
 	}
