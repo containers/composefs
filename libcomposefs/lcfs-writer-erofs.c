@@ -1188,7 +1188,6 @@ static int add_overlay_whiteouts(struct lcfs_node_s *root)
 
 		child = lcfs_node_new();
 		if (child == NULL) {
-			errno = ENOMEM;
 			return -1;
 		}
 
@@ -1236,7 +1235,6 @@ static int rewrite_tree_node_for_erofs(struct lcfs_ctx_s *ctx,
 		if (existing == NULL) {
 			struct lcfs_node_s *link = lcfs_node_new();
 			if (link == NULL) {
-				errno = ENOMEM;
 				return -1;
 			}
 			lcfs_node_make_hardlink(link, node);
@@ -1251,7 +1249,6 @@ static int rewrite_tree_node_for_erofs(struct lcfs_ctx_s *ctx,
 		if (existing == NULL) {
 			struct lcfs_node_s *link = lcfs_node_new();
 			if (link == NULL) {
-				errno = ENOMEM;
 				return -1;
 			}
 			lcfs_node_make_hardlink(link, parent);
@@ -1609,7 +1606,6 @@ static struct lcfs_node_s *lcfs_build_node_from_image(struct lcfs_image_data *da
 
 	node = lcfs_node_new();
 	if (node == NULL) {
-		errno = ENOMEM;
 		return NULL;
 	}
 

@@ -467,8 +467,10 @@ static int read_xattrs(struct lcfs_node_s *ret, int dirfd, const char *fname,
 struct lcfs_node_s *lcfs_node_new(void)
 {
 	struct lcfs_node_s *node = calloc(1, sizeof(struct lcfs_node_s));
-	if (node == NULL)
+	if (node == NULL) {
+		errno = ENOMEM;
 		return NULL;
+	}
 
 	node->ref_count = 1;
 	node->inode.st_nlink = 1;
