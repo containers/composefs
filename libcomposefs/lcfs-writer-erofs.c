@@ -1452,8 +1452,10 @@ static const erofs_inode *lcfs_image_get_erofs_inode(struct lcfs_image_data *dat
 {
 	const uint8_t *inode_data = data->erofs_metadata + (nid << EROFS_ISLOTBITS);
 
-	if (inode_data >= data->erofs_metadata_end)
+	if (inode_data >= data->erofs_metadata_end) {
+		errno = EINVAL;
 		return NULL;
+	}
 
 	return (const erofs_inode *)inode_data;
 }
@@ -1507,6 +1509,8 @@ static int erofs_readdir_block(struct lcfs_image_data *data,
 		if (child == NULL) {
 			if (errno == ENOTSUP)
 				continue; /* Skip real whiteouts (00-ff) */
+			else
+				return -1;
 		}
 
 		if (lcfs_node_add_child(parent, child, /* Takes ownership on success */
