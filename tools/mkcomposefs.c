@@ -397,6 +397,8 @@ static char *tree_resolve_hardlinks(dump_info *info)
 
 static char *tree_from_dump_line(dump_info *info, const char *line, size_t line_len)
 {
+	int ret;
+
 	/* Split out all fixed fields */
 	field_info fields[FIELD_XATTRS_START];
 	for (int i = 0; i < FIELD_XATTRS_START; i++) {
@@ -501,8 +503,11 @@ static char *tree_from_dump_line(dump_info *info, const char *line, size_t line_
 	lcfs_node_set_rdev(node, rdev);
 	lcfs_node_set_mtime(node, &mtime);
 	lcfs_node_set_payload(node, payload);
-	if (content)
-		lcfs_node_set_content(node, (uint8_t *)content, size);
+	if (content) {
+		ret = lcfs_node_set_content(node, (uint8_t *)content, size);
+		if (ret < 0)
+			oom();
+	}
 
 	if (digest) {
 		uint8_t raw[LCFS_DIGEST_SIZE];

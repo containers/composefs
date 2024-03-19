@@ -1602,6 +1602,7 @@ static struct lcfs_node_s *lcfs_build_node_from_image(struct lcfs_image_data *da
 	size_t tail_size;
 	const uint8_t *tail_data;
 	const uint8_t *oob_data;
+	int ret;
 
 	cino = lcfs_image_get_erofs_inode(data, nid);
 	if (cino == NULL)
@@ -1742,7 +1743,10 @@ static struct lcfs_node_s *lcfs_build_node_from_image(struct lcfs_image_data *da
 		if (tailpacked)
 			memcpy(content + oob_size, tail_data, tail_size);
 
-		lcfs_node_set_content(node, content, file_size);
+		ret = lcfs_node_set_content(node, content, file_size);
+		if (ret < 0) {
+			return NULL;
+		}
 	}
 
 	if (xattr_icount > 0) {
