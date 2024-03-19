@@ -423,6 +423,9 @@ static char *tree_from_dump_line(dump_info *info, const char *line, size_t line_
 		return err;
 
 	cleanup_node struct lcfs_node_s *node = lcfs_node_new();
+	if (node == NULL) {
+		oom();
+	}
 	lcfs_node_set_mode(node, mode);
 
 	err = tree_add_node(info, path, node);
