@@ -724,8 +724,8 @@ int lcfs_version_from_fd(int fd)
 	}
 	if (lcfs_u32_from_file(header->magic) != LCFS_EROFS_MAGIC ||
 	    lcfs_u32_from_file(header->version) != LCFS_EROFS_VERSION) {
-		errno = EINVAL;
 		munmap(header, header_size);
+		errno = EINVAL;
 		return -1;
 	}
 
@@ -1155,6 +1155,7 @@ struct lcfs_node_s *lcfs_node_clone(struct lcfs_node_s *node)
 			if (key == NULL || value == NULL) {
 				free(key);
 				free(value);
+				errno = ENOMEM;
 				return NULL;
 			}
 			new->xattrs[i].key = key;
