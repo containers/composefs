@@ -471,16 +471,16 @@ struct lcfs_node_s *lcfs_node_new(void)
 		errno = ENOMEM;
 		return NULL;
 	}
-	
-	memset( node, 0, sizeof(struct lcfs_node_s));
+
+	memset(node, 0, sizeof(struct lcfs_node_s));
 	node->payload = NULL;
 	node->content = NULL;
 	node->ref_count = 1;
 	node->inode.st_nlink = 1;
-	node->delayedDigestCalculation = false;
-	node->delayedInline = false;
-	node->delayedPayload = false;
-	node->delayedResetDigest = false;
+	node->delayed_digest_calculation = false;
+	node->delayed_inline = false;
+	node->delayed_payload = false;
+	node->delayed_reset_digest = false;
 	return node;
 }
 
@@ -573,40 +573,40 @@ int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node, int fd)
 
 void lcfs_set_delayed_digest_calculation(struct lcfs_node_s *node)
 {
-	node->delayedDigestCalculation = true;
+	node->delayed_digest_calculation = true;
 }
 void lcfs_set_delayed_payload(struct lcfs_node_s *node)
 {
-	node->delayedPayload = true;
+	node->delayed_payload = true;
 }
 void lcfs_set_delayed_inline(struct lcfs_node_s *node)
 {
-	node->delayedInline = true;
+	node->delayed_inline = true;
 }
 
 void lcfs_set_reset_digest(struct lcfs_node_s *node)
 {
-	node->delayedResetDigest = true;
+	node->delayed_reset_digest = true;
 }
 
 bool lcfs_get_delayed_digest_calculation(struct lcfs_node_s *node)
 {
-	return node->delayedDigestCalculation;
+	return node->delayed_digest_calculation;
 }
 
 bool lcfs_get_delayed_payload(struct lcfs_node_s *node)
 {
-	return node->delayedPayload;
+	return node->delayed_payload;
 }
 
 bool lcfs_get_delayed_inline(struct lcfs_node_s *node)
 {
-	return node->delayedInline;
+	return node->delayed_inline;
 }
 
 bool lcfs_get_reset_digest(struct lcfs_node_s *node)
 {
-	return node->delayedResetDigest;
+	return node->delayed_reset_digest;
 }
 
 int lcfs_read_content(int fd, size_t size, uint8_t *buf)
@@ -697,13 +697,17 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 
 		// For multi threaded digest calculation, first build the file sytem tree
 		// and later calculate the digest
-		if( ( buildflags & LCFS_BUILD_DELAYED_DIGEST) && (do_digest || do_inline)){
-			if (do_digest) lcfs_set_delayed_digest_calculation(ret);
-			if (do_digest && by_digest) lcfs_set_delayed_payload(ret);
-			if (do_inline) lcfs_set_delayed_inline(ret);
-			if (!compute_digest) lcfs_set_reset_digest(ret);
-		}
-		else if (do_digest || do_inline) {
+		if ((buildflags & LCFS_BUILD_DELAYED_DIGEST) &&
+		    (do_digest || do_inline)) {
+			if (do_digest)
+				lcfs_set_delayed_digest_calculation(ret);
+			if (do_digest && by_digest)
+				lcfs_set_delayed_payload(ret);
+			if (do_inline)
+				lcfs_set_delayed_inline(ret);
+			if (!compute_digest)
+				lcfs_set_reset_digest(ret);
+		} else if (do_digest || do_inline) {
 			cleanup_fd int fd =
 				openat(dirfd, fname, O_RDONLY | O_CLOEXEC);
 			if (fd < 0)
@@ -1398,7 +1402,7 @@ struct lcfs_node_s *lcfs_build(int dirfd, const char *fname, int buildflags,
 
 			n = lcfs_load_node_from_file(dfd, de->d_name, buildflags);
 			if (n == NULL) {
-						errsv = errno;
+				errsv = errno;
 				failed_subpath = de->d_name;
 				goto fail;
 			}

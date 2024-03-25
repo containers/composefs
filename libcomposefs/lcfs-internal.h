@@ -178,10 +178,10 @@ struct lcfs_node_s {
 
 
 	// used for multi threaded digest calculation
-	bool delayedDigestCalculation;
-	bool delayedInline;
-	bool delayedPayload;
-	bool delayedResetDigest;
+	bool delayed_digest_calculation;
+	bool delayed_inline;
+	bool delayed_payload;
+	bool delayed_reset_digest;
 };
 
 struct lcfs_ctx_s {
