@@ -176,7 +176,6 @@ struct lcfs_node_s {
 	uint32_t erofs_n_blocks;
 	uint32_t erofs_tailsize;
 
-
 	// used for multi threaded digest calculation
 	bool delayed_digest_calculation;
 	bool delayed_inline;
