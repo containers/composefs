@@ -117,7 +117,7 @@ static char *unescape_string(const char *escaped, size_t escaped_size,
 			     size_t *unescaped_size, char **err)
 {
 	const char *escaped_end = escaped + escaped_size;
-	char *res = malloc(escaped_size + 1);
+	cleanup_free char *res = malloc(escaped_size + 1);
 	if (res == NULL)
 		oom();
 	char *out = res;
@@ -182,7 +182,7 @@ static char *unescape_string(const char *escaped, size_t escaped_size,
 
 	*out = 0; /* Null terminate */
 
-	return res;
+	return steal_pointer(&res);
 }
 
 static char *unescape_optional_string(const char *escaped, size_t escaped_size,
