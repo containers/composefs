@@ -877,9 +877,9 @@ static ssize_t write_cb(void *_file, void *buf, size_t count)
 
 struct parallel_process_item
 {
-	struct lcfs_node_s				*node;
-	struct parallel_process_item	*next;
-	char 							*parentPath;
+	struct lcfs_node_s *node;
+	struct parallel_process_item *next;
+	char *parentPath;
 };
 
 static struct parallel_process_item* new_parallel_copy_info(void)

@@ -697,8 +697,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 
 		// For multi threaded digest calculation, first build the file sytem tree
 		// and later calculate the digest
-		if( ( buildflags & LCFS_BUILD_DELAYED_DIGEST) && (do_digest || do_inline))
-		{
+		if( ( buildflags & LCFS_BUILD_DELAYED_DIGEST) && (do_digest || do_inline)){
 			if (do_digest) lcfs_set_delayed_digest_calculation(ret);
 			if (do_digest && by_digest) lcfs_set_delayed_payload(ret);
 			if (do_inline) lcfs_set_delayed_inline(ret);
