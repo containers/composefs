@@ -772,8 +772,7 @@ static int copy_file_data(int sfd, int dfd)
 	off_t len, ret;
 	len = stat.st_size;
 
-	do 
-	{
+	do {
 		ret = copy_file_range(sfd, NULL, dfd, NULL, len, 0);
 		if (ret == -1) 
 			return -1;
@@ -876,88 +875,75 @@ static ssize_t write_cb(void *_file, void *buf, size_t count)
 	return fwrite(buf, 1, count, file);
 }
 
-static void log_message_with_time( const char* msg )
+struct parallel_process_item
 {
-	time_t t 		= time(NULL);
-  	struct tm tm 	= *localtime(&t);
-	fprintf(stdout, "%02d:%02d:%02d\t %s\n", 
-				tm.tm_hour, tm.tm_min, tm.tm_sec, msg);
-}
-
-struct ParallelCopyInfo
-{
-	struct lcfs_node_s		*node;
-	struct ParallelCopyInfo	*next;
-	char 					*parentPath;
+	struct lcfs_node_s				*node;
+	struct parallel_process_item	*next;
+	char 							*parentPath;
 };
 
-static struct ParallelCopyInfo* new_parallel_copy_info(void)
+static struct parallel_process_item* new_parallel_copy_info(void)
 {
-	struct ParallelCopyInfo *ret = 
-		calloc(1, sizeof( struct ParallelCopyInfo));
-	ret->next 		= NULL;
-	ret->node 		= NULL;
+	struct parallel_process_item *ret = 
+		calloc(1, sizeof( struct parallel_process_item));
+	ret->next = NULL;
+	ret->node = NULL;
 	ret->parentPath = NULL;
 
 	return ret;
 }
 
-static void cleanup_copy_node(struct ParallelCopyInfo *node)
+static void cleanup_copy_node(struct parallel_process_item *node)
 {
-	if(node) 
-	{
+	if(node) {
 		cleanup_copy_node(node->next);
 		free(node->parentPath);
 		free(node);
 	}	
 }
 
-static struct ParallelCopyInfo* construct_copy_data( struct lcfs_node_s* node, 
-													struct ParallelCopyInfo* current, 
+static struct parallel_process_item* construct_copy_data( struct lcfs_node_s* node, 
+													struct parallel_process_item* current, 
 													char *path )
 {	
-	cleanup_free char 	*tmp_path 	= NULL;
-	const char 			*fname  	= lcfs_node_get_name(node);
-	if (fname) 
-	{
+	cleanup_free char *tmp_path = NULL;
+	const char *fname = lcfs_node_get_name(node);
+	if (fname) {
 		if (join_paths(&tmp_path, path, fname) < 0)
 			return NULL;
 
 		path = tmp_path;
 	}
 
-	if ( lcfs_node_dirp(node)) 
-	{
+	if ( lcfs_node_dirp(node)) {
 		const size_t n_children = lcfs_node_get_n_children(node);
-		for (size_t i = 0; i < n_children; i++)
-		{
+		for (size_t i = 0; i < n_children; i++) {
 			current = construct_copy_data(lcfs_node_get_child(node, i), 
 											current, path);
 		} 
 	}
 	else if ((lcfs_node_get_mode(node) & S_IFMT) == S_IFREG &&
 		   		lcfs_node_get_content(node) == NULL 		&&
-		   		lcfs_node_get_payload(node) != NULL) 
-	{
-		current->node 		= node;
+		   		lcfs_node_get_payload(node) != NULL) {
+		current->node = node;
 		current->parentPath = strdup(path);
-		current->next 		= new_parallel_copy_info();
-		current 			= current->next;
+		current->next = new_parallel_copy_info();
+
+		current = current->next;
 	}
 
 	return current;
 }
 
-static struct ParallelCopyInfo* construct_compute_data( 
+static struct parallel_process_item* construct_compute_data( 
 						struct lcfs_node_s* node, 
-						struct ParallelCopyInfo* current, 
+						struct parallel_process_item* current, 
 						const char *path )
 {
-	cleanup_free char 	*tmp_path 	= NULL;
-	const char 			*fname 		= lcfs_node_get_name(node);
+	cleanup_free char *tmp_path = NULL;
+	const char *fname = lcfs_node_get_name(node);
 
-	if (fname) 
-	{
+	if (fname) {
 		if (join_paths(&tmp_path, path, fname) < 0)
 			return NULL;
 
@@ -966,11 +952,11 @@ static struct ParallelCopyInfo* construct_compute_data(
 
 	if(lcfs_get_delayed_digest_calculation(node) 	|| 
 		lcfs_get_delayed_inline(node) 				|| 
-		lcfs_get_delayed_payload(node) )
-	{
-		current->node 		= node;
+		lcfs_get_delayed_payload(node) ){
+		current->node = node;
 		current->parentPath = strdup(path);
-		current->next 		= new_parallel_copy_info();
+		current->next = new_parallel_copy_info();
+
 		current 			= current->next;
 	}
 	
@@ -978,30 +964,28 @@ static struct ParallelCopyInfo* construct_compute_data(
 		return current;
 	
 	size_t n_children = lcfs_node_get_n_children(node);
-	for (size_t i = 0; i < n_children; i++)
-	{
-		struct lcfs_node_s 		*child 	 = lcfs_node_get_child(node, i);
-		struct ParallelCopyInfo	*newNode = 
+	for (size_t i = 0; i < n_children; i++){
+		struct lcfs_node_s *child = lcfs_node_get_child(node, i);
+		struct parallel_process_item *newNode = 
 				construct_compute_data(child, current, path);
-		current 						 = newNode;
+		current = newNode;
 	}
 	
 	return current;
 }
 
-static pthread_mutex_t 			mutex_NodeIterator 	=  PTHREAD_MUTEX_INITIALIZER;
-static struct ParallelCopyInfo	*nextNode 			= NULL;
-static bool 					cancelRequest 		= false;
+static pthread_mutex_t mutex_NodeIterator = PTHREAD_MUTEX_INITIALIZER;
+static struct parallel_process_item	*nextNode = NULL;
+static bool cancelRequest = false;
 
-static struct ParallelCopyInfo* get_next_node(void)
+static struct parallel_process_item* get_next_node(void)
 {
-	bool 					cancel 	= false;
-	struct ParallelCopyInfo	*ret 	= NULL;
+	bool cancel = false;
+	struct parallel_process_item *ret = NULL;
 
 	pthread_mutex_lock( &mutex_NodeIterator );
 	if(cancelRequest) cancel = true;
-	else
-	{
+	else{
 		ret = nextNode;
 		if(nextNode)nextNode = nextNode->next;	
 	}
@@ -1016,28 +1000,27 @@ static void request_cancel(void)
 	pthread_mutex_unlock( &mutex_NodeIterator );
 }
 
-typedef int (*THREAD_PROCESS_PROC)(struct ParallelCopyInfo	*, void *);
+typedef int (*THREAD_PROCESS_PROC)(struct parallel_process_item	*, void *);
 
-static int process_copy(struct ParallelCopyInfo	*item, void *digest_store_path)
+static int process_copy(struct parallel_process_item	*item, void *digest_store_path)
 {
 	if (copy_file_with_dirs_if_needed(	item->parentPath, 
 										(const char*)digest_store_path, 
 										lcfs_node_get_payload(item->node), 
-										true) < 0)
-	{
+										true) < 0){
 		return -1;
 	}
 	return 0;
 }
 
-static int process_compute(struct ParallelCopyInfo *item, void *)
+static int process_compute(struct parallel_process_item *item, void *)
 {
 	bool do_digest = lcfs_get_delayed_digest_calculation(item->node);
-	bool do_inline = lcfs_get_delayed_inline			(item->node);
-	bool by_digest = lcfs_get_delayed_payload			(item->node);
+	bool do_inline = lcfs_get_delayed_inline(item->node);
+	bool by_digest = lcfs_get_delayed_payload(item->node);
 
-	const char 			*fname 	= item->parentPath;
-	struct lcfs_node_s 	*ret 	= item->node;
+	const char *fname = item->parentPath;
+	struct lcfs_node_s *ret = item->node;
 
 	// It is clear that at least digest or payload or inline is required.
 	cleanup_fd int fd =
@@ -1045,14 +1028,12 @@ static int process_compute(struct ParallelCopyInfo *item, void *)
 	if (fd < 0)
 		return fd;
 			
-	if (do_digest) 
-	{
+	if (do_digest) {
 		int r = lcfs_node_set_fsverity_from_fd(ret, fd);
 		if (r < 0)
 			return r;
 
-		if (by_digest) 
-		{
+		if (by_digest) {
 			const uint8_t *digest =
 				lcfs_node_get_fsverity_digest(ret);
 			char digest_path[LCFS_DIGEST_SIZE * 2 + 2];
@@ -1086,25 +1067,23 @@ static int process_compute(struct ParallelCopyInfo *item, void *)
 	return 0;
 }
 
-struct ThreadData
+struct thread_data
 {
 	THREAD_PROCESS_PROC proc;
-	void 				*data;
+	void *data;
 };
 
 static void* thread_proc(void *data)
 {
-	struct ThreadData *info = (struct ThreadData*)data;
+	struct thread_data *info = (struct thread_data*)data;
 
-	while( true )
-	{
-		struct ParallelCopyInfo	*item = get_next_node();
+	while( true ){
+		struct parallel_process_item *item = get_next_node();
 
-		if(!item) 		return 0;
+		if(!item) return 0;
 		if(!item->node)	return 0; // The last item has an empty node. TODO
 
-		if (info->proc(item, info->data) != 0)
-		{
+		if (info->proc(item, info->data) != 0){
 			request_cancel();
 			return 0;
 		}
@@ -1113,21 +1092,18 @@ static void* thread_proc(void *data)
 }
 
 static bool execute_in_threads(const int nrThreads, 
-					struct ParallelCopyInfo *item, 
+					struct parallel_process_item *item, 
 					THREAD_PROCESS_PROC proc, 
 					void *data )
 {
 	nextNode 		= item;
 	cancelRequest 	= false;
 	
-	struct ThreadData threadInfo;
+	struct thread_data threadInfo;
 	threadInfo.data = data;
 	threadInfo.proc = proc;
 
-	log_message_with_time( "executeInThreads: begin" );	
-	fflush(stdout); 
-
-	pthread_t * threads = calloc(nrThreads, 
+	pthread_t *threads = calloc(nrThreads, 
 							sizeof(pthread_t));
 	for( int i = 0; i< nrThreads; i++) 
 		pthread_create(&threads[i], 
@@ -1138,8 +1114,6 @@ static bool execute_in_threads(const int nrThreads,
 	for( int i = 0; i< nrThreads; i++) 
 		pthread_join(threads[i], NULL);
 
-	log_message_with_time( "executeInThreads: done" );	
-	fflush(stdout); 
 	free(threads);
 	return !cancelRequest;
 }
@@ -1148,11 +1122,9 @@ static int compute_digest_mt(const int threadCount,
 							 struct lcfs_node_s *node, 
 							 const char*path)
 {
-	struct ParallelCopyInfo *firstNode = new_parallel_copy_info();
+	struct parallel_process_item *firstNode = new_parallel_copy_info();
 
-	log_message_with_time( "compute_digest_mt: constructing computing data" );	
 	construct_compute_data(node, firstNode, path );
-	log_message_with_time( "compute_digest_mt: constructing computing data done" );	
 	
 	bool ret = execute_in_threads(threadCount, firstNode, process_compute, NULL);
 	cleanup_copy_node(firstNode);
@@ -1161,15 +1133,13 @@ static int compute_digest_mt(const int threadCount,
 }
 
 static int fill_store_mt(const int threadCount, 
-						 struct lcfs_node_s *node, 
-						 const char *path,
-		      			 const char *digest_store_path)
+						struct lcfs_node_s *node, 
+						const char *path,
+						const char *digest_store_path)
 {
-	struct ParallelCopyInfo *firstNode = new_parallel_copy_info();
+	struct parallel_process_item *firstNode = new_parallel_copy_info();
 
-	log_message_with_time( "fill_store_mt: constructing copy data" );	
 	construct_copy_data(node, firstNode, (char*)path );
-	log_message_with_time( "fill_store_mt: constructing copy data done" );
 
 	bool ret = execute_in_threads(threadCount, firstNode, process_copy, (void*)digest_store_path);
 	cleanup_copy_node(firstNode);
@@ -1484,13 +1454,10 @@ int main(int argc, char **argv)
 
 		if(threads > 1) buildflags |= LCFS_BUILD_DELAYED_DIGEST;
 
-		log_message_with_time( "lcfs_build >" );	
 		root = lcfs_build(AT_FDCWD, src_path, buildflags, &failed_path);
-		log_message_with_time( "lcfs_build <" );	
 		if (root == NULL)
 			err(EXIT_FAILURE, "error accessing %s", failed_path);
 
-		fflush(stdout); 	
 		if(threads > 1)
 		{
 			if( compute_digest_mt(threads, root, src_path) != 0)
@@ -1506,7 +1473,6 @@ int main(int argc, char **argv)
 				err(EXIT_FAILURE, "cannot fill store");
 		}
 	}
-	fflush(stdout); 
 
 	if (out_file) {
 		options.file = out_file;
