@@ -155,17 +155,16 @@ LCFS_EXTERN int lcfs_compute_fsverity_from_fd(uint8_t *digest, int fd);
 LCFS_EXTERN int lcfs_compute_fsverity_from_data(uint8_t *digest, uint8_t *data,
 						size_t data_len);
 
-
 // Threading
-LCFS_EXTERN void lcfs_set_delayed_digest_calculation(struct lcfs_node_s * node);
-LCFS_EXTERN void lcfs_set_delayed_payload(struct lcfs_node_s * node);
-LCFS_EXTERN void lcfs_set_delayed_inline(struct lcfs_node_s * node);
-LCFS_EXTERN void lcfs_set_reset_digest(struct lcfs_node_s * node);
+LCFS_EXTERN void lcfs_set_delayed_digest_calculation(struct lcfs_node_s *node);
+LCFS_EXTERN void lcfs_set_delayed_payload(struct lcfs_node_s *node);
+LCFS_EXTERN void lcfs_set_delayed_inline(struct lcfs_node_s *node);
+LCFS_EXTERN void lcfs_set_reset_digest(struct lcfs_node_s *node);
 
-LCFS_EXTERN bool lcfs_get_delayed_digest_calculation(struct lcfs_node_s * node);
-LCFS_EXTERN bool lcfs_get_delayed_payload(struct lcfs_node_s * node);
-LCFS_EXTERN bool lcfs_get_delayed_inline(struct lcfs_node_s * node);
-LCFS_EXTERN bool lcfs_get_reset_digest(struct lcfs_node_s * node);
+LCFS_EXTERN bool lcfs_get_delayed_digest_calculation(struct lcfs_node_s *node);
+LCFS_EXTERN bool lcfs_get_delayed_payload(struct lcfs_node_s *node);
+LCFS_EXTERN bool lcfs_get_delayed_inline(struct lcfs_node_s *node);
+LCFS_EXTERN bool lcfs_get_reset_digest(struct lcfs_node_s *node);
 
 LCFS_EXTERN void lcfs_digest_to_path(const uint8_t *csum, char *buf);
 LCFS_EXTERN int lcfs_read_content(int fd, size_t size, uint8_t *buf);
