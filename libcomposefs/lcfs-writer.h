@@ -37,6 +37,7 @@ enum {
 	LCFS_BUILD_NO_INLINE = (1 << 4),
 	LCFS_BUILD_USER_XATTRS = (1 << 5), /* Only read user.* xattrs */
 	LCFS_BUILD_BY_DIGEST = (1 << 6), /* Refer to basedir files by fs-verity digest */
+	LCFS_BUILD_DELAYED_DIGEST = (1 << 7), /* Refer to basedir files by fs-verity digest */
 };
 
 enum lcfs_format_t {
@@ -153,5 +154,19 @@ LCFS_EXTERN int lcfs_compute_fsverity_from_content(uint8_t *digest, void *file,
 LCFS_EXTERN int lcfs_compute_fsverity_from_fd(uint8_t *digest, int fd);
 LCFS_EXTERN int lcfs_compute_fsverity_from_data(uint8_t *digest, uint8_t *data,
 						size_t data_len);
+
+// Threading
+LCFS_EXTERN void lcfs_set_delayed_digest_calculation(struct lcfs_node_s *node);
+LCFS_EXTERN void lcfs_set_delayed_payload(struct lcfs_node_s *node);
+LCFS_EXTERN void lcfs_set_delayed_inline(struct lcfs_node_s *node);
+LCFS_EXTERN void lcfs_set_reset_digest(struct lcfs_node_s *node);
+
+LCFS_EXTERN bool lcfs_get_delayed_digest_calculation(struct lcfs_node_s *node);
+LCFS_EXTERN bool lcfs_get_delayed_payload(struct lcfs_node_s *node);
+LCFS_EXTERN bool lcfs_get_delayed_inline(struct lcfs_node_s *node);
+LCFS_EXTERN bool lcfs_get_reset_digest(struct lcfs_node_s *node);
+
+LCFS_EXTERN void lcfs_digest_to_path(const uint8_t *csum, char *buf);
+LCFS_EXTERN int lcfs_read_content(int fd, size_t size, uint8_t *buf);
 
 #endif

@@ -37,6 +37,7 @@
 #include <sys/ioctl.h>
 #include <linux/fsverity.h>
 #include <linux/fs.h>
+#include <pthread.h>
 
 static void oom(void)
 {
@@ -65,7 +66,8 @@ static __attribute__((format(printf, 1, 2))) char *make_error(const char *fmt, .
 #define OPT_USER_XATTRS 112
 #define OPT_FROM_FILE 113
 #define OPT_MIN_VERSION 114
-#define OPT_MAX_VERSION 115
+#define OPT_THREADS 115
+#define OPT_MAX_VERSION 116
 
 static size_t split_at(const char **start, size_t *length, char split_char,
 		       bool *partial)
@@ -760,46 +762,25 @@ static int mkdir_parents(const char *pathname, int mode)
 	return 0;
 }
 
-static int write_to_fd(int fd, const char *content, ssize_t len)
-{
-	ssize_t res;
-
-	while (len > 0) {
-		res = write(fd, content, len);
-		if (res < 0 && errno == EINTR)
-			continue;
-		if (res <= 0) {
-			if (res == 0) /* Unexpected short write, should not happen when writing to a file */
-				errno = ENOSPC;
-			return -1;
-		}
-		len -= res;
-		content += res;
-	}
-
-	return 0;
-}
-
-#define BUFSIZE 8192
 static int copy_file_data(int sfd, int dfd)
 {
-	char buffer[BUFSIZE];
-	ssize_t bytes_read;
+	struct stat stat;
 
-	while (true) {
-		bytes_read = read(sfd, buffer, BUFSIZE);
-		if (bytes_read == -1) {
-			if (errno == EINTR)
-				continue;
+	if (fstat(sfd, &stat) == -1)
+		return -1;
+
+	off_t len, ret;
+	len = stat.st_size;
+
+	do {
+		ret = copy_file_range(sfd, NULL, dfd, NULL, len, 0);
+		if (ret == -1)
 			return -1;
-		}
-
-		if (bytes_read == 0)
+		if (ret == 0)
 			break;
 
-		if (write_to_fd(dfd, buffer, bytes_read) != 0)
-			return -1;
-	}
+		len -= ret;
+	} while (len > 0 && ret > 0);
 
 	return 0;
 }
@@ -893,6 +874,267 @@ static ssize_t write_cb(void *_file, void *buf, size_t count)
 	return fwrite(buf, 1, count, file);
 }
 
+struct parallel_process_item {
+	struct lcfs_node_s *node;
+	struct parallel_process_item *next;
+	char *path;
+};
+
+static struct parallel_process_item *new_parallel_process_item(void)
+{
+	struct parallel_process_item *ret =
+		calloc(1, sizeof(struct parallel_process_item));
+	ret->next = NULL;
+	ret->node = NULL;
+	ret->path = NULL;
+
+	return ret;
+}
+
+static void cleanup_copy_node(struct parallel_process_item *item)
+{
+	if (item) {
+		cleanup_copy_node(item->next);
+		free(item->path);
+		free(item);
+	}
+}
+
+static struct parallel_process_item *
+construct_copy_data(struct lcfs_node_s *node,
+		    struct parallel_process_item *current, char *path)
+{
+	cleanup_free char *tmp_path = NULL;
+	const char *fname = lcfs_node_get_name(node);
+	if (fname) {
+		if (join_paths(&tmp_path, path, fname) < 0)
+			return NULL;
+
+		path = tmp_path;
+	}
+
+	if (lcfs_node_dirp(node)) {
+		const size_t n_children = lcfs_node_get_n_children(node);
+		for (size_t i = 0; i < n_children; i++) {
+			current = construct_copy_data(lcfs_node_get_child(node, i),
+						      current, path);
+		}
+	} else if ((lcfs_node_get_mode(node) & S_IFMT) == S_IFREG &&
+		   lcfs_node_get_content(node) == NULL &&
+		   lcfs_node_get_payload(node) != NULL) {
+		current->node = node;
+		current->path = strdup(path);
+		current->next = new_parallel_process_item();
+
+		current = current->next;
+	}
+
+	return current;
+}
+
+static struct parallel_process_item *
+construct_compute_data(struct lcfs_node_s *node,
+		       struct parallel_process_item *current, const char *path)
+{
+	cleanup_free char *tmp_path = NULL;
+	const char *fname = lcfs_node_get_name(node);
+
+	if (fname) {
+		if (join_paths(&tmp_path, path, fname) < 0)
+			return NULL;
+
+		path = tmp_path;
+	}
+
+	if (lcfs_get_delayed_digest_calculation(node) ||
+	    lcfs_get_delayed_inline(node) || lcfs_get_delayed_payload(node)) {
+		current->node = node;
+		current->path = strdup(path);
+		current->next = new_parallel_process_item();
+
+		current = current->next;
+	}
+
+	if (!lcfs_node_dirp(node))
+		return current;
+
+	size_t n_children = lcfs_node_get_n_children(node);
+	for (size_t i = 0; i < n_children; i++) {
+		struct lcfs_node_s *child = lcfs_node_get_child(node, i);
+		struct parallel_process_item *newNode =
+			construct_compute_data(child, current, path);
+		current = newNode;
+	}
+
+	return current;
+}
+
+static pthread_mutex_t mutex_node_iterator = PTHREAD_MUTEX_INITIALIZER;
+static struct parallel_process_item *next_node = NULL;
+static bool cancel_request = false;
+
+static struct parallel_process_item *get_next_node(void)
+{
+	bool cancel = false;
+	struct parallel_process_item *ret = NULL;
+
+	pthread_mutex_lock(&mutex_node_iterator);
+	if (cancel_request)
+		cancel = true;
+	else {
+		ret = next_node;
+		if (next_node)
+			next_node = next_node->next;
+	}
+	pthread_mutex_unlock(&mutex_node_iterator);
+	return cancel ? NULL : ret;
+}
+
+static void request_cancel(void)
+{
+	pthread_mutex_lock(&mutex_node_iterator);
+	cancel_request = true;
+	pthread_mutex_unlock(&mutex_node_iterator);
+}
+
+typedef int (*THREAD_PROCESS_PROC)(struct parallel_process_item *, void *);
+
+static int process_copy(struct parallel_process_item *item, void *digest_store_path)
+{
+	if (copy_file_with_dirs_if_needed(item->path, (const char *)digest_store_path,
+					  lcfs_node_get_payload(item->node),
+					  true) < 0) {
+		return -1;
+	}
+	return 0;
+}
+
+static int process_compute(struct parallel_process_item *item, void *data)
+{
+	bool do_digest = lcfs_get_delayed_digest_calculation(item->node);
+	bool do_inline = lcfs_get_delayed_inline(item->node);
+	bool by_digest = lcfs_get_delayed_payload(item->node);
+
+	const char *fname = item->path;
+	struct lcfs_node_s *ret = item->node;
+
+	// It is clear that at least digest or payload or inline is required.
+	cleanup_fd int fd = openat(AT_FDCWD, fname, O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return fd;
+
+	if (do_digest) {
+		int r = lcfs_node_set_fsverity_from_fd(ret, fd);
+		if (r < 0)
+			return r;
+
+		if (by_digest) {
+			const uint8_t *digest = lcfs_node_get_fsverity_digest(ret);
+			char digest_path[LCFS_DIGEST_SIZE * 2 + 2];
+			lcfs_digest_to_path(digest, digest_path);
+			r = lcfs_node_set_payload(ret, digest_path);
+			if (r < 0)
+				return r;
+
+			/* We just computed digest to get the payoad path */
+			if (lcfs_get_reset_digest(ret))
+				ret->digest_set = false;
+		}
+	}
+	if (do_inline) {
+		lseek(fd, 0, SEEK_SET);
+		uint8_t buf[LCFS_BUILD_INLINE_FILE_SIZE_LIMIT];
+		struct stat sb;
+		int r = fstatat(AT_FDCWD, fname, &sb, AT_SYMLINK_NOFOLLOW);
+		if (r < 0)
+			return r;
+
+		r = lcfs_read_content(fd, sb.st_size, buf);
+		if (r < 0)
+			return r;
+
+		r = lcfs_node_set_content(ret, buf, sb.st_size);
+		if (r < 0)
+			return r;
+	}
+
+	return 0;
+}
+
+struct thread_data {
+	THREAD_PROCESS_PROC proc;
+	void *data;
+};
+
+static void *thread_proc(void *data)
+{
+	struct thread_data *info = (struct thread_data *)data;
+
+	while (true) {
+		struct parallel_process_item *item = get_next_node();
+
+		if (!item)
+			return 0;
+		if (!item->node)
+			return 0; // The last item has an empty node. TODO
+
+		if (info->proc(item, info->data) != 0) {
+			request_cancel();
+			return 0;
+		}
+	}
+	return 0;
+}
+
+static bool execute_in_threads(const int number_of_threads,
+			       struct parallel_process_item *item,
+			       THREAD_PROCESS_PROC proc, void *data)
+{
+	next_node = item;
+	cancel_request = false;
+
+	struct thread_data thread_info;
+	thread_info.data = data;
+	thread_info.proc = proc;
+
+	pthread_t *threads = calloc(number_of_threads, sizeof(pthread_t));
+	for (int i = 0; i < number_of_threads; i++)
+		pthread_create(&threads[i], NULL, thread_proc, &thread_info);
+
+	for (int i = 0; i < number_of_threads; i++)
+		pthread_join(threads[i], NULL);
+
+	free(threads);
+	return !cancel_request;
+}
+
+static int compute_digest_mt(const int thread_count, struct lcfs_node_s *node,
+			     const char *path)
+{
+	struct parallel_process_item *first_item = new_parallel_process_item();
+
+	construct_compute_data(node, first_item, path);
+
+	bool ret = execute_in_threads(thread_count, first_item, process_compute, NULL);
+	cleanup_copy_node(first_item);
+
+	return ret ? 0 : -1;
+}
+
+static int fill_store_mt(const int thread_count, struct lcfs_node_s *node,
+			 const char *path, const char *digest_store_path)
+{
+	struct parallel_process_item *first_item = new_parallel_process_item();
+
+	construct_copy_data(node, first_item, (char *)path);
+
+	bool ret = execute_in_threads(thread_count, first_item, process_copy,
+				      (void *)digest_store_path);
+	cleanup_copy_node(first_item);
+
+	return ret ? 0 : -1;
+}
+
 static int fill_store(struct lcfs_node_s *node, const char *path,
 		      const char *digest_store_path)
 {
@@ -958,8 +1200,9 @@ static void usage(const char *argv0)
 		"  --print-digest-only   Print the digest of the image, don't write image\n"
 		"  --from-file           The source is a dump file, not a directory\n"
 		"  --min-version=N       Use this minimal format version (default=%d)\n"
-		"  --max-version=N       Use this maxium format version (default=%d)\n",
-		bin, LCFS_DEFAULT_VERSION_MIN, LCFS_DEFAULT_VERSION_MAX);
+		"  --max-version=N       Use this maxium format version (default=%d)\n"
+		"  --threads=N           Use this to calculate digest and copy files in threads (default=%d)\n",
+		bin, LCFS_DEFAULT_VERSION_MIN, LCFS_DEFAULT_VERSION_MAX, 1);
 }
 
 int main(int argc, char **argv)
@@ -1025,6 +1268,12 @@ int main(int argc, char **argv)
 			flag: NULL,
 			val: OPT_MIN_VERSION
 		},
+		{
+			name: "threads",
+			has_arg: required_argument,
+			flag: NULL,
+			val: OPT_THREADS
+		},
 		{},
 	};
 	struct lcfs_write_options_s options = { 0 };
@@ -1046,6 +1295,7 @@ int main(int argc, char **argv)
 	long min_version = 0;
 	long max_version = 0;
 	char *end;
+	int threads = 1;
 
 #ifdef FUZZER
 #endif
@@ -1092,6 +1342,18 @@ int main(int argc, char **argv)
 			max_version = strtol(optarg, &end, 10);
 			if (*optarg == 0 || *end != 0) {
 				fprintf(stderr, "Invalid max version %s\n", optarg);
+				exit(EXIT_FAILURE);
+			}
+			break;
+
+		case OPT_THREADS:
+			threads = strtol(optarg, &end, 10);
+			if (*optarg == 0 || *end != 0) {
+				fprintf(stderr, "Invalid threads count %s\n", optarg);
+				exit(EXIT_FAILURE);
+			}
+			if (threads <= 0) {
+				fprintf(stderr, "Invalid threads count %d\n", threads);
 				exit(EXIT_FAILURE);
 			}
 			break;
@@ -1181,13 +1443,26 @@ int main(int argc, char **argv)
 		if (close_input)
 			fclose(input);
 	} else {
+		if (threads > 1)
+			buildflags |= LCFS_BUILD_DELAYED_DIGEST;
+
 		root = lcfs_build(AT_FDCWD, src_path, buildflags, &failed_path);
 		if (root == NULL)
 			err(EXIT_FAILURE, "error accessing %s", failed_path);
 
-		if (digest_store_path &&
-		    fill_store(root, src_path, digest_store_path) < 0)
-			err(EXIT_FAILURE, "cannot fill store");
+		if (threads > 1) {
+			if (compute_digest_mt(threads, root, src_path) != 0)
+				err(EXIT_FAILURE, "error accessing %s", failed_path);
+
+			if (digest_store_path &&
+			    fill_store_mt(threads, root, src_path,
+					  digest_store_path) < 0)
+				err(EXIT_FAILURE, "cannot fill store");
+		} else {
+			if (digest_store_path &&
+			    fill_store(root, src_path, digest_store_path) < 0)
+				err(EXIT_FAILURE, "cannot fill store");
+		}
 	}
 
 	if (out_file) {

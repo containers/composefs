@@ -473,8 +473,15 @@ struct lcfs_node_s *lcfs_node_new(void)
 		return NULL;
 	}
 
+	memset(node, 0, sizeof(struct lcfs_node_s));
+	node->payload = NULL;
+	node->content = NULL;
 	node->ref_count = 1;
 	node->inode.st_nlink = 1;
+	node->delayed_digest_calculation = false;
+	node->delayed_inline = false;
+	node->delayed_payload = false;
+	node->delayed_reset_digest = false;
 	return node;
 }
 
@@ -565,7 +572,45 @@ int lcfs_node_set_fsverity_from_fd(struct lcfs_node_s *node, int fd)
 	return lcfs_node_set_fsverity_from_content(node, &_fd, fsverity_read_cb);
 }
 
-static int read_content(int fd, size_t size, uint8_t *buf)
+void lcfs_set_delayed_digest_calculation(struct lcfs_node_s *node)
+{
+	node->delayed_digest_calculation = true;
+}
+void lcfs_set_delayed_payload(struct lcfs_node_s *node)
+{
+	node->delayed_payload = true;
+}
+void lcfs_set_delayed_inline(struct lcfs_node_s *node)
+{
+	node->delayed_inline = true;
+}
+
+void lcfs_set_reset_digest(struct lcfs_node_s *node)
+{
+	node->delayed_reset_digest = true;
+}
+
+bool lcfs_get_delayed_digest_calculation(struct lcfs_node_s *node)
+{
+	return node->delayed_digest_calculation;
+}
+
+bool lcfs_get_delayed_payload(struct lcfs_node_s *node)
+{
+	return node->delayed_payload;
+}
+
+bool lcfs_get_delayed_inline(struct lcfs_node_s *node)
+{
+	return node->delayed_inline;
+}
+
+bool lcfs_get_reset_digest(struct lcfs_node_s *node)
+{
+	return node->delayed_reset_digest;
+}
+
+int lcfs_read_content(int fd, size_t size, uint8_t *buf)
 {
 	int bytes_read;
 
@@ -591,7 +636,7 @@ static int read_content(int fd, size_t size, uint8_t *buf)
 	return 0;
 }
 
-static void digest_to_path(const uint8_t *csum, char *buf)
+void lcfs_digest_to_path(const uint8_t *csum, char *buf)
 {
 	static const char hexchars[] = "0123456789abcdef";
 	uint32_t i, j;
@@ -616,7 +661,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 	if (buildflags & ~(LCFS_BUILD_SKIP_XATTRS | LCFS_BUILD_USE_EPOCH |
 			   LCFS_BUILD_SKIP_DEVICES | LCFS_BUILD_COMPUTE_DIGEST |
 			   LCFS_BUILD_NO_INLINE | LCFS_BUILD_USER_XATTRS |
-			   LCFS_BUILD_BY_DIGEST)) {
+			   LCFS_BUILD_BY_DIGEST | LCFS_BUILD_DELAYED_DIGEST)) {
 		errno = EINVAL;
 		return NULL;
 	}
@@ -651,7 +696,19 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 		bool do_inline = !is_zerosized && !no_inline &&
 				 sb.st_size <= LCFS_BUILD_INLINE_FILE_SIZE_LIMIT;
 
-		if (do_digest || do_inline) {
+		// For multi threaded digest calculation, first build the file sytem tree
+		// and later calculate the digest
+		if ((buildflags & LCFS_BUILD_DELAYED_DIGEST) &&
+		    (do_digest || do_inline)) {
+			if (do_digest)
+				lcfs_set_delayed_digest_calculation(ret);
+			if (do_digest && by_digest)
+				lcfs_set_delayed_payload(ret);
+			if (do_inline)
+				lcfs_set_delayed_inline(ret);
+			if (!compute_digest)
+				lcfs_set_reset_digest(ret);
+		} else if (do_digest || do_inline) {
 			cleanup_fd int fd =
 				openat(dirfd, fname, O_RDONLY | O_CLOEXEC);
 			if (fd < 0)
@@ -665,7 +722,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 					const uint8_t *digest =
 						lcfs_node_get_fsverity_digest(ret);
 					char digest_path[LCFS_DIGEST_SIZE * 2 + 2];
-					digest_to_path(digest, digest_path);
+					lcfs_digest_to_path(digest, digest_path);
 					r = lcfs_node_set_payload(ret, digest_path);
 					if (r < 0)
 						return NULL;
@@ -681,7 +738,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 			if (do_inline) {
 				uint8_t buf[LCFS_BUILD_INLINE_FILE_SIZE_LIMIT];
 
-				r = read_content(fd, sb.st_size, buf);
+				r = lcfs_read_content(fd, sb.st_size, buf);
 				if (r < 0)
 					return NULL;
 				r = lcfs_node_set_content(ret, buf, sb.st_size);
