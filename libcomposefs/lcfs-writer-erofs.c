@@ -347,16 +347,17 @@ static int compute_erofs_shared_xattrs(struct lcfs_ctx_s *ctx)
 
 			ent = hash_lookup(xattr_hash, &hkey);
 			if (ent == NULL) {
-				struct hasher_xattr_s *new_ent =
+				cleanup_free struct hasher_xattr_s *new_ent =
 					calloc(1, sizeof(struct hasher_xattr_s));
 				if (new_ent == NULL) {
 					goto fail;
 				}
 				new_ent->xattr = &node->xattrs[i];
 				ent = hash_insert(xattr_hash, new_ent);
-				if (ent == NULL) {
+				if (ent == NULL)
 					goto fail;
-				}
+				assert(ent == new_ent); /* Due to result from previously run hash_lookup() */
+				new_ent = NULL;
 			}
 			ent->count++;
 		}
@@ -1598,7 +1599,7 @@ static struct lcfs_node_s *lcfs_build_node_from_image(struct lcfs_image_data *da
 	bool tailpacked;
 	size_t xattr_size;
 	struct hasher_node_s ht_entry = { nid };
-	struct hasher_node_s *new_ht_entry;
+	cleanup_free struct hasher_node_s *new_ht_entry = NULL;
 	struct hasher_node_s *existing;
 	uint64_t n_blocks;
 	uint64_t last_oob_block;
@@ -1630,9 +1631,11 @@ static struct lcfs_node_s *lcfs_build_node_from_image(struct lcfs_image_data *da
 	new_ht_entry->nid = nid;
 	new_ht_entry->node = node;
 	if (hash_insert(data->node_hash, new_ht_entry) == NULL) {
+		lcfs_node_unref(node);
 		errno = ENOMEM;
 		return NULL;
 	}
+	new_ht_entry = NULL;
 
 	if (erofs_inode_is_compact(cino)) {
 		const struct erofs_inode_compact *c = &cino->compact;

@@ -216,10 +216,12 @@ int main(int argc, char **argv)
 		if (options.objdirs == NULL)
 			errx(EXIT_FAILURE, "Out of memory\n");
 
-		for (i = 0, str = (char *)opt_basedir;; i++, str = NULL) {
+		for (i = 0, str = (char *)opt_basedir; i < options.n_objdirs;
+		     i++, str = NULL) {
 			token = strtok_r(str, ":", &saveptr);
 			if (token == NULL)
-				break;
+				errx(EXIT_FAILURE,
+				     "Value for basedir option has incorrect format\n");
 			options.objdirs[i] = token;
 		}
 	}

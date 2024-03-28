@@ -85,6 +85,7 @@ static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root,
 		break;
 
 	default:
+		errno = EINVAL;
 		ret = NULL;
 	}
 
@@ -101,6 +102,7 @@ static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root,
 		ret->fsverity_ctx = lcfs_fsverity_context_new();
 		if (ret->fsverity_ctx == NULL) {
 			lcfs_close(ret);
+			errno = ENOMEM;
 			return NULL;
 		}
 	}
@@ -377,7 +379,6 @@ int lcfs_write_to(struct lcfs_node_s *root, struct lcfs_write_options_s *options
 
 	ctx = lcfs_new_ctx(root, options);
 	if (ctx == NULL) {
-		errno = ENOMEM;
 		return -1;
 	}
 
