@@ -1201,7 +1201,7 @@ static void usage(const char *argv0)
 		"  --from-file           The source is a dump file, not a directory\n"
 		"  --min-version=N       Use this minimal format version (default=%d)\n"
 		"  --max-version=N       Use this maxium format version (default=%d)\n"
-		"  --threads=N       	 Use this to calculate digest and copy files in threads (default=%d)\n",
+		"  --threads=N           Use this to calculate digest and copy files in threads (default=%d)\n",
 		bin, LCFS_DEFAULT_VERSION_MIN, LCFS_DEFAULT_VERSION_MAX, 1);
 }
 
@@ -1350,6 +1350,10 @@ int main(int argc, char **argv)
 			threads = strtol(optarg, &end, 10);
 			if (*optarg == 0 || *end != 0) {
 				fprintf(stderr, "Invalid threads count %s\n", optarg);
+				exit(EXIT_FAILURE);
+			}
+			if (threads <= 0) {
+				fprintf(stderr, "Invalid threads count %d\n", threads);
 				exit(EXIT_FAILURE);
 			}
 			break;

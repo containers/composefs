@@ -70,6 +70,9 @@ will be a mountable composefs image.
     actual image format version used will be adjusted upwards if that
     is beneficial for the image, up to the max version.
 
+**\-\-threads**
+:   Number of threads to be used to calculate the file digests and copy.
+
 # FORMAT VERSIONING
 
 Composefs images are binary reproduceable, meaning that for a given
