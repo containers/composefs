@@ -161,4 +161,10 @@ static inline void *steal_pointer(void *pp)
 /* type safety */
 #define steal_pointer(pp) (0 ? (*(pp)) : (steal_pointer)(pp))
 
+static inline const char *gnu_basename(const char *filename)
+{
+	const char *p = strrchr(filename, '/');
+	return p ? p + 1 : filename;
+}
+
 #endif
