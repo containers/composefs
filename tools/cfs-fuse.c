@@ -1170,7 +1170,7 @@ int main(int argc, char *argv[])
 	erofs_data_size = s.st_size;
 
 	if (erofs_data_size < EROFS_BLKSIZ) {
-		errx(EXIT_FAILURE, "To small image\n");
+		errx(EXIT_FAILURE, "Too small image\n");
 	}
 
 	/* Memory-map the file. */
