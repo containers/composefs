@@ -606,6 +606,64 @@ static void digest_to_path(const uint8_t *csum, char *buf)
 	buf[j] = '\0';
 }
 
+int lcfs_node_set_from_content(struct lcfs_node_s *node, int dirfd,
+			       const char *fname, int buildflags)
+{
+	if (node == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	bool compute_digest = (buildflags & LCFS_BUILD_COMPUTE_DIGEST) != 0;
+	bool by_digest = (buildflags & LCFS_BUILD_BY_DIGEST) != 0;
+	bool no_inline = (buildflags & LCFS_BUILD_NO_INLINE) != 0;
+	bool is_zerosized = node->inode.st_size == 0;
+	bool do_digest = !is_zerosized && (compute_digest || by_digest);
+	bool do_inline = !is_zerosized && !no_inline &&
+			 node->inode.st_size <= LCFS_BUILD_INLINE_FILE_SIZE_LIMIT;
+	int r;
+
+	if (do_digest || do_inline) {
+		cleanup_fd int fd = openat(dirfd, fname, O_RDONLY | O_CLOEXEC);
+		if (fd < 0)
+			return -1;
+		if (do_digest) {
+			r = lcfs_node_set_fsverity_from_fd(node, fd);
+			if (r < 0)
+				return -1;
+
+			if (by_digest) {
+				const uint8_t *digest =
+					lcfs_node_get_fsverity_digest(node);
+				char digest_path[LCFS_DIGEST_SIZE * 2 + 2];
+				digest_to_path(digest, digest_path);
+				r = lcfs_node_set_payload(node, digest_path);
+				if (r < 0)
+					return -1;
+
+				/* We just computed digest to get the payoad path */
+				if (!compute_digest)
+					node->digest_set = false;
+			}
+
+			/* In case we re-read below */
+			lseek(fd, 0, SEEK_SET);
+		}
+		if (do_inline) {
+			uint8_t buf[LCFS_BUILD_INLINE_FILE_SIZE_LIMIT];
+
+			r = read_content(fd, node->inode.st_size, buf);
+			if (r < 0)
+				return -1;
+			r = lcfs_node_set_content(node, buf, node->inode.st_size);
+			if (r < 0)
+				return -1;
+		}
+	}
+
+	return 0;
+}
+
 struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 					     int buildflags)
 {
@@ -643,52 +701,9 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 	ret->inode.st_size = sb.st_size;
 
 	if ((sb.st_mode & S_IFMT) == S_IFREG) {
-		bool compute_digest = (buildflags & LCFS_BUILD_COMPUTE_DIGEST) != 0;
-		bool by_digest = (buildflags & LCFS_BUILD_BY_DIGEST) != 0;
-		bool no_inline = (buildflags & LCFS_BUILD_NO_INLINE) != 0;
-		bool is_zerosized = sb.st_size == 0;
-		bool do_digest = !is_zerosized && (compute_digest || by_digest);
-		bool do_inline = !is_zerosized && !no_inline &&
-				 sb.st_size <= LCFS_BUILD_INLINE_FILE_SIZE_LIMIT;
-
-		if (do_digest || do_inline) {
-			cleanup_fd int fd =
-				openat(dirfd, fname, O_RDONLY | O_CLOEXEC);
-			if (fd < 0)
-				return NULL;
-			if (do_digest) {
-				r = lcfs_node_set_fsverity_from_fd(ret, fd);
-				if (r < 0)
-					return NULL;
-
-				if (by_digest) {
-					const uint8_t *digest =
-						lcfs_node_get_fsverity_digest(ret);
-					char digest_path[LCFS_DIGEST_SIZE * 2 + 2];
-					digest_to_path(digest, digest_path);
-					r = lcfs_node_set_payload(ret, digest_path);
-					if (r < 0)
-						return NULL;
-
-					/* We just computed digest to get the payoad path */
-					if (!compute_digest)
-						ret->digest_set = false;
-				}
-
-				/* In case we re-read below */
-				lseek(fd, 0, SEEK_SET);
-			}
-			if (do_inline) {
-				uint8_t buf[LCFS_BUILD_INLINE_FILE_SIZE_LIMIT];
-
-				r = read_content(fd, sb.st_size, buf);
-				if (r < 0)
-					return NULL;
-				r = lcfs_node_set_content(ret, buf, sb.st_size);
-				if (r < 0)
-					return NULL;
-			}
-		}
+		r = lcfs_node_set_from_content(ret, dirfd, fname, buildflags);
+		if (r < 0)
+			return NULL;
 	} else if ((sb.st_mode & S_IFMT) == S_IFLNK) {
 		char target[PATH_MAX + 1];
 
