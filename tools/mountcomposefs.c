@@ -37,10 +37,11 @@
 #include <linux/fsverity.h>
 
 #include "libcomposefs/lcfs-mount.h"
+#include "libcomposefs/lcfs-utils.h"
 
 static void usage(const char *argv0)
 {
-	const char *bin = basename(argv0);
+	const char *bin = gnu_basename(argv0);
 	fprintf(stderr,
 		"usage: %s [-t type] [-o opt[,opts..]] IMAGE MOUNTPOINT\n"
 		"Example:\n"

@@ -1225,7 +1225,7 @@ static int get_cpu_count(void)
 
 static void usage(const char *argv0)
 {
-	const char *bin = basename(argv0);
+	const char *bin = gnu_basename(argv0);
 	fprintf(stderr,
 		"Usage: %s [OPTIONS] SOURCE IMAGE\n"
 		"Options:\n"
