@@ -257,7 +257,7 @@ static uint64_t parse_int_field(const char *str, size_t length, int base, char *
 	char *endptr = NULL;
 	unsigned long long v = strtoull(s, &endptr, base);
 	if (*s == 0 || *endptr != 0) {
-		*err = make_error("Invalid integer %s\n", s);
+		*err = make_error("Invalid integer %s", s);
 		return 0;
 	}
 
