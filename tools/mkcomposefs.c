@@ -782,9 +782,27 @@ static int write_to_fd(int fd, const char *content, ssize_t len)
 
 	return 0;
 }
+static pthread_mutex_t mutex_thread_access = PTHREAD_MUTEX_INITIALIZER;
+static bool try_copy_file_range = true;
+static bool is_copy_file_range_available(void)
+{
+	bool ret = true;
+	pthread_mutex_lock(&mutex_thread_access);
+	ret = try_copy_file_range;
+	pthread_mutex_unlock(&mutex_thread_access);
+
+	return ret;
+}
+
+static void disable_copy_file_range(void)
+{
+	pthread_mutex_lock(&mutex_thread_access);
+	try_copy_file_range = false;
+	pthread_mutex_unlock(&mutex_thread_access);
+}
 
 #define BUFSIZE 8192
-static int copy_file_data(int sfd, int dfd)
+static int copy_file_data_classic(int sfd, int dfd)
 {
 	char buffer[BUFSIZE];
 	ssize_t bytes_read;
@@ -805,6 +823,97 @@ static int copy_file_data(int sfd, int dfd)
 	}
 
 	return 0;
+}
+
+static int copy_file_data_range(int sfd, int dfd)
+{
+	struct stat stat;
+
+	if (fstat(sfd, &stat) == -1)
+		return -1;
+
+	off_t len, ret;
+	len = stat.st_size;
+
+	if (len == 0)
+		return 0;
+
+	do {
+		ret = copy_file_range(sfd, NULL, dfd, NULL, len, 0);
+		if (ret < 0 && errno == EINTR)
+			continue;
+		if (ret == -1)
+			return -1;
+		// This is an implementation problem in copy_file_range. Handle it and return error so that classic copy can be retried
+		if (ret == 0 && len > 0) {
+			// Setting this error code to trigger a classic copy
+			// https://github.com/rust-lang/rust/blob/0e5f5207881066973486e6a480fa46cfa22947e9/library/std/src/sys/pal/unix/kernel_copy.rs#L622
+			// fallback to work around several kernel bugs where copy_file_range will fail to
+			// copy any bytes and return 0 instead of an error if
+			// - reading virtual files from the proc filesystem which appear to have 0 size
+			//   but are not empty. noted in coreutils to affect kernels at least up to 5.6.19.
+			// - copying from an overlay filesystem in docker. reported to occur on fedora 32.
+			errno = EINVAL; // EINVAL Either fd_in or fd_out is not a regular file.
+			return -1;
+		}
+		if (ret == 0)
+			break;
+
+		len -= ret;
+	} while (len > 0 && ret > 0);
+
+	return 0;
+}
+
+static int copy_file_data(int sfd, int dfd)
+{
+	bool use_copy_classic = !is_copy_file_range_available();
+	// https://github.com/rust-lang/rust/blob/0e5f5207881066973486e6a480fa46cfa22947e9/library/std/src/sys/pal/unix/kernel_copy.rs#L622
+	// https://gitlab.gnome.org/GNOME/libglnx/-/blob/202b294e6079e23242e65e0426f8639841d1210b/glnx-fdio.c#L846
+	// https://github.com/systemd/systemd/blob/e71b40fd0026c0884ca26eb4f0a9fbe4d9285cfa/src/shared/copy.c#L338
+	// https://lwn.net/Articles/846403/
+	int ret = -1;
+	if (!use_copy_classic) {
+		ret = copy_file_data_range(sfd, dfd);
+		// Write was successful
+		if (0 == ret)
+			return 0;
+
+		// https://github.com/rust-lang/rust/blob/0e5f5207881066973486e6a480fa46cfa22947e9/library/std/src/sys/pal/unix/kernel_copy.rs#L622
+		// Try fallback io::copy if either:
+		// - Kernel version is < 4.5 (ENOSYS¹)
+		// - Files are mounted on different fs (EXDEV)
+		// - copy_file_range is broken in various ways on RHEL/CentOS 7 (EOPNOTSUPP)
+		// - copy_file_range file is immutable or syscall is blocked by seccomp¹ (EPERM)
+		// - copy_file_range cannot be used with pipes or device nodes (EINVAL)
+		// - the writer fd was opened with O_APPEND (EBADF²)
+		// and no bytes were written successfully yet. (All these errnos should
+		// not be returned if something was already written, but they happen in
+		// the wild, see #91152.)
+		//
+		// ¹ these cases should be detected by the initial probe but we handle them here
+		//   anyway in case syscall interception changes during runtime
+		// ² actually invalid file descriptors would cause this too, but in that case
+		//   the fallback code path is expected to encounter the same error again
+
+		// Disable copy file range for the entire run because,
+		// the rest of the files as part of this run will also have the similar file system.
+		if (ret < 0 && (errno == ENOSYS || errno == EXDEV)) {
+			disable_copy_file_range();
+			use_copy_classic = true;
+		}
+
+		// Try classic for this file but copy_file_range could work for the next file.
+		if (ret < 0 && (errno == EOPNOTSUPP || errno == EPERM ||
+				errno == EINVAL || errno == EBADF)) {
+			use_copy_classic = true;
+		}
+	}
+
+	if (use_copy_classic) {
+		ret = copy_file_data_classic(sfd, dfd);
+	}
+	return ret;
 }
 
 static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
@@ -1020,7 +1129,7 @@ static int construct_compute_data(struct lcfs_node_s *node,
 }
 
 struct work_item_iterator {
-	pthread_mutex_t mutex_node_iterator;
+	pthread_mutex_t *mutex_node_iterator;
 	int current_item;
 	int errorcode;
 	bool cancel_request;
@@ -1035,26 +1144,26 @@ static struct work_item *get_next_work_item(struct work_collection *collection,
 	bool cancel = false;
 	struct work_item *ret = NULL;
 
-	pthread_mutex_lock(&(iterator->mutex_node_iterator));
+	pthread_mutex_lock(iterator->mutex_node_iterator);
 	if (iterator->cancel_request)
 		cancel = true;
 	else if (iterator->current_item < collection->count) {
 		ret = &(collection->items[iterator->current_item]);
 		iterator->current_item++;
 	}
-	pthread_mutex_unlock(&(iterator->mutex_node_iterator));
+	pthread_mutex_unlock(iterator->mutex_node_iterator);
 	return cancel ? NULL : ret;
 }
 
 static void request_cancel(struct work_item_iterator *iterator, int errorcode)
 {
-	pthread_mutex_lock(&(iterator->mutex_node_iterator));
+	pthread_mutex_lock(iterator->mutex_node_iterator);
 	// Record only the first cancels error code
 	if (!iterator->cancel_request) {
 		iterator->cancel_request = true;
 		iterator->errorcode = errorcode;
 	}
-	pthread_mutex_unlock(&(iterator->mutex_node_iterator));
+	pthread_mutex_unlock(iterator->mutex_node_iterator);
 }
 
 typedef int (*THREAD_PROCESS_PROC)(struct work_item *, void *);
@@ -1109,12 +1218,7 @@ static int execute_in_threads(const int requested_threads,
 			      THREAD_PROCESS_PROC proc, void *data)
 {
 	struct work_item_iterator iterator;
-	int ret = pthread_mutex_init(&iterator.mutex_node_iterator, NULL);
-	if (0 != ret) {
-		errno = ret;
-		return -1;
-	}
-
+	iterator.mutex_node_iterator = &mutex_thread_access;
 	iterator.current_item = 0;
 	iterator.errorcode = 0;
 	iterator.cancel_request = false;
@@ -1125,6 +1229,7 @@ static int execute_in_threads(const int requested_threads,
 	thread_info.collection = collection;
 	thread_info.iterator = &iterator;
 
+	int ret = -1;
 	cleanup_free pthread_t *threads = NULL;
 	const int thread_count = requested_threads - 1;
 	if (thread_count >= 1) {
@@ -1201,7 +1306,6 @@ static int fill_store(const int thread_count, struct lcfs_node_s *node,
 	int ret = execute_in_threads(thread_count, &collection, process_copy,
 				     (void *)digest_store_path);
 	cleanup_work_items(&collection);
-
 	return ret;
 }
 
@@ -1239,7 +1343,7 @@ static void usage(const char *argv0)
 		"  --from-file           The source is a dump file, not a directory\n"
 		"  --min-version=N       Use this minimal format version (default=%d)\n"
 		"  --max-version=N       Use this maxium format version (default=%d)\n"
-		"  --threads=N           Use this to calculate digest and copy files in threads (default=%d)\n",
+		"  --threads=N           Use this to override the default number of threads used to calculate digest and copy files (default=%d)\n",
 		bin, LCFS_DEFAULT_VERSION_MIN, LCFS_DEFAULT_VERSION_MAX,
 		get_cpu_count());
 }
