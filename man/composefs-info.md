@@ -31,6 +31,9 @@ several sub-commands:
     accepted as input to mkcomposefs if the --from-file
     option is used.
 
+**measure-file**
+:    Interpret the provided paths as generic files, and print their fsverity digest.
+
 # OPTIONS
 
 The provided *IMAGE* argument must be a composefs file. Multiple images
