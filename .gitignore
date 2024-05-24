@@ -26,3 +26,5 @@ composefs.spec
 libtool
 ltmain.sh
 missing
+target/
+Cargo.lock
