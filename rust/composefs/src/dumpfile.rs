@@ -153,6 +153,11 @@ fn unescape_to_osstr(s: &str) -> Result<Cow<OsStr>> {
     Ok(r)
 }
 
+fn basic_path_validation(p: &Path) -> Result<()> {
+    anyhow::ensure!(p.is_absolute());
+    Ok(())
+}
+
 /// Unescape a string into a Rust `Path` which is really just an alias for a byte array,
 /// although there is an implicit assumption that there are no embedded `NUL` bytes.
 fn unescape_to_path(s: &str) -> Result<Cow<Path>> {
@@ -233,6 +238,7 @@ impl<'p> Entry<'p> {
         let mut components = s.split(' ');
         let mut next = |name: &str| components.next().ok_or_else(|| anyhow!("Missing {name}"));
         let path = unescape_to_path(next("path")?)?;
+        basic_path_validation(&path)?;
         let size = u64::from_str(next("size")?)?;
         let modeval = next("mode")?;
         let (is_hardlink, mode) = if let Some((_, rest)) = modeval.split_once('@') {
