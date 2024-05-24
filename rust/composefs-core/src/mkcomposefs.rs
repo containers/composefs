@@ -84,7 +84,7 @@ fn test_mkcomposefs() -> Result<()> {
     let outpath = &td.join("out");
     let o = File::create(outpath)?;
     let (send, recv) = mpsc::sync_channel(5);
-    const CONTENT: &str = include_str!("../../tests/assets/special.dump");
+    const CONTENT: &str = include_str!("../../../tests/assets/special.dump");
     std::thread::scope(|s| {
         let producer = s.spawn(move || {
             for line in CONTENT.lines() {
