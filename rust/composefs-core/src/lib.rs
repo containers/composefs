@@ -23,6 +23,8 @@ use dumpfile::Entry;
 pub mod dumpfile;
 pub mod mkcomposefs;
 
+pub mod fsverity;
+
 /// Parse a composefs superblock.
 pub fn dump<F>(f: File, mut callback: F) -> Result<()>
 where

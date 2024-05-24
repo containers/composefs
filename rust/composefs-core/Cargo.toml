@@ -18,9 +18,14 @@ include = [
 name = "composefs"
 path = "src/lib.rs"
 
+[features]
+# Depend on 1.0.4 APIs
+v1_0_4 = ["composefs-sys/v1_0_4"]
+
 [dependencies]
 anyhow = "1.0"
 libc = "0.2"
+composefs-sys = { path = "../composefs-sys" }
 
 [dev-dependencies]
 tar = "0.4.38"
