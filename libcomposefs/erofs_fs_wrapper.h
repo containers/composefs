@@ -35,12 +35,16 @@ static inline __u64 le64_to_cpu(__u64 val)
 }
 
 /* Note: These only do power of 2 */
+#ifndef round_up
 #define __round_mask(x, y) ((__typeof__(x))((y)-1))
 #define round_up(x, y) ((((x)-1) | __round_mask(x, y)) + 1)
 #define round_down(x, y) ((x) & ~__round_mask(x, y))
+#endif
 
+#ifndef ALIGN_TO
 #define ALIGN_TO(_offset, _align_size)                                         \
 	(((_offset) + _align_size - 1) & ~(_align_size - 1))
+#endif
 
 #define BIT(nr)  (((uint64_t) 1) << (nr))
 #define BUILD_BUG_ON(condition) ((void)sizeof(char[1 - 2 * !!(condition)]))
