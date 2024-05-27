@@ -635,6 +635,28 @@ static int read_content(int fd, size_t size, uint8_t *buf)
 	return 0;
 }
 
+// Given a file descriptor, enable fsverity.  This
+// is a thin wrapper for the underlying `FS_IOC_ENABLE_VERITY`
+// ioctl.  For example, it is an error if the file already
+// has verity enabled.
+int lcfs_fd_enable_fsverity(int fd)
+{
+	struct fsverity_enable_arg arg = {};
+
+	arg.version = 1;
+	arg.hash_algorithm = FS_VERITY_HASH_ALG_SHA256;
+	arg.block_size = 4096;
+	arg.salt_size = 0;
+	arg.salt_ptr = 0;
+	arg.sig_size = 0;
+	arg.sig_ptr = 0;
+
+	if (ioctl(fd, FS_IOC_ENABLE_VERITY, &arg) != 0) {
+		return -errno;
+	}
+	return 0;
+}
+
 static void digest_to_path(const uint8_t *csum, char *buf)
 {
 	static const char hexchars[] = "0123456789abcdef";
