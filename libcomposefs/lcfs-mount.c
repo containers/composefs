@@ -139,8 +139,6 @@ static int syscall_mount_setattr(int dfd, const char *path, unsigned int flags,
 }
 #endif
 
-#define MAX_DIGEST_SIZE 64
-
 struct lcfs_mount_state_s {
 	const char *image_path;
 	const char *mountpoint;

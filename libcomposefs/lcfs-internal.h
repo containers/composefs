@@ -42,6 +42,9 @@ typedef int errint_t;
  */
 #define LCFS_BUILD_INLINE_FILE_SIZE_LIMIT 64
 
+/* What may be returned by the kernel for digests */
+#define MAX_DIGEST_SIZE 64
+
 #define OVERLAY_XATTR_USER_PREFIX "user."
 #define OVERLAY_XATTR_TRUSTED_PREFIX "trusted."
 #define OVERLAY_XATTR_PARTIAL_PREFIX "overlay."

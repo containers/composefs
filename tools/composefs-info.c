@@ -361,11 +361,44 @@ static void print_objects_handler_end(void *_data)
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage: %s [--basedir=path] [ls|objects|dump|missing-objects] IMAGES...\n",
+		"usage: %s [--basedir=path] [ls|objects|dump|missing-objects|measure-file] IMAGES...\n",
 		argv0);
 }
 
 #define OPT_BASEDIR 100
+
+// Most of the rest of this code operates on composefs superblocks.  This function
+// just prints the fsverity digest of the provided files.
+static int measure_files(const char *bin, int argc, char **argv)
+{
+	if (argc <= 2) {
+		fprintf(stderr, "No files specified\n");
+		usage(bin);
+		exit(1);
+	}
+
+	for (int i = 2; i < argc; i++) {
+		const char *path = argv[i];
+		uint8_t digest[LCFS_DIGEST_SIZE];
+
+		cleanup_fd int fd = open(path, O_RDONLY | O_CLOEXEC);
+		if (fd < 0) {
+			err(EXIT_FAILURE, "Failed to open '%s'", path);
+		}
+
+		int r = lcfs_fd_get_fsverity(digest, fd);
+		if (r != 0) {
+			const char *errmsg = strerror(errno);
+			fprintf(stderr, "failed to measure '%s': %s", path, errmsg);
+			exit(1);
+		}
+		char digest_str[LCFS_DIGEST_SIZE * 2 + 1] = { 0 };
+		digest_to_string(digest, digest_str);
+		printf("%s\n", digest_str);
+	}
+
+	return 0;
+}
 
 int main(int argc, char **argv)
 {
@@ -420,6 +453,8 @@ int main(int argc, char **argv)
 		handler = print_missing_objects_handler;
 		handler_init = print_objects_handler_init;
 		handler_end = print_objects_handler_end;
+	} else if (strcmp(command, "measure-file") == 0) {
+		return measure_files(bin, argc, argv);
 	} else {
 		errx(EXIT_FAILURE, "Unknown command '%s'\n", command);
 	}

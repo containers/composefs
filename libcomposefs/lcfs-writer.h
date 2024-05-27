@@ -153,8 +153,10 @@ LCFS_EXTERN int lcfs_compute_fsverity_from_content(uint8_t *digest, void *file,
 LCFS_EXTERN int lcfs_compute_fsverity_from_fd(uint8_t *digest, int fd);
 LCFS_EXTERN int lcfs_compute_fsverity_from_data(uint8_t *digest, uint8_t *data,
 						size_t data_len);
+LCFS_EXTERN int lcfs_fd_get_fsverity(uint8_t *digest, int fd);
 
 LCFS_EXTERN int lcfs_node_set_from_content(struct lcfs_node_s *node, int dirfd,
 					   const char *fname, int buildflags);
+LCFS_EXTERN int lcfs_fd_enable_fsverity(int fd);
 
 #endif

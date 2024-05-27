@@ -22,14 +22,17 @@
 #include "lcfs-writer.h"
 #include "lcfs-utils.h"
 #include "lcfs-fsverity.h"
+#include "lcfs-mount.h"
 #include "lcfs-erofs.h"
 #include "hash.h"
 
 #include <errno.h>
 #include <string.h>
+#include <linux/fsverity.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 #include <fcntl.h>
 #include <dirent.h>
 #include <sys/xattr.h>
@@ -521,10 +524,51 @@ int lcfs_compute_fsverity_from_content(uint8_t *digest, void *file, lcfs_read_cb
 	return 0;
 }
 
+// Given a file descriptor, perform an in-memory computation of its fsverity
+// digest.  Note that the computation starts from the current offset position of
+// the file.
 int lcfs_compute_fsverity_from_fd(uint8_t *digest, int fd)
 {
 	int _fd = fd;
 	return lcfs_compute_fsverity_from_content(digest, &_fd, fsverity_read_cb);
+}
+
+// Given a file descriptor, first query the kernel for its fsverity digest.  If
+// it is not available in the kernel, perform an in-memory computation.  The file
+// position will always be reset to zero if needed.
+int lcfs_fd_get_fsverity(uint8_t *digest, int fd)
+{
+	struct {
+		struct fsverity_digest fsv;
+		char buf[MAX_DIGEST_SIZE];
+	} buf;
+
+	// First, ask the kernel if the file already has fsverity; if so we just return
+	// that.
+	buf.fsv.digest_size = MAX_DIGEST_SIZE;
+	int res = ioctl(fd, FS_IOC_MEASURE_VERITY, &buf.fsv);
+	if (res == -1) {
+		// Under this condition, the file didn't have fsverity enabled or the
+		// kernel doesn't support it at all.  We need to compute it in the current process.
+		if (errno == ENODATA || errno == EOPNOTSUPP || errno == ENOTTY) {
+			// For consistency ensure we start from the beginning.  We could
+			// avoid this by using pread() in the future.
+			if (lseek(fd, 0, SEEK_SET) < 0)
+				return -errno;
+			return lcfs_compute_fsverity_from_fd(digest, fd);
+		}
+		// In this case, we found an unexpected error
+		return -errno;
+	}
+	// The file has fsverity enabled, but with an unexpected different algorithm (e.g. sha512).
+	// This is going to be a weird corner case.  For now, we error out.
+	if (buf.fsv.digest_size != LCFS_DIGEST_SIZE) {
+		return -EWRONGVERITY;
+	}
+
+	memcpy(digest, buf.buf, LCFS_DIGEST_SIZE);
+
+	return 0;
 }
 
 int lcfs_compute_fsverity_from_data(uint8_t *digest, uint8_t *data, size_t data_len)
@@ -588,6 +632,28 @@ static int read_content(int fd, size_t size, uint8_t *buf)
 		return -1;
 	}
 
+	return 0;
+}
+
+// Given a file descriptor, enable fsverity.  This
+// is a thin wrapper for the underlying `FS_IOC_ENABLE_VERITY`
+// ioctl.  For example, it is an error if the file already
+// has verity enabled.
+int lcfs_fd_enable_fsverity(int fd)
+{
+	struct fsverity_enable_arg arg = {};
+
+	arg.version = 1;
+	arg.hash_algorithm = FS_VERITY_HASH_ALG_SHA256;
+	arg.block_size = 4096;
+	arg.salt_size = 0;
+	arg.salt_ptr = 0;
+	arg.sig_size = 0;
+	arg.sig_ptr = 0;
+
+	if (ioctl(fd, FS_IOC_ENABLE_VERITY, &arg) != 0) {
+		return -errno;
+	}
 	return 0;
 }
 

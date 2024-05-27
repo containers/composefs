@@ -62,6 +62,13 @@ check_fsverity () {
     return 0
 }
 
+assert_streq () {
+    if test "$1" != "$2"; then
+        echo "assertion failed: $1 = $2" 1>&2
+        return 1
+    fi
+}
+
 [[ -v can_whiteout ]] || can_whiteout=$(check_whiteout)
 [[ -v has_fuse ]] || has_fuse=$(if check_fuse; then echo y; else echo n; fi)
 [[ -v has_fsck ]] || has_fsck=$(check_erofs_fsck)

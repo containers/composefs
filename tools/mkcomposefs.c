@@ -702,24 +702,6 @@ static int join_paths(char **out, const char *path1, const char *path2)
 	return asprintf(out, "%.*s%s%s", len, path1, sep, path2);
 }
 
-static errint_t enable_verity(int fd)
-{
-	struct fsverity_enable_arg arg = {};
-
-	arg.version = 1;
-	arg.hash_algorithm = FS_VERITY_HASH_ALG_SHA256;
-	arg.block_size = 4096;
-	arg.salt_size = 0;
-	arg.salt_ptr = 0;
-	arg.sig_size = 0;
-	arg.sig_ptr = 0;
-
-	if (ioctl(fd, FS_IOC_ENABLE_VERITY, &arg) != 0) {
-		return -errno;
-	}
-	return 0;
-}
-
 static void cleanup_unlink_freep(void *pp)
 {
 	char *filename = *(char **)pp;
@@ -981,7 +963,7 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 		}
 
 		if (fstat(dfd, &statbuf) == 0) {
-			err = enable_verity(dfd);
+			err = lcfs_fd_enable_fsverity(dfd);
 			if (err < 0) {
 				/* Ignore errors, we're only trying to enable it */
 			}
