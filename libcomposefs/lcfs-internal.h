@@ -67,6 +67,10 @@ typedef int errint_t;
 // trusted.overlay.opaque
 #define OVERLAY_XATTR_OPAQUE OVERLAY_XATTR_PREFIX "opaque"
 
+// user.overlay.overlay.
+#define OVERLAY_XATTR_USERXATTR_ESCAPE_PREFIX                                  \
+	OVERLAY_XATTR_USERXATTR_PREFIX "overlay."
+
 // trusted.overlay.overlay.whiteout
 #define OVERLAY_XATTR_ESCAPED_WHITEOUT OVERLAY_XATTR_ESCAPE_PREFIX "whiteout"
 // trusted.overlay.overlay.whiteouts
@@ -82,6 +86,10 @@ typedef int errint_t;
 	OVERLAY_XATTR_USERXATTR_PREFIX "whiteouts"
 // user.overlay.opaque
 #define OVERLAY_XATTR_USERXATTR_OPAQUE OVERLAY_XATTR_USERXATTR_PREFIX "opaque"
+
+// user.overlay.overlay.opaque
+#define OVERLAY_XATTR_USERXATTR_ESCAPED_OPAQUE                                 \
+	OVERLAY_XATTR_USERXATTR_ESCAPE_PREFIX "opaque"
 
 #define ALIGN_TO(_offset, _align_size)                                         \
 	(((_offset) + _align_size - 1) & ~(_align_size - 1))

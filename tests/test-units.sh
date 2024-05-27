@@ -24,11 +24,12 @@ function test_dump_roundtrip () {
     testsrcdir=$(cd $(dirname $0) && pwd)
     pushd $1
     local src=$testsrcdir/assets/special.dump
+    set -x
     $BINDIR/mkcomposefs --from-file "${src}" out.cfs
     $BINDIR/composefs-info dump out.cfs > dump.txt
-    diff -u "${src}" dump.txt
+    diff -u "${src}" dump.txt || exit 1
     $BINDIR/mkcomposefs --from-file dump.txt out2.cfs
-    diff -u out.cfs out2.cfs
+    diff -u out.cfs out2.cfs || exit 1
     echo "ok dump roundtrip"
     popd
 }
