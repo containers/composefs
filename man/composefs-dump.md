@@ -39,10 +39,8 @@ Optionally, these custom escapes are suppored:
  **\\t**
  :    tab
 
- **\\=**
- :    equal
 
-Optional fields tha are not set contain '-', and if a field actually
+Optional fields that are not set contain '-', and if a field actually
 has that particular value it is escaped.
 
 The fixed fields on a line are (all numbers in base 10 unless
