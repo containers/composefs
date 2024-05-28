@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Rust composefs"
 keywords = ["composefs", "oci", "opencontainers", "docker", "podman"]
-license = "MIT"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/containers/composefs"
 rust-version = "1.70.0"
 
