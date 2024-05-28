@@ -48,25 +48,39 @@ typedef int errint_t;
 #define OVERLAY_XATTR_USER_PREFIX "user."
 #define OVERLAY_XATTR_TRUSTED_PREFIX "trusted."
 #define OVERLAY_XATTR_PARTIAL_PREFIX "overlay."
+// trusted.overlay.
 #define OVERLAY_XATTR_PREFIX                                                   \
 	OVERLAY_XATTR_TRUSTED_PREFIX OVERLAY_XATTR_PARTIAL_PREFIX
+// user.overlay.
 #define OVERLAY_XATTR_USERXATTR_PREFIX                                         \
 	OVERLAY_XATTR_USER_PREFIX OVERLAY_XATTR_PARTIAL_PREFIX
+// trusted.overlay.overlay.
 #define OVERLAY_XATTR_ESCAPE_PREFIX OVERLAY_XATTR_PREFIX "overlay."
+// trusted.overlay.metacopy
 #define OVERLAY_XATTR_METACOPY OVERLAY_XATTR_PREFIX "metacopy"
+// trusted.overlay.redirect
 #define OVERLAY_XATTR_REDIRECT OVERLAY_XATTR_PREFIX "redirect"
+// trusted.overlay.whiteout
 #define OVERLAY_XATTR_WHITEOUT OVERLAY_XATTR_PREFIX "whiteout"
+// trusted.overlay.whiteouts
 #define OVERLAY_XATTR_WHITEOUTS OVERLAY_XATTR_PREFIX "whiteouts"
+// trusted.overlay.opaque
 #define OVERLAY_XATTR_OPAQUE OVERLAY_XATTR_PREFIX "opaque"
 
+// trusted.overlay.overlay.whiteout
 #define OVERLAY_XATTR_ESCAPED_WHITEOUT OVERLAY_XATTR_ESCAPE_PREFIX "whiteout"
+// trusted.overlay.overlay.whiteouts
 #define OVERLAY_XATTR_ESCAPED_WHITEOUTS OVERLAY_XATTR_ESCAPE_PREFIX "whiteouts"
+// trusted.overlay.overlay.opaque
 #define OVERLAY_XATTR_ESCAPED_OPAQUE OVERLAY_XATTR_ESCAPE_PREFIX "opaque"
 
+// user.overlay.whiteout
 #define OVERLAY_XATTR_USERXATTR_WHITEOUT                                       \
 	OVERLAY_XATTR_USERXATTR_PREFIX "whiteout"
+// user.overlay.whiteouts
 #define OVERLAY_XATTR_USERXATTR_WHITEOUTS                                      \
 	OVERLAY_XATTR_USERXATTR_PREFIX "whiteouts"
+// user.overlay.opaque
 #define OVERLAY_XATTR_USERXATTR_OPAQUE OVERLAY_XATTR_USERXATTR_PREFIX "opaque"
 
 #define ALIGN_TO(_offset, _align_size)                                         \
