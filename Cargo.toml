@@ -1,0 +1,27 @@
+[package]
+name = "composefs"
+version = "0.1.0"
+edition = "2021"
+description = "Rust composefs"
+keywords = ["composefs", "oci", "opencontainers", "docker", "podman"]
+license = "MIT"
+repository = "https://github.com/containers/composefs"
+rust-version = "1.70.0"
+
+include = [
+    "/COPYING",
+    "/README.md",
+    "/rust/**",
+]
+
+[lib]
+name = "composefs"
+path = "rust/src/lib.rs"
+
+[dependencies]
+anyhow = "1.0"
+libc = "0.2"
+
+[dev-dependencies]
+tar = "0.4.38"
+tempfile = "3.2.0"
