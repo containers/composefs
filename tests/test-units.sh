@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BINDIR="$1"
+BINDIR=$(cd "$1" && pwd)
 
 set -e
 
@@ -74,13 +74,13 @@ function test_composefs_info_measure_files () {
 
     echo hello world > test.txt
     echo foo bar baz > test2.txt
-    composefs-info measure-file test.txt test2.txt > out.txt
+    $BINDIR/composefs-info measure-file test.txt test2.txt > out.txt
     assert_streq "$(head -1 out.txt)" "37061ef2ac4c21bec68489b56138c5780306a4ad7fe6676236ecdf2c9027cd92"
     assert_streq "$(tail -1 out.txt)" "91e7d88cb7bc9cf6d8db3b0ecf89af4abf204bef5b3ade5113d5b62ef374e70b"
 
     if [ $has_fsverity = y ]; then
         fsverity enable --hash-alg=256 test.txt
-        digest=$(composefs-info measure-file test.txt)
+        digest=$($BINDIR/composefs-info measure-file test.txt)
         assert_streq "$digest" "37061ef2ac4c21bec68489b56138c5780306a4ad7fe6676236ecdf2c9027cd92"
     fi
     cd -
