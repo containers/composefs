@@ -1,0 +1,24 @@
+[package]
+name = "composefs-sys"
+version = "0.1.0"
+edition = "2021"
+links = "composefs"
+build = "build.rs"
+license = "MIT OR Apache-2.0"
+
+[package.metadata.system-deps.composefs]
+name = "composefs"
+version = "1"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+# Depend on 1.0.4 APIs
+v1_0_4 = []
+
+[build-dependencies]
+system-deps = "6"
+
+[dev-dependencies]
+anyhow = "1"
+tempfile = "3"

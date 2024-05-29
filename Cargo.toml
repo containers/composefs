@@ -1,27 +1,18 @@
-[package]
-name = "composefs"
-version = "0.1.0"
-edition = "2021"
-description = "Rust composefs"
-keywords = ["composefs", "oci", "opencontainers", "docker", "podman"]
-license = "MIT"
-repository = "https://github.com/containers/composefs"
-rust-version = "1.70.0"
+[workspace]
+members = ["rust/composefs-core", "rust/composefs-sys"]
+resolver = "2"
 
-include = [
-    "/COPYING",
-    "/README.md",
-    "/rust/**",
-]
+[profile.dev]
+opt-level = 1 # No optimizations are too slow for us.
 
-[lib]
-name = "composefs"
-path = "rust/src/lib.rs"
+[profile.release]
+lto = "thin"
+# No need to support unwinding
+panic = "abort"
+# We assume we're being delivered via e.g. RPM which supports split debuginfo
+debug = true
 
-[dependencies]
-anyhow = "1.0"
-libc = "0.2"
-
-[dev-dependencies]
-tar = "0.4.38"
-tempfile = "3.2.0"
+[profile.releaselto]
+codegen-units = 1
+inherits = "release"
+lto = "yes"

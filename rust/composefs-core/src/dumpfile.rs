@@ -433,7 +433,7 @@ mod tests {
 
     #[test]
     fn test_parse() {
-        const CONTENT: &str = include_str!("../../tests/assets/special.dump");
+        const CONTENT: &str = include_str!("../../../tests/assets/special.dump");
         for line in CONTENT.lines() {
             // Test a full round trip by parsing, serialize, parsing again
             let e = Entry::parse(line).unwrap();
