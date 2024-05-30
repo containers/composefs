@@ -1,7 +1,11 @@
 //! # Rust composefs library
 //!
-//! This crate builds on top of the core composefs tooling, adding a Rust
-//! API especially oriented around OCI container images.
+//! This crate builds on top of the core composefs tooling; it currently requires
+//! both the `libcomposefs` C library as well as the external executables
+//! `mkcomposefs` and `composefs-info`.
+//!
+//! The core functionality exposed at the moment is just support for creating
+//! and parsing composefs "superblock" entries.
 
 // See https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html
 #![deny(missing_docs)]
@@ -25,7 +29,10 @@ pub mod mkcomposefs;
 
 pub mod fsverity;
 
-/// Parse a composefs superblock.
+/// Parse a composefs superblock.  The provided callback will be invoked
+/// for each entry in the target image, containing exactly one parsed entry.
+///
+/// This function depends on an external `composefs-info` binary currently.
 pub fn dump<F>(f: File, mut callback: F) -> Result<()>
 where
     F: FnMut(&'_ Entry) -> Result<()>,
