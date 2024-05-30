@@ -29,6 +29,26 @@ jobs:
         with:
           name: composefs.tar
           path: composefs.tar
+  # This build doesn't enable ASAN, which e.g. makes it easier to use with Rust
+  build-noasan:
+    runs-on: ubuntu-latest
+    name: "Build"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Install dependencies
+        run: sudo ./hacking/installdeps.sh
+      - name: Configure
+        run: ./autogen.sh && ./configure --prefix=/usr --sysconfdir=/etc --libdir=/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH) CFLAGS='-Wall -Werror'
+      - name: Build
+        run: make -j $(nproc)
+      - name: Capture build
+        run: make install DESTDIR=$(pwd)/instroot && tar -C instroot -czf composefs.tar .
+      - name: Upload binary
+        uses: actions/upload-artifact@v2
+        with:
+          name: composefs-noasan.tar
+          path: composefs.tar
   build-baseline:
     runs-on: ubuntu-latest
     name: "Build on Ubuntu Focal"
@@ -102,6 +122,26 @@ jobs:
       - run: sudo tar -C / -xvf composefs.tar
       - name: Integration tests
         run: sudo ./tests/integration.sh
+  rust:
+    needs: build-noasan
+    runs-on: ubuntu-latest
+    steps:
+      - run: sudo apt-get update -y
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Download
+        uses: actions/download-artifact@v2
+        with:
+          name: composefs-noasan.tar
+      - run: sudo tar -C / -xvf composefs.tar
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: "rust-main"
+      - name: Rust (default features)
+        run: cargo test
+      - name: Rust (all features)
+        run: cargo test --all-features
   clang-format:
     runs-on: ubuntu-24.04
     steps:
