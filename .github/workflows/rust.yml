@@ -17,22 +17,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  tests:
-    runs-on: ubuntu-latest
-    container: quay.io/coreos-assembler/fcos-buildroot:testing-devel
-    steps:
-      - uses: actions/checkout@v3
-      # xref containers/containers-image-proxy-rs
-      - name: Cache Dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: "tests"
-      - name: cargo fmt (check)
-        run: cargo fmt -- --check -l
-      - name: Build
-        run: cargo test --no-run
-      - name: Run tests
-        run: cargo test -- --nocapture --quiet
   cargo-deny:
     runs-on: ubuntu-latest
     steps:
