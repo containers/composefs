@@ -1,7 +1,6 @@
-//! # Bindings for computing fsverity
+//! # Bindings for fsverity
 //!
-//! This collection of APIs is for computing fsverity digests as
-//! used by composefs.
+//! This collection of APIs is for fsverity as used by composefs.
 
 use std::os::fd::{AsRawFd, BorrowedFd};
 

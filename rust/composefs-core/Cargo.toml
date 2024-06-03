@@ -25,7 +25,7 @@ v1_0_4 = ["composefs-sys/v1_0_4"]
 [dependencies]
 anyhow = "1.0"
 libc = "0.2"
-composefs-sys = { path = "../composefs-sys" }
+composefs-sys = { version = "0.1.0", path = "../composefs-sys" }
 
 [dev-dependencies]
 tar = "0.4.38"
