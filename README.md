@@ -153,3 +153,17 @@ Mount options:
 - `upperdir`: Specify an upperdir for the overlayfs filesystem.
 - `workdir`: Specify an upperdir for the overlayfs filesystem.
 - `idmap`: Specify a path to a user namespace that is used as an idmap.
+
+## Language bindings
+
+### Rust
+
+There are two Rust crates whose source code is included in this repository:
+
+- `composefs-sys`: Low level unsafe `-sys` style wrapper library for linking to the `libcomposefs` C library
+- `composefs-core`: Safe library that depends on `composefs-sys`, and also adds wrappers for invoking the external `mkfs.composefs` and `composefs-info dump` binaries.
+
+### Go
+
+The containers/storage Go library has [code wrapping mkcomposefs](https://github.com/containers/storage/blob/5fe400b7aedc7385e07a938d393d50600ca06299/drivers/overlay/composefs.go#L41)
+that could in theory be extracted to a helper package.
