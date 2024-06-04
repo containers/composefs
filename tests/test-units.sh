@@ -4,7 +4,7 @@ BINDIR=$(cd "$1" && pwd)
 
 set -e
 
-workdir=$(mktemp -d /var/tmp/lcfs-test.XXXXXX)
+workdir=$(mktemp --directory --tmpdir lcfs-test.XXXXXX)
 trap 'rm -rf -- "$workdir"' EXIT
 
 . $(dirname $0)/test-lib.sh

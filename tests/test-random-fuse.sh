@@ -4,7 +4,7 @@ BINDIR="$1"
 
 set -e
 
-workdir=$(mktemp -d /var/tmp/lcfs-test.XXXXXX)
+workdir=$(mktemp --directory --tmpdir lcfs-test.XXXXXX)
 exit_cleanup() {
     umount "$workdir/mnt" &> /dev/null || true
     rm -rf -- "$workdir"
