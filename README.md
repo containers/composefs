@@ -161,7 +161,7 @@ Mount options:
 There are two Rust crates whose source code is included in this repository:
 
 - `composefs-sys`: Low level unsafe `-sys` style wrapper library for linking to the `libcomposefs` C library
-- `composefs-core`: Safe library that depends on `composefs-sys`, and also adds wrappers for invoking the external `mkfs.composefs` and `composefs-info dump` binaries.
+- `composefs`: Safe library that depends on `composefs-sys`, and also adds wrappers for invoking the external `mkfs.composefs` and `composefs-info dump` binaries.
 
 ### Go
 
