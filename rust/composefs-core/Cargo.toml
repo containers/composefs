@@ -8,12 +8,6 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/containers/composefs"
 rust-version = "1.70.0"
 
-include = [
-    "/COPYING",
-    "/README.md",
-    "/rust/composefs-core/**",
-]
-
 [lib]
 name = "composefs"
 path = "src/lib.rs"
