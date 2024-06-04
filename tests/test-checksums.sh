@@ -9,8 +9,8 @@ TEST_ASSETS="$3"
 has_fsck=$(check_erofs_fsck)
 
 set -e
-tmpfile=$(mktemp /tmp/lcfs-test.XXXXXX)
-tmpfile2=$(mktemp /tmp/lcfs-test.XXXXXX)
+tmpfile=$(mktemp --tmpdir lcfs-test.XXXXXX)
+tmpfile2=$(mktemp --tmpdir lcfs-test.XXXXXX)
 trap 'rm -rf -- "$tmpfile" "$tmpfile2"' EXIT
 
 for format in erofs ; do

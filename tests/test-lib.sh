@@ -24,7 +24,7 @@ assert_file_has_content () {
 }
 
 check_whiteout () {
-    tmpfile=$(mktemp /tmp/lcfs-whiteout.XXXXXX)
+    tmpfile=$(mktemp --tmpdir lcfs-whiteout.XXXXXX)
     rm -f $tmpfile
     if mknod $tmpfile c 0 0 &> /dev/null; then
         echo y
@@ -56,7 +56,7 @@ check_erofs_fsck () {
 
 check_fsverity () {
     fsverity --version >/dev/null 2>&1 || return 1
-    tmpfile=$(mktemp /var/tmp/lcfs-fsverity.XXXXXX)
+    tmpfile=$(mktemp --tmpdir lcfs-fsverity.XXXXXX)
     echo foo > $tmpfile
     fsverity enable $tmpfile >/dev/null 2>&1  || return 1
     return 0
