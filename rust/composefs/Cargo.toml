@@ -7,6 +7,7 @@ keywords = ["composefs"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/containers/composefs"
 rust-version = "1.70.0"
+readme = "README.md"
 
 [lib]
 name = "composefs"

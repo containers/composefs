@@ -160,8 +160,8 @@ Mount options:
 
 There are two Rust crates whose source code is included in this repository:
 
-- `composefs-sys`: Low level unsafe `-sys` style wrapper library for linking to the `libcomposefs` C library
-- `composefs-core`: Safe library that depends on `composefs-sys`, and also adds wrappers for invoking the external `mkfs.composefs` and `composefs-info dump` binaries.
+- [rust/composefs-sys](composefs-sys): [![crates.io](https://img.shields.io/crates/v/composefs-sys)](https://crates.io/crates/composefs-sys) Low level unsafe `-sys` style wrapper library for linking to the `libcomposefs` C library.
+- [rust/composefs](composefs): [![crates.io](https://img.shields.io/crates/v/composefs)](https://crates.io/crates/composefs) Safe library that depends on `composefs-sys`, and also adds wrappers for invoking the external `mkfs.composefs` and `composefs-info dump` binaries.
 
 ### Go
 

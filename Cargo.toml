@@ -1,5 +1,5 @@
 [workspace]
-members = ["rust/composefs-core", "rust/composefs-sys"]
+members = ["rust/composefs", "rust/composefs-sys"]
 resolver = "2"
 
 [profile.dev]
