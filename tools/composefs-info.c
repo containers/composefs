@@ -32,6 +32,7 @@
 #include <inttypes.h>
 #include <ctype.h>
 #include <getopt.h>
+#include <locale.h>
 
 #define ESCAPE_STANDARD 0
 #define NOESCAPE_SPACE (1 << 0)
@@ -40,6 +41,8 @@
 
 const char *opt_basedir_path;
 int opt_basedir_fd;
+
+static locale_t c_locale;
 
 typedef void *(*command_handler_init)(void);
 typedef void (*command_handler)(struct lcfs_node_s *node, void *handler_data);
@@ -86,9 +89,9 @@ static void print_escaped(const char *val, ssize_t len, int escape)
 			break;
 		default:
 			if (noescape_space)
-				hex_escape = !isprint(c);
+				hex_escape = !isprint_l(c, c_locale);
 			else
-				hex_escape = !isgraph(c);
+				hex_escape = !isgraph_l(c, c_locale);
 			break;
 		}
 
@@ -434,6 +437,10 @@ int main(int argc, char **argv)
 		usage(bin);
 		exit(1);
 	}
+
+	c_locale = newlocale(LC_CTYPE, "C", (locale_t)0);
+	if (c_locale == (locale_t)0)
+		err(EXIT_FAILURE, "Failed to get C locale");
 	const char *command = argv[1];
 
 	command_handler_init handler_init = NULL;
@@ -495,5 +502,6 @@ int main(int argc, char **argv)
 	if (handler_end)
 		handler_end(handler_data);
 
+	freelocale(c_locale);
 	return 0;
 }
