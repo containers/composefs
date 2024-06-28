@@ -16,6 +16,7 @@ PACKAGES=" \
     libfuse3-dev \
     python3 \
     libcap2-bin \
+    meson \
 "
 
 # Split required and optional packages based on input variable ALLOW_MISSING:

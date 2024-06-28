@@ -1,0 +1,31 @@
+manuals = {
+    '1': [
+        'mount.composefs',
+        'mkcomposefs',
+        'composefs-info',
+    ],
+    '5': [
+        'composefs-dump',
+    ],
+}
+
+foreach section, pages: manuals
+  foreach page: pages
+    output = page + '.' + section
+    input = page + '.md'
+    sectiondir = 'man' + section
+
+    custom_target(
+      output,
+      command: [
+          go_md2man,
+          '-in', '@INPUT@',
+          '-out', '@OUTPUT@',
+      ],
+      input: input,
+      install: true,
+      install_dir: get_option('mandir') / sectiondir,
+      output: output,
+    )
+  endforeach
+endforeach
