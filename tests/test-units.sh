@@ -86,6 +86,10 @@ function test_composefs_info_measure_files () {
     cd -
 }
 
+function test_composefs_info_help () {
+    $BINDIR/composefs_info --help
+}
+
 TESTS="test_inline test_objects test_mount_digest test_composefs_info_measure_files"
 res=0
 for i in $TESTS; do
