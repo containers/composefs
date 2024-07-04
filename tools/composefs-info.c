@@ -407,12 +407,15 @@ int main(int argc, char **argv)
 {
 	const char *bin = argv[0];
 	int opt;
-	const struct option longopts[] = { {
-		name: "basedir",
-		has_arg: required_argument,
-		flag: NULL,
-		val: OPT_BASEDIR
-	} };
+	const struct option longopts[] = {
+		{
+			name: "basedir",
+			has_arg: required_argument,
+			flag: NULL,
+			val: OPT_BASEDIR
+		},
+		{},
+	};
 
 	while ((opt = getopt_long(argc, argv, "", longopts, NULL)) != -1) {
 		switch (opt) {
