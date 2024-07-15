@@ -49,6 +49,11 @@
 #include "lcfs-utils.h"
 #include "lcfs-internal.h"
 
+// The "source" field for overlayfs isn't strictly meaningful,
+// by default; but it's useful to identify at least the software that
+// created the mount.
+#define CFS_MOUNT_SOURCE "composefs"
+
 #ifndef LOOP_CONFIGURE
 /* Snippet from util-linux/include/loopdev.h */
 /*
@@ -369,7 +374,7 @@ retry:
 		mount_flags |= MS_SILENT;
 
 	errint_t err = 0;
-	res = mount("overlay", state->mountpoint, "overlay", mount_flags,
+	res = mount(CFS_MOUNT_SOURCE, state->mountpoint, "overlay", mount_flags,
 		    overlay_options);
 	if (res != 0) {
 		err = -errno;
@@ -403,6 +408,11 @@ static errint_t lcfs_mount_ovl(struct lcfs_mount_state_s *state, char *imagemoun
 				   "unsupported", 0);
 	if (res == 0)
 		return -ENOSYS;
+
+	res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "source",
+			       CFS_MOUNT_SOURCE, 0);
+	if (res < 0)
+		return -errno;
 
 	res = syscall_fsconfig(fd_fs, FSCONFIG_SET_STRING, "metacopy", "on", 0);
 	if (res < 0)
