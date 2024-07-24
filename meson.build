@@ -127,3 +127,8 @@ go_md2man = find_program('go-md2man', required : get_option('man'))
 if go_md2man.found()
   subdir('man')
 endif
+
+# For use as a subproject
+composefs_dep = declare_dependency(
+  link_with : libcomposefs,
+)
