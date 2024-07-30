@@ -1606,6 +1606,9 @@ int main(int argc, char **argv)
 		printf("%s\n", digest_str);
 	}
 
+	if (out_file && fclose(out_file) == EOF)
+		err(EXIT_FAILURE, "close output file");
+
 	lcfs_node_unref(root);
 	return 0;
 }
