@@ -288,9 +288,11 @@ impl<'p> Entry<'p> {
     /// Remove internal entries
     /// FIXME: This is arguably a composefs-info dump bug?
     pub fn filter_special(mut self) -> Self {
-        self.xattrs.retain(|v| match (v.key.as_bytes(), &*v.value) {
-            (b"trusted.overlay.opaque" | b"user.overlay.opaque", b"x") => false,
-            _ => true,
+        self.xattrs.retain(|v| {
+            !matches!(
+                (v.key.as_bytes(), &*v.value),
+                (b"trusted.overlay.opaque" | b"user.overlay.opaque", b"x")
+            )
         });
         self
     }
