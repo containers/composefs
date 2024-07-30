@@ -580,7 +580,7 @@ fallback:
 		return -ENOTSUP;
 
 	res = mount(source, target, "erofs", MS_RDONLY,
-		    image_has_acls ? "ro" : "ro,noacl");
+		    image_has_acls ? NULL : "noacl");
 	if (res < 0)
 		return -errno;
 
