@@ -275,9 +275,9 @@ int lcfs_write(struct lcfs_ctx_s *ctx, void *_data, size_t data_len)
 
 	if (ctx->write_cb) {
 		while (data_len > 0) {
+			errno = EIO;
 			ssize_t r = ctx->write_cb(ctx->file, data, data_len);
 			if (r <= 0) {
-				errno = EIO;
 				return -1;
 			}
 			data_len -= r;
