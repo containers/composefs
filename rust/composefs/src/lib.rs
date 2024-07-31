@@ -12,7 +12,6 @@
 #![deny(missing_debug_implementations)]
 #![forbid(unused_must_use)]
 #![deny(unsafe_code)]
-#![cfg_attr(feature = "dox", feature(doc_cfg))]
 #![deny(clippy::dbg_macro)]
 #![deny(clippy::todo)]
 
