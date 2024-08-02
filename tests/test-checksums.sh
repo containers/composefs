@@ -3,6 +3,7 @@
 BINDIR="$1"
 ASSET_DIR="$2"
 TEST_ASSETS="$3"
+TEST_ASSETS_SHOULD_FAIL="$4"
 
 . $(dirname $0)/test-lib.sh
 

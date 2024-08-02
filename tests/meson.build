@@ -10,6 +10,10 @@ test_assets_small_extra = [
   'special_v1.dump.version',
 ]
 
+test_assets_should_fail = [
+  'should-fail-long-link.dump'
+]
+
 test_assets = test_assets_small + [
   'cs9-x86_64-developer.dump.gz',
   'cs9-x86_64-minimal.dump.gz',
@@ -23,9 +27,13 @@ extra_dist = [
   'test-units.sh',
   'test-random-fuse.sh',
   'test-checksums.sh',
+  'test-should-fail.sh',
   'integration.sh',
 ]
 
+foreach asset : test_assets_should_fail
+  extra_dist += ['assets/' + asset]
+endforeach
 foreach asset : test_assets_small_extra
   extra_dist += ['assets/' + asset]
 endforeach

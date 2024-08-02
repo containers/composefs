@@ -508,7 +508,8 @@ static char *tree_from_dump_line(dump_info *info, const char *line, size_t line_
 	lcfs_node_set_gid(node, gid);
 	lcfs_node_set_rdev(node, rdev);
 	lcfs_node_set_mtime(node, &mtime);
-	lcfs_node_set_payload(node, payload);
+	if (lcfs_node_set_payload(node, payload) < 0)
+		return make_error("Invalid payload");
 	if (content) {
 		ret = lcfs_node_set_content(node, (uint8_t *)content, size);
 		if (ret < 0)

@@ -856,6 +856,11 @@ int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload)
 {
 	char *dup = NULL;
 	if (payload) {
+		const size_t len = strlen(payload);
+		if (len >= PATH_MAX) {
+			errno = ENAMETOOLONG;
+			return -1;
+		}
 		dup = strdup(payload);
 		if (dup == NULL) {
 			errno = ENOMEM;
