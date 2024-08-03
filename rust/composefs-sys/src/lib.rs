@@ -30,6 +30,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "v1_0_4")]
+    #[allow(unsafe_code)]
     fn test_fd_enable_fsverity() -> Result<()> {
         // We can't require fsverity in our test suite, so just verify we can call the
         // function.
@@ -41,22 +42,21 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)]
     fn test_digest() -> Result<()> {
-        unsafe {
-            let mut tf = tempfile::tempfile()?;
-            tf.write_all(b"hello world")?;
-            let mut buf = [0u8; LCFS_SHA256_DIGEST_LEN];
-            tf.seek(std::io::SeekFrom::Start(0))?;
-            let r = lcfs_compute_fsverity_from_fd(buf.as_mut_ptr(), tf.as_raw_fd());
-            assert_eq!(r, 0);
-            assert_eq!(
-                buf,
-                [
-                    30, 46, 170, 66, 2, 215, 80, 164, 17, 116, 238, 69, 73, 112, 185, 44, 27, 194,
-                    249, 37, 177, 227, 80, 118, 216, 199, 213, 245, 99, 98, 186, 100
-                ]
-            );
-            Ok(())
-        }
+        let mut tf = tempfile::tempfile()?;
+        tf.write_all(b"hello world")?;
+        let mut buf = [0u8; LCFS_SHA256_DIGEST_LEN];
+        tf.seek(std::io::SeekFrom::Start(0))?;
+        let r = unsafe { lcfs_compute_fsverity_from_fd(buf.as_mut_ptr(), tf.as_raw_fd()) };
+        assert_eq!(r, 0);
+        assert_eq!(
+            buf,
+            [
+                30, 46, 170, 66, 2, 215, 80, 164, 17, 116, 238, 69, 73, 112, 185, 44, 27, 194, 249,
+                37, 177, 227, 80, 118, 216, 199, 213, 245, 99, 98, 186, 100
+            ]
+        );
+        Ok(())
     }
 }

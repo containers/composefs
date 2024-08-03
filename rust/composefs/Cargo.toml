@@ -25,3 +25,6 @@ composefs-sys = { version = "0.1.0", path = "../composefs-sys" }
 [dev-dependencies]
 tar = "0.4.38"
 tempfile = "3.2.0"
+
+[lints]
+workspace = true
