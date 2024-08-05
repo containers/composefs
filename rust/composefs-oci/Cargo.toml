@@ -1,0 +1,31 @@
+[package]
+name = "composefs-oci"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+bincode = { version = "1.3.3" }
+containers-image-proxy = "0.6"
+composefs = { path = "../composefs", features = ["v1_0_4"] }
+cap-std-ext = "4.0"
+camino = "1"
+clap = { version= "4.2", features = ["derive"] }
+fn-error-context = "0.2.0"
+ocidir = { version = "0.2", git = "https://github.com/containers/ocidir-rs", "branch" = "misc" }
+rustix = { version = "0.38.34", features = ["fs"] }
+libc = "0.2"
+serde = "1"
+tar = "0.4.38"
+tokio = { features = ["io-std", "time", "process", "rt", "net"], version = ">= 1.13.0" }
+tokio-util = { features = ["io-util"], version = "0.7" }
+tokio-stream = { features = ["sync"], version = "0.1.8" }
+hex = "0.4.3"
+serde_json = "1.0.117"
+
+[lints]
+workspace = true
+
+[[bin]]
+path = "src/bin/main.rs"
+name = "composefs-oci"

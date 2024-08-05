@@ -23,3 +23,6 @@ system-deps = "6"
 [dev-dependencies]
 anyhow = "1"
 tempfile = "3"
+
+[lints]
+workspace = true

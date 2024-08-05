@@ -7,14 +7,6 @@
 //! The core functionality exposed at the moment is just support for creating
 //! and parsing composefs "superblock" entries.
 
-// See https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html
-#![deny(missing_docs)]
-#![deny(missing_debug_implementations)]
-#![forbid(unused_must_use)]
-#![deny(unsafe_code)]
-#![deny(clippy::dbg_macro)]
-#![deny(clippy::todo)]
-
 use std::{
     fs::File,
     io::{BufRead, BufReader},
