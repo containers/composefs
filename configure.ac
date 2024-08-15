@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([composefs], [1.0.4], [giuseppe@scrivano.org])
+AC_INIT([composefs], [1.0.5], [giuseppe@scrivano.org])
 AC_CONFIG_SRCDIR([tools/mkcomposefs.c])
 AC_CONFIG_HEADERS([config.h])
 AC_SYS_LARGEFILE
@@ -21,7 +21,7 @@ AC_SYS_LARGEFILE
 # (And never do that lightly)
 
 m4_define([LIBCOMPOSEFS_VERSION_MAJOR], [1])
-m4_define([LIBCOMPOSEFS_VERSION_MINOR], [2])
+m4_define([LIBCOMPOSEFS_VERSION_MINOR], [3])
 m4_define([LIBCOMPOSEFS_VERSION_MICRO], [0])
 
 LT_PREREQ([2.2.6])
