@@ -1,4 +1,4 @@
-name: Test with autotools
+name: Test with meson
 
 on: [push, pull_request]
 
@@ -8,7 +8,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    name: "Build"
+    name: "Build with ASAN"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -16,14 +16,16 @@ jobs:
         run: sudo ./hacking/installdeps.sh
       - name: Install fsck.erofs
         run: sudo apt install erofs-utils
+      - name: Install go-md2man
+        run: sudo apt install go-md2man
       - name: Configure
-        run: ./autogen.sh && ./configure --prefix=/usr --sysconfdir=/etc --libdir=/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH) CFLAGS='-Wall -Werror'
+        run: meson setup build --prefix=/usr --werror -Db_sanitize=address,undefined
       - name: Build
-        run: make -j $(nproc) CFLAGS='-fsanitize=address -fsanitize=undefined'
+        run: meson compile -C build
       - name: Unit tests
-        run: make check
+        run: meson test -C build
       - name: Capture build
-        run: make install DESTDIR=$(pwd)/instroot && tar -C instroot -czf composefs.tar .
+        run: DESTDIR=$(pwd)/instroot meson install -C build && tar -C instroot -czf composefs.tar .
       - name: Upload binary
         uses: actions/upload-artifact@v2
         with:
@@ -32,18 +34,18 @@ jobs:
   # This build doesn't enable ASAN, which e.g. makes it easier to use with Rust
   build-noasan:
     runs-on: ubuntu-latest
-    name: "Build"
+    name: "Build without ASAN"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
       - name: Install dependencies
         run: sudo ./hacking/installdeps.sh
       - name: Configure
-        run: ./autogen.sh && ./configure --prefix=/usr --sysconfdir=/etc --libdir=/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH) CFLAGS='-Wall -Werror'
+        run: meson setup build --prefix=/usr --werror
       - name: Build
-        run: make -j $(nproc)
+        run: meson compile -C build
       - name: Capture build
-        run: make install DESTDIR=$(pwd)/instroot && tar -C instroot -czf composefs.tar .
+        run: DESTDIR=$(pwd)/instroot meson install -C build && tar -C instroot -czf composefs.tar .
       - name: Upload binary
         uses: actions/upload-artifact@v2
         with:
@@ -61,11 +63,10 @@ jobs:
           apt-get update -y
           ALLOW_MISSING="libfsverity-dev" ./hacking/installdeps.sh
       - name: Configure
-        run: |
-          ./autogen.sh
-          ./configure --prefix=/usr --sysconfdir=/etc --libdir=/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH) CFLAGS='-Wall -Werror'
+        run: meson setup build --werror
       - name: Build
-        run: make -j $(nproc) CFLAGS='-fsanitize=address -fsanitize=undefined'
+        # focal's meson is too old for 'meson compile'
+        run: ninja -C build
   build-unit-cross:
     runs-on: ubuntu-latest
     name: Build on ${{ matrix.arch }}
@@ -99,10 +100,9 @@ jobs:
           run: |
             apt-get update -y
             ./hacking/installdeps.sh
-            ./autogen.sh
-            ./configure CFLAGS='-Wall -Werror'
-            make -j $(nproc)
-            make check
+            meson setup build --werror
+            meson compile -C build
+            meson test -C build --timeout-multiplier 10
   integration:
     needs: build
     runs-on: ubuntu-latest
@@ -163,6 +163,6 @@ jobs:
       - name: Install dependencies
         run: sudo ./hacking/installdeps.sh
       - name: Configure
-        run: ./autogen.sh && ./configure CFLAGS='-Wall -Werror'
+        run: meson setup build --werror
       - name: Run make distcheck
-        run: make -j$(nproc) distcheck
+        run: meson dist -C build
