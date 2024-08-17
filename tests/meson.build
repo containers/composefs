@@ -11,7 +11,9 @@ test_assets_small_extra = [
 ]
 
 test_assets_should_fail = [
-  'should-fail-long-link.dump'
+  'should-fail-long-link.dump',
+  'should-fail-long-xattr-key.dump',
+  'should-fail-long-xattr-value.dump',
 ]
 
 test_assets = test_assets_small + [
