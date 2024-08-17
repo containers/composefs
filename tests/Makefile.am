@@ -30,7 +30,7 @@ check-checksums:
 	VALGRIND_PREFIX="${VALGRIND_PREFIX}" $(srcdir)/test-checksums.sh "$(builddir)/../tools/" "$(srcdir)/assets" "${TEST_ASSETS}"
 
 check-should-fail:
-	$(srcdir)/test-should-fail.sh ${TEST_ASSETS_SHOULD_FAIL}
+	$(srcdir)/test-should-fail.sh "$(builddir)/../tools/" ${TEST_ASSETS_SHOULD_FAIL}
 
 check-units:
 	VALGRIND_PREFIX="${VALGRIND_PREFIX}" $(srcdir)/test-units.sh "$(builddir)/../tools/"
