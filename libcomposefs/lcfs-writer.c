@@ -77,6 +77,25 @@ size_t hash_memory(const char *string, size_t len, size_t n_buckets)
 	return value % n_buckets;
 }
 
+// Verify a mode value; we don't accept unknown values
+int lcfs_validate_mode(mode_t mode)
+{
+	switch (mode & S_IFMT) {
+	case S_IFREG:
+	case S_IFDIR:
+	case S_IFLNK:
+	case S_IFBLK:
+	case S_IFCHR:
+	case S_IFSOCK:
+	case S_IFIFO:
+		return 0;
+	default: {
+		errno = EINVAL;
+		return -1;
+	}
+	}
+}
+
 static struct lcfs_ctx_s *lcfs_new_ctx(struct lcfs_node_s *root,
 				       struct lcfs_write_options_s *options)
 {
@@ -360,6 +379,12 @@ int lcfs_write_to(struct lcfs_node_s *root, struct lcfs_write_options_s *options
 	enum lcfs_format_t format = options->format;
 	struct lcfs_ctx_s *ctx;
 	int res;
+
+	// Verify the root; because lcfs_node_add_child also verifies children,
+	// we should have sanity checked all nodes.
+	if (lcfs_node_last_ditch_validation(root) < 0) {
+		return -1;
+	}
 
 	/* Check for unknown flags */
 	if ((options->flags & ~LCFS_FLAGS_MASK) != 0) {
@@ -1078,11 +1103,29 @@ struct lcfs_node_s *lcfs_node_get_hardlink_target(struct lcfs_node_s *node)
 	return node->link_to;
 }
 
+// Unfortunately some APIs to initialize a node can create
+// invalid states, but don't return errors; this will try
+// to perform validation when the node is passed to a function
+// that does return an error.
+int lcfs_node_last_ditch_validation(struct lcfs_node_s *node)
+{
+	// Hardlinks should have mode 0
+	if (node->link_to == NULL) {
+		if (lcfs_validate_mode(node->inode.st_mode) < 0)
+			return -1;
+	}
+	return 0;
+}
+
 int lcfs_node_add_child(struct lcfs_node_s *parent, struct lcfs_node_s *child,
 			const char *name)
 {
 	struct lcfs_node_s **new_children;
 	size_t new_capacity;
+
+	if (lcfs_node_last_ditch_validation(child) < 0) {
+		return -1;
+	}
 
 	if ((parent->inode.st_mode & S_IFMT) != S_IFDIR) {
 		errno = ENOTDIR;

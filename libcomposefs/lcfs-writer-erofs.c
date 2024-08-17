@@ -803,6 +803,12 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 	uint32_t chunk_count = 0;
 	uint16_t chunk_format = 0;
 
+	// Unfortunately lcfs_node_set_mode doesn't validate today, so let's ensure we do
+	// it at this last ditch moment if we haven't managed to do it earlier.
+	if (lcfs_validate_mode(node->inode.st_mode) < 0) {
+		return -1;
+	}
+
 	ret = lcfs_write_pad(ctx, node->erofs_ipad);
 	if (ret < 0)
 		return ret;
