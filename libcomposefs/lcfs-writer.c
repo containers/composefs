@@ -1132,7 +1132,12 @@ int lcfs_node_add_child(struct lcfs_node_s *parent, struct lcfs_node_s *child,
 		return -1;
 	}
 
-	if (strlen(name) > LCFS_MAX_NAME_LENGTH) {
+	const size_t namelen = strlen(name);
+	if (namelen == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (namelen > LCFS_MAX_NAME_LENGTH) {
 		errno = ENAMETOOLONG;
 		return -1;
 	}
