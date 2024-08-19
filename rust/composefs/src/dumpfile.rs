@@ -16,6 +16,13 @@ use std::str::FromStr;
 use anyhow::Context;
 use anyhow::{anyhow, Result};
 
+/// https://github.com/torvalds/linux/blob/47ac09b91befbb6a235ab620c32af719f8208399/include/uapi/linux/limits.h#L15
+/// This isn't exposed in libc/rustix, and in any case we should be conservative...if this ever
+/// gets bumped it'd be a hazard.
+const XATTR_NAME_MAX: usize = 255;
+// See above
+const XATTR_SIZE_MAX: usize = u16::MAX as usize;
+
 #[derive(Debug, PartialEq, Eq)]
 /// An extended attribute entry
 pub struct Xattr<'k> {
@@ -222,7 +229,23 @@ impl<'k> Xattr<'k> {
             .split_once('=')
             .ok_or_else(|| anyhow!("Missing = in xattrs"))?;
         let key = unescape_to_osstr(key)?;
+        let keylen = key.as_bytes().len();
+        if keylen > XATTR_NAME_MAX {
+            anyhow::bail!(
+                "xattr name too long; max={} found={}",
+                XATTR_NAME_MAX,
+                keylen
+            );
+        }
         let value = unescape(value)?;
+        let valuelen = value.len();
+        if valuelen > XATTR_SIZE_MAX {
+            anyhow::bail!(
+                "xattr value too long; max={} found={}",
+                XATTR_SIZE_MAX,
+                keylen
+            );
+        }
         Ok(Self { key, value })
     }
 }
@@ -264,6 +287,10 @@ impl<'p> Entry<'p> {
                 libc::S_IFLNK => {
                     let target =
                         unescape_to_path(payload.ok_or_else(|| anyhow!("Missing payload"))?)?;
+                    let targetlen = target.as_os_str().as_bytes().len();
+                    if targetlen > libc::PATH_MAX as usize {
+                        anyhow::bail!("Target length too large {}", targetlen);
+                    }
                     Item::Symlink { nlink, target }
                 }
                 libc::S_IFIFO => Item::Fifo { nlink },
@@ -443,6 +470,45 @@ mod tests {
             assert_eq!(line, serialized);
             let e2 = Entry::parse(&serialized).unwrap();
             assert_eq!(e, e2);
+        }
+    }
+
+    fn parse_all(name: &str, s: &str) -> Result<()> {
+        for line in s.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            let _: Entry =
+                Entry::parse(line).with_context(|| format!("Test case={name:?} line={line:?}"))?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_should_fail() {
+        const CASES: &[(&str, &str)] = &[
+            (
+                "long link",
+                include_str!("../../../tests/assets/should-fail-long-link.dump"),
+            ),
+            (
+                "no ftype",
+                include_str!("../../../tests/assets/should-fail-no-ftype.dump"),
+            ),
+            (
+                "long xattr key",
+                include_str!("../../../tests/assets/should-fail-long-xattr-key.dump"),
+            ),
+            (
+                "long xattr value",
+                include_str!("../../../tests/assets/should-fail-long-xattr-value.dump"),
+            ),
+        ];
+        for (name, case) in CASES.iter().copied() {
+            assert!(
+                parse_all(name, case).is_err(),
+                "Expected case {name} to fail"
+            );
         }
     }
 }
