@@ -14,6 +14,7 @@ test_assets_should_fail = [
   'should-fail-long-link.dump',
   'should-fail-long-xattr-key.dump',
   'should-fail-long-xattr-value.dump',
+  'should-fail-no-ftype.dump',
 ]
 
 test_assets = test_assets_small + [

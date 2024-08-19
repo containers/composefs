@@ -4,7 +4,8 @@ TEST_ASSETS_SMALL = \
 TEST_ASSETS_SMALL_EXTRA = \
 	special.dump.version special_v1.dump.version
 
-TEST_ASSETS_SHOULD_FAIL = should-fail-long-link.dump should-fail-long-xattr-key.dump should-fail-long-xattr-value.dump
+TEST_ASSETS_SHOULD_FAIL = should-fail-long-link.dump should-fail-long-xattr-key.dump should-fail-long-xattr-value.dump \
+	should-fail-no-ftype.dump
 TEST_ASSETS = ${TEST_ASSETS_SMALL} \
 	cs9-x86_64-developer.dump.gz cs9-x86_64-minimal.dump.gz	\
 	f36-x86_64-silverblue.dump.gz
