@@ -1519,6 +1519,12 @@ int lcfs_node_set_xattr(struct lcfs_node_s *node, const char *name,
 {
 	struct lcfs_xattr_s *xattrs;
 	char *k, *v;
+
+	if (strlen(name) > XATTR_NAME_MAX) {
+		errno = ERANGE;
+		return -1;
+	}
+
 	ssize_t index = find_xattr(node, name);
 
 	if (value_len > UINT16_MAX) {

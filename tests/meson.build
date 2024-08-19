@@ -11,7 +11,9 @@ test_assets_small_extra = [
 ]
 
 test_assets_should_fail = [
-  'should-fail-long-link.dump'
+  'should-fail-long-link.dump',
+  'should-fail-long-xattr-key.dump',
+  'should-fail-long-xattr-value.dump',
 ]
 
 test_assets = test_assets_small + [
@@ -46,6 +48,11 @@ tools_dir = meson.current_build_dir() / '../tools'
 test('check-units', find_program('test-units.sh'), args : [tools_dir])
 test('check-checksums', find_program('test-checksums.sh'), args : [tools_dir, meson.current_source_dir() / 'assets', ' '.join(test_assets)])
 test('check-random-fuse', find_program('test-random-fuse.sh'), args : [tools_dir], timeout : 300)
+should_fail_args = [tools_dir]
+foreach case : test_assets_should_fail
+  should_fail_args += [meson.current_source_dir() / 'assets' / case]
+endforeach
+test('check-should-fail', find_program('test-should-fail.sh'), args : should_fail_args)
 
 # support running the tests under valgrind using 'meson test -C build --setup=valgrind'
 valgrind = find_program('valgrind', required : false)
