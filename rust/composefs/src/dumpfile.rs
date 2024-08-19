@@ -156,7 +156,13 @@ fn unescape_to_osstr(s: &str) -> Result<Cow<OsStr>> {
 /// Unescape a string into a Rust `Path` which is really just an alias for a byte array,
 /// although there is an implicit assumption that there are no embedded `NUL` bytes.
 fn unescape_to_path(s: &str) -> Result<Cow<Path>> {
-    let r = match unescape_to_osstr(s)? {
+    let v = unescape_to_osstr(s).and_then(|v| {
+        if v.is_empty() {
+            anyhow::bail!("Invalid empty path");
+        }
+        Ok(v)
+    })?;
+    let r = match v {
         Cow::Borrowed(v) => Cow::Borrowed(Path::new(v)),
         Cow::Owned(v) => Cow::Owned(PathBuf::from(v)),
     };
@@ -431,6 +437,11 @@ mod tests {
             escape(&mut buf, src.as_bytes(), EscapeMode::XattrKey).unwrap();
             assert_eq!(expected, &buf);
         }
+    }
+
+    #[test]
+    fn test_unescape_path() {
+        assert!(unescape_to_path("").is_err());
     }
 
     #[test]
