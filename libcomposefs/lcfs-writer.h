@@ -82,7 +82,20 @@ LCFS_EXTERN struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *
 							 int buildflags);
 LCFS_EXTERN struct lcfs_node_s *lcfs_load_node_from_image(const uint8_t *image_data,
 							  size_t image_data_size);
+struct lcfs_read_options_s {
+	// If non-NULL, this is a NULL terminated array of filenames; only entries
+	// for these files will be loaded. At the current time only filenames (not full paths)
+	// are supported.
+	const char *const *toplevel_entries;
+	uint32_t reserved[3];
+	void *reserved2[4];
+};
+LCFS_EXTERN struct lcfs_node_s *
+lcfs_load_node_from_image_ext(const uint8_t *image_data, size_t image_data_size,
+			      const struct lcfs_read_options_s *opts);
 LCFS_EXTERN struct lcfs_node_s *lcfs_load_node_from_fd(int fd);
+LCFS_EXTERN struct lcfs_node_s *
+lcfs_load_node_from_fd_ext(int fd, const struct lcfs_read_options_s *opts);
 LCFS_EXTERN int lcfs_version_from_fd(int fd);
 
 LCFS_EXTERN const char *lcfs_node_get_xattr(struct lcfs_node_s *node,

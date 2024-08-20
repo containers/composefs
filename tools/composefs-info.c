@@ -40,6 +40,10 @@
 #define ESCAPE_LONE_DASH (1 << 2)
 
 const char *opt_basedir_path;
+// Counting for a NULL terminated char array...so painful to reimplement each time in C
+static size_t n_filters;
+static size_t filter_capacity = 1;
+static char **opt_filter;
 int opt_basedir_fd;
 
 static locale_t c_locale;
@@ -369,6 +373,7 @@ static void usage(const char *argv0)
 }
 
 #define OPT_BASEDIR 100
+#define OPT_FILTER 101
 
 // Most of the rest of this code operates on composefs superblocks.  This function
 // just prints the fsverity digest of the provided files.
@@ -414,6 +419,12 @@ int main(int argc, char **argv)
 			flag: NULL,
 			val: OPT_BASEDIR
 		},
+		{
+			name: "filter",
+			has_arg: required_argument,
+			flag: NULL,
+			val: OPT_FILTER
+		},
 		{},
 	};
 
@@ -421,6 +432,24 @@ int main(int argc, char **argv)
 		switch (opt) {
 		case OPT_BASEDIR:
 			opt_basedir_path = optarg;
+			break;
+		case OPT_FILTER:
+			// Ensure we have space for the NULL terminator
+			if (opt_filter == NULL || (n_filters + 1) >= filter_capacity) {
+				filter_capacity *= 2;
+				opt_filter = reallocarray(opt_filter, filter_capacity,
+							  sizeof(char *));
+				if (opt_filter == NULL)
+					oom();
+			}
+			if (strchr(optarg, '/') != NULL) {
+				err(EXIT_FAILURE,
+				    "Filter must be a single name: %s", optarg);
+			}
+			opt_filter[n_filters] = strdup(optarg);
+			if (opt_filter[n_filters] == NULL)
+				oom();
+			n_filters++;
 			break;
 		case ':':
 			fprintf(stderr, "option needs a value\n");
@@ -486,6 +515,10 @@ int main(int argc, char **argv)
 	if (handler_init)
 		handler_data = handler_init();
 
+	// Ensure filters are NULL terminated
+	if (opt_filter)
+		opt_filter[n_filters] = NULL;
+
 	for (int i = 2; i < argc; i++) {
 		const char *image_path = image_path = argv[i];
 
@@ -494,7 +527,11 @@ int main(int argc, char **argv)
 			err(EXIT_FAILURE, "Failed to open '%s'", image_path);
 		}
 
-		cleanup_node struct lcfs_node_s *root = lcfs_load_node_from_fd(fd);
+		const char *const *toplevel_entries = (const char *const *)opt_filter;
+		struct lcfs_read_options_s opts = { .toplevel_entries =
+							    toplevel_entries };
+		cleanup_node struct lcfs_node_s *root =
+			lcfs_load_node_from_fd_ext(fd, &opts);
 		if (root == NULL) {
 			err(EXIT_FAILURE, "Failed to load '%s'", image_path);
 		}
