@@ -216,6 +216,16 @@ int lcfs_compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 			node->inode.st_nlink = n_link;
 		}
 
+		// Disallow directory hardlinks; the EROFS generation does
+		// do this specially for `.` and `..`, but that happens after this.
+		if (node->link_to != NULL) {
+			if ((node->inode.st_mode & S_IFMT) == S_IFDIR ||
+			    (node->link_to->inode.st_mode & S_IFMT) == S_IFDIR) {
+				errno = EINVAL;
+				return -1;
+			}
+		}
+
 		/* Canonical order */
 		if (node->xattrs)
 			qsort(node->xattrs, node->n_xattrs,

@@ -509,6 +509,7 @@ static void compute_erofs_inode_size(struct lcfs_node_s *node)
 		compute_erofs_dir_size(node);
 	} else if (type == S_IFLNK) {
 		node->erofs_n_blocks = 0;
+		assert(node->payload);
 		node->erofs_tailsize = strlen(node->payload);
 	} else if (type == S_IFREG && file_size > 0) {
 		if (node->content != NULL) {
