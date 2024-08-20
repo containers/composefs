@@ -414,6 +414,9 @@ static char *tree_from_dump_line(dump_info *info, const char *line, size_t line_
 		fields[FIELD_PATH].data, fields[FIELD_PATH].len, NULL, &err);
 	if (path == NULL && err)
 		return err;
+	if (!*path) {
+		return make_error("Invalid empty path");
+	}
 
 	bool is_hardlink = false;
 	/* First char in mode is @ if hardlink */
