@@ -214,7 +214,15 @@ fn unescape_to_path_canonical(s: &str) -> Result<Cow<Path>> {
             }
         }
     }
-    Ok(r.into())
+    // If the input was already in normal form,
+    // then we can just return the original version, which
+    // may itself be a Cow::Borrowed, and hence we free our malloc buffer.
+    if r.as_os_str().as_bytes() == p.as_os_str().as_bytes() {
+        Ok(p)
+    } else {
+        // Otherwise return our copy.
+        Ok(r.into())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -528,9 +536,23 @@ mod tests {
 
     #[test]
     fn test_unescape_path_canonical() {
+        // Invalid cases
+        assert!(unescape_to_path_canonical("").is_err());
         assert!(unescape_to_path_canonical("foo").is_err());
+        assert!(unescape_to_path_canonical("../blah").is_err());
         assert!(unescape_to_path_canonical("/foo/..").is_err());
         assert!(unescape_to_path_canonical("/foo/../blah").is_err());
+        // Verify that we return borrowed input where possible
+        assert!(matches!(
+            unescape_to_path_canonical("/foo").unwrap(),
+            Cow::Borrowed(v) if v.to_str() == Some("/foo")
+        ));
+        // But an escaped version must be owned
+        assert!(matches!(
+            unescape_to_path_canonical(r#"/\x66oo"#).unwrap(),
+            Cow::Owned(v) if v.to_str() == Some("/foo")
+        ));
+        // Test successful normalization
         assert_eq!(
             unescape_to_path_canonical("///foo/bar//baz")
                 .unwrap()
