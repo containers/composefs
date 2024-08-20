@@ -343,6 +343,9 @@ static char *tree_add_node(dump_info *info, const char *path, struct lcfs_node_s
 
 		if (!lcfs_node_dirp(parent))
 			return make_error("Parent must be a directory for %s", path);
+		if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+			return make_error("Invalid . or .. in path: %s", path);
+		}
 
 		int r = lcfs_node_add_child(parent, node, name);
 		if (r < 0) {
