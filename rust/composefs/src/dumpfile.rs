@@ -15,6 +15,7 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use anyhow::{anyhow, Result};
+use libc::S_IFDIR;
 
 /// https://github.com/torvalds/linux/blob/47ac09b91befbb6a235ab620c32af719f8208399/include/uapi/linux/limits.h#L15
 /// This isn't exposed in libc/rustix, and in any case we should be conservative...if this ever
@@ -167,6 +168,10 @@ fn unescape_to_path(s: &str) -> Result<Cow<Path>> {
         if v.is_empty() {
             anyhow::bail!("Invalid empty path");
         }
+        let l = v.len();
+        if l > libc::PATH_MAX as usize {
+            anyhow::bail!("Path is too long: {l} bytes");
+        }
         Ok(v)
     })?;
     let r = match v {
@@ -174,6 +179,42 @@ fn unescape_to_path(s: &str) -> Result<Cow<Path>> {
         Cow::Owned(v) => Cow::Owned(PathBuf::from(v)),
     };
     Ok(r)
+}
+
+/// Like [`unescape_to_path`], but also ensures the path is in "canonical"
+/// form; this has the same semantics as Rust https://doc.rust-lang.org/std/path/struct.Path.html#method.components
+/// which in particular removes `.` and extra `//`.
+///
+/// We also deny uplinks `..` and empty paths.
+fn unescape_to_path_canonical(s: &str) -> Result<Cow<Path>> {
+    let p = unescape_to_path(s)?;
+    let mut components = p.components();
+    let mut r = std::path::PathBuf::new();
+    let Some(first) = components.next() else {
+        anyhow::bail!("Invalid empty path");
+    };
+    if first != std::path::Component::RootDir {
+        anyhow::bail!("Invalid non-absolute path");
+    }
+    r.push(first);
+    for component in components {
+        match component {
+            // Prefix is a windows thing; I don't think RootDir or CurDir are reachable
+            // after the first component has been RootDir.
+            std::path::Component::Prefix(_)
+            | std::path::Component::RootDir
+            | std::path::Component::CurDir => {
+                anyhow::bail!("Internal error in unescape_to_path_canonical");
+            }
+            std::path::Component::ParentDir => {
+                anyhow::bail!("Invalid \"..\" in path");
+            }
+            std::path::Component::Normal(_) => {
+                r.push(component);
+            }
+        }
+    }
+    Ok(r.into())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -261,7 +302,7 @@ impl<'p> Entry<'p> {
     pub fn parse(s: &'p str) -> Result<Entry<'p>> {
         let mut components = s.split(' ');
         let mut next = |name: &str| components.next().ok_or_else(|| anyhow!("Missing {name}"));
-        let path = unescape_to_path(next("path")?)?;
+        let path = unescape_to_path_canonical(next("path")?)?;
         let size = u64::from_str(next("size")?)?;
         let modeval = next("mode")?;
         let (is_hardlink, mode) = if let Some((_, rest)) = modeval.split_once('@') {
@@ -279,11 +320,16 @@ impl<'p> Entry<'p> {
         let fsverity_digest = optional_str(next("digest")?);
         let xattrs = components.map(Xattr::parse).collect::<Result<Vec<_>>>()?;
 
+        let ty = libc::S_IFMT & mode;
         let item = if is_hardlink {
-            let target = unescape_to_path(payload.ok_or_else(|| anyhow!("Missing payload"))?)?;
+            if ty == S_IFDIR {
+                anyhow::bail!("Invalid hardlinked directory");
+            }
+            let target =
+                unescape_to_path_canonical(payload.ok_or_else(|| anyhow!("Missing payload"))?)?;
             Item::Hardlink { target }
         } else {
-            match libc::S_IFMT & mode {
+            match ty {
                 libc::S_IFREG => Item::Regular {
                     size,
                     nlink,
@@ -291,6 +337,9 @@ impl<'p> Entry<'p> {
                     fsverity_digest: fsverity_digest.map(ToOwned::to_owned),
                 },
                 libc::S_IFLNK => {
+                    // Note that the target of *symlinks* is not required to be in canonical form,
+                    // as we don't actually traverse those links on our own, and we need to support
+                    // symlinks that e.g. contain `//` or other things.
                     let target =
                         unescape_to_path(payload.ok_or_else(|| anyhow!("Missing payload"))?)?;
                     let targetlen = target.as_os_str().as_bytes().len();
@@ -469,6 +518,30 @@ mod tests {
     #[test]
     fn test_unescape_path() {
         assert!(unescape_to_path("").is_err());
+        let mut p = std::iter::repeat('a')
+            .take(libc::PATH_MAX.try_into().unwrap())
+            .collect::<String>();
+        assert!(unescape_to_path(&p).is_ok());
+        p.push('a');
+        assert!(unescape_to_path(&p).is_err());
+    }
+
+    #[test]
+    fn test_unescape_path_canonical() {
+        assert!(unescape_to_path_canonical("foo").is_err());
+        assert!(unescape_to_path_canonical("/foo/..").is_err());
+        assert!(unescape_to_path_canonical("/foo/../blah").is_err());
+        assert_eq!(
+            unescape_to_path_canonical("///foo/bar//baz")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "/foo/bar/baz"
+        );
+        assert_eq!(
+            unescape_to_path_canonical("/.").unwrap().to_str().unwrap(),
+            "/"
+        );
     }
 
     #[test]
@@ -513,6 +586,10 @@ mod tests {
             (
                 "long xattr value",
                 include_str!("../../../tests/assets/should-fail-long-xattr-value.dump"),
+            ),
+            (
+                "dir hardlink",
+                include_str!("../../../tests/assets/should-fail-dir-hardlink.dump"),
             ),
         ];
         for (name, case) in CASES.iter().copied() {
