@@ -393,6 +393,10 @@ static char *tree_resolve_hardlinks(dump_info *info)
 		/* Don't override existing value from image for target nlink */
 		uint32_t old_nlink = lcfs_node_get_nlink(target);
 
+		if (fixup->node == target) {
+			return make_error("Self-referential hardlink %s",
+					  fixup->target_path);
+		}
 		lcfs_node_make_hardlink(fixup->node, target);
 
 		lcfs_node_set_nlink(target, old_nlink);

@@ -21,6 +21,7 @@ test_assets_should_fail = [
   'should-fail-dot-name.dump',
   'should-fail-dotdot-name.dump',
   'should-fail-dir-hardlink.dump',
+  'should-fail-self-hardlink.dump'
 ]
 
 test_assets = test_assets_small + [

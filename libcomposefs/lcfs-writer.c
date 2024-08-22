@@ -268,7 +268,10 @@ int lcfs_compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 	for (node = root; node != NULL; node = node->next) {
 		for (size_t i = 0; i < node->children_size; i++) {
 			struct lcfs_node_s *child = node->children[i];
-			struct lcfs_node_s *link_to = follow_links(child);
+			struct lcfs_node_s *link_to;
+			if (follow_links(child, &link_to) < 0) {
+				return -1;
+			}
 			if (child->link_to != NULL && !link_to->in_tree) {
 				/* Link to inode outside tree */
 				errno = EINVAL;
@@ -287,11 +290,19 @@ int lcfs_compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 	return 0;
 }
 
-struct lcfs_node_s *follow_links(struct lcfs_node_s *node)
+// Recursively follow hardlinks; a cycle is detected as an error.
+int follow_links(struct lcfs_node_s *node, struct lcfs_node_s **out_node)
 {
-	if (node->link_to)
-		return follow_links(node->link_to);
-	return node;
+	struct lcfs_node_s *start = node;
+	while (node->link_to) {
+		node = node->link_to;
+		if (node == start) {
+			errno = ELOOP;
+			return -1;
+		}
+	}
+	*out_node = node;
+	return 0;
 }
 
 int lcfs_write(struct lcfs_ctx_s *ctx, void *_data, size_t data_len)
@@ -1160,9 +1171,17 @@ struct lcfs_node_s *lcfs_node_get_parent(struct lcfs_node_s *node)
 
 void lcfs_node_make_hardlink(struct lcfs_node_s *node, struct lcfs_node_s *target)
 {
-	target = follow_links(target);
-	node->link_to = lcfs_node_ref(target);
-	target->inode.st_nlink++;
+	// Disallow self-referential hardlinks
+	assert(node != target);
+	struct lcfs_node_s *real_target;
+	// Unfortunately this function doesn't return an error, so we do so lazily.
+	if (follow_links(target, &real_target) < 0) {
+		node->link_to_invalid = true;
+	} else {
+		node->link_to = lcfs_node_ref(target);
+		node->link_to_invalid = false;
+		target->inode.st_nlink++;
+	}
 }
 
 struct lcfs_node_s *lcfs_node_get_hardlink_target(struct lcfs_node_s *node)
@@ -1180,6 +1199,10 @@ int lcfs_node_last_ditch_validation(struct lcfs_node_s *node)
 	if (node->link_to == NULL) {
 		if (lcfs_validate_mode(node->inode.st_mode) < 0)
 			return -1;
+	}
+	if (node->link_to_invalid) {
+		errno = EINVAL;
+		return -1;
 	}
 	return 0;
 }

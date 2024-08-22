@@ -153,6 +153,7 @@ struct lcfs_node_s {
 
 	/* Used to create hard links.  */
 	struct lcfs_node_s *link_to; /* Owns refs */
+	bool link_to_invalid; /* We detected a cycle */
 
 	char *name;
 	char *payload; /* backing file or symlink target */
@@ -217,7 +218,7 @@ int lcfs_write_pad(struct lcfs_ctx_s *ctx, size_t data_len);
 int lcfs_compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root);
 int lcfs_clone_root(struct lcfs_ctx_s *ctx);
 char *maybe_join_path(const char *a, const char *b);
-struct lcfs_node_s *follow_links(struct lcfs_node_s *node);
+int follow_links(struct lcfs_node_s *node, struct lcfs_node_s **out_node);
 int node_get_dtype(struct lcfs_node_s *node);
 
 int lcfs_node_rename_xattr(struct lcfs_node_s *node, size_t index,

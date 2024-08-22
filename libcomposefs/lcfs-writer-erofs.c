@@ -709,7 +709,10 @@ static int write_erofs_dentries_chunk(struct lcfs_ctx_s *ctx,
 
 	for (int i = first_child; i < first_child + n_children; i++) {
 		struct lcfs_node_s *dirent_child = node->children[i];
-		struct lcfs_node_s *target_child = follow_links(dirent_child);
+		struct lcfs_node_s *target_child;
+		if (follow_links(dirent_child, &target_child) < 0) {
+			return -1;
+		}
 
 		struct erofs_dirent dirent = { 0 };
 		dirent.nid = lcfs_u64_to_file(target_child->erofs_nid);
