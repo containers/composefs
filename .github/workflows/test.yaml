@@ -141,7 +141,7 @@ jobs:
       - name: Rust (default features)
         run: cargo test
       - name: Rust (all features)
-        run: cargo test --all-features
+        run: cargo test -F v1_0_4
   clang-format:
     runs-on: ubuntu-24.04
     steps:
