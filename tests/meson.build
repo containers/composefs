@@ -35,6 +35,7 @@ extra_dist = [
   'test-units.sh',
   'test-random-fuse.sh',
   'test-checksums.sh',
+  'test-dump-filtered.sh',
   'test-should-fail.sh',
   'integration.sh',
 ]
@@ -53,6 +54,7 @@ tools_dir = meson.current_build_dir() / '../tools'
 
 test('check-units', find_program('test-units.sh'), args : [tools_dir])
 test('check-checksums', find_program('test-checksums.sh'), args : [tools_dir, meson.current_source_dir() / 'assets', ' '.join(test_assets)])
+test('check-dump-filtered', find_program('test-dump-filtered.sh'), args : [tools_dir, meson.current_source_dir() / 'assets'])
 test('check-random-fuse', find_program('test-random-fuse.sh'), args : [tools_dir], timeout : 300)
 should_fail_args = [tools_dir]
 foreach case : test_assets_should_fail

@@ -853,7 +853,8 @@ int lcfs_version_from_fd(int fd)
 	return r;
 }
 
-struct lcfs_node_s *lcfs_load_node_from_fd(int fd)
+struct lcfs_node_s *lcfs_load_node_from_fd_ext(int fd,
+					       const struct lcfs_read_options_s *opts)
 {
 	struct lcfs_node_s *node;
 	uint8_t *image_data;
@@ -874,7 +875,7 @@ struct lcfs_node_s *lcfs_load_node_from_fd(int fd)
 		return NULL;
 	}
 
-	node = lcfs_load_node_from_image(image_data, image_data_size);
+	node = lcfs_load_node_from_image_ext(image_data, image_data_size, opts);
 	if (node == NULL) {
 		errsv = errno;
 		munmap(image_data, image_data_size);
@@ -885,6 +886,14 @@ struct lcfs_node_s *lcfs_load_node_from_fd(int fd)
 	munmap(image_data, image_data_size);
 
 	return node;
+}
+
+struct lcfs_node_s *lcfs_load_node_from_fd(int fd)
+{
+	struct lcfs_read_options_s opts = {
+		0,
+	};
+	return lcfs_load_node_from_fd_ext(fd, &opts);
 }
 
 int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload)

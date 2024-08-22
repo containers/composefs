@@ -1468,11 +1468,12 @@ static const erofs_inode *lcfs_image_get_erofs_inode(struct lcfs_image_data *dat
 }
 
 static struct lcfs_node_s *lcfs_build_node_from_image(struct lcfs_image_data *data,
-						      uint64_t nid);
+						      uint64_t nid,
+						      Hash_table *filter);
 
 static int erofs_readdir_block(struct lcfs_image_data *data,
 			       struct lcfs_node_s *parent, const uint8_t *block,
-			       size_t block_size)
+			       size_t block_size, Hash_table *filter)
 {
 	const struct erofs_dirent *dirents = (struct erofs_dirent *)block;
 	size_t dirents_size = lcfs_u16_from_file(dirents[0].nameoff);
@@ -1512,7 +1513,11 @@ static int erofs_readdir_block(struct lcfs_image_data *data,
 		memcpy(name_buf, child_name, child_name_len);
 		name_buf[child_name_len] = 0;
 
-		child = lcfs_build_node_from_image(data, nid);
+		if (filter != NULL && hash_lookup(filter, name_buf) == NULL) {
+			continue;
+		}
+
+		child = lcfs_build_node_from_image(data, nid, NULL);
 		if (child == NULL) {
 			if (errno == ENOTSUP)
 				continue; /* Skip real whiteouts (00-ff) */
@@ -1594,7 +1599,7 @@ static int lcfs_build_node_erofs_xattr(struct lcfs_node_s *node, uint8_t name_in
 }
 
 static struct lcfs_node_s *lcfs_build_node_from_image(struct lcfs_image_data *data,
-						      uint64_t nid)
+						      uint64_t nid, Hash_table *filter)
 {
 	const erofs_inode *cino;
 	cleanup_node struct lcfs_node_s *node = NULL;
@@ -1716,18 +1721,23 @@ static struct lcfs_node_s *lcfs_build_node_from_image(struct lcfs_image_data *da
 				}
 			}
 
-			if (erofs_readdir_block(data, node, block_data, block_size) < 0)
+			if (erofs_readdir_block(data, node, block_data,
+						block_size, filter) < 0)
 				return NULL;
 		}
 
 		/* Then inline */
 		if (tailpacked) {
-			if (erofs_readdir_block(data, node, tail_data, tail_size) < 0)
+			if (erofs_readdir_block(data, node, tail_data,
+						tail_size, filter) < 0)
 				return NULL;
 		}
 
 	} else if (type == S_IFLNK) {
 		char name_buf[PATH_MAX];
+
+		// Filter only applies to toplevel
+		assert(filter == NULL);
 
 		if (file_size >= PATH_MAX || !tailpacked) {
 			errno = EINVAL;
@@ -1742,6 +1752,9 @@ static struct lcfs_node_s *lcfs_build_node_from_image(struct lcfs_image_data *da
 	} else if (type == S_IFREG && file_size != 0 && erofs_inode_is_flat(cino)) {
 		cleanup_free uint8_t *content = NULL;
 		size_t oob_size;
+
+		// Filter only applies to toplevel
+		assert(filter == NULL);
 
 		content = malloc(file_size);
 		if (content == NULL) {
@@ -1841,8 +1854,19 @@ static bool node_ht_comparator(const void *d1, const void *d2)
 	return v1->nid == v2->nid;
 }
 
-struct lcfs_node_s *lcfs_load_node_from_image(const uint8_t *image_data,
-					      size_t image_data_size)
+static size_t str_ht_hash(const void *entry, size_t table_size)
+{
+	return hash_string(entry, table_size);
+}
+
+static bool str_ht_eq(const void *entry1, const void *entry2)
+{
+	return strcmp(entry1, entry2) == 0;
+}
+
+struct lcfs_node_s *
+lcfs_load_node_from_image_ext(const uint8_t *image_data, size_t image_data_size,
+			      const struct lcfs_read_options_s *opts)
 {
 	const uint8_t *image_data_end;
 	struct lcfs_image_data data = { image_data, image_data_size };
@@ -1850,6 +1874,8 @@ struct lcfs_node_s *lcfs_load_node_from_image(const uint8_t *image_data,
 	const struct erofs_super_block *erofs_super;
 	uint64_t erofs_root_nid;
 	struct lcfs_node_s *root;
+
+	assert(opts);
 
 	if (image_data_size < EROFS_BLKSIZ) {
 		errno = EINVAL;
@@ -1910,9 +1936,39 @@ struct lcfs_node_s *lcfs_load_node_from_image(const uint8_t *image_data,
 		return NULL;
 	}
 
-	root = lcfs_build_node_from_image(&data, erofs_root_nid);
+	Hash_table *toplevel_entries_hash = NULL;
+	if (opts->toplevel_entries) {
+		toplevel_entries_hash =
+			hash_initialize(0, NULL, str_ht_hash, str_ht_eq, NULL);
+		if (toplevel_entries_hash == NULL) {
+			errno = ENOMEM;
+			return NULL;
+		}
+		for (const char *const *it = opts->toplevel_entries; it && *it; it++) {
+			const char *name = *it;
+			if (hash_insert_if_absent(toplevel_entries_hash, name,
+						  NULL) < 0) {
+				errno = ENOMEM;
+				return NULL;
+			}
+		}
+	}
 
+	root = lcfs_build_node_from_image(&data, erofs_root_nid,
+					  toplevel_entries_hash);
+
+	if (toplevel_entries_hash != NULL)
+		hash_free(toplevel_entries_hash);
 	hash_free(data.node_hash);
 
 	return root;
+}
+
+struct lcfs_node_s *lcfs_load_node_from_image(const uint8_t *image_data,
+					      size_t image_data_size)
+{
+	struct lcfs_read_options_s opts = {
+		0,
+	};
+	return lcfs_load_node_from_image_ext(image_data, image_data_size, &opts);
 }

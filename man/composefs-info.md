@@ -46,6 +46,13 @@ can be specified.
 :   This should point to a directory of backing files, and will be used
     by the **missing-objects** command to know what files are available.
 
+**\-\-filter**=*NAME*
+:   Only print entries whose name matches one of these. Can be specified
+    multiple times. Cannot be a full path (e.g. cannot contain `/`).
+    This is intended to be used for tooling to efficiently lookup metadata
+    files embedded in the image without loading and printing the entire
+    image.
+
 # SEE ALSO
 **composefs-info(1)**, **composefs-dump(5)**
 
