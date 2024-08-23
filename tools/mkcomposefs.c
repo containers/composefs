@@ -708,22 +708,78 @@ static struct lcfs_node_s *tree_from_dump(FILE *input, char **out_err)
 	return info.root;
 }
 
+static ssize_t write_cb(void *_file, void *buf, size_t count)
+{
+	FILE *file = _file;
+
+	return fwrite(buf, 1, count, file);
+}
+
 #ifdef FUZZER
 static int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 {
+	assert(buf);
 	struct lcfs_node_s *tree;
 	char *err = NULL;
 	FILE *f = fmemopen(buf, len, "r");
+	assert(f);
 	tree = tree_from_dump(f, &err);
+	bool is_err = err != NULL;
 	free(err);
-	if (tree)
-		lcfs_node_unref(tree);
 	fclose(f);
+	if (!tree) {
+		return 1;
+	}
+	if (is_err) {
+		lcfs_node_unref(tree);
+		return 1;
+	}
+	struct lcfs_write_options_s options = { 0 };
+	char *outbuf = NULL;
+	size_t outsize = 0;
+	f = open_memstream(&outbuf, &outsize);
+	assert(f);
+	options.format = LCFS_FORMAT_EROFS;
+	options.version = LCFS_DEFAULT_VERSION_MAX;
+	options.file = f;
+	options.file_write_cb = write_cb;
+	if (lcfs_write_to(tree, &options) < 0) {
+		lcfs_node_unref(tree);
+		fclose(f);
+		return 1;
+	}
+	lcfs_node_unref(tree);
+	fclose(f);
+	assert(outbuf);
+	assert(outsize > 0);
+	// And verify we can re-parse it
+	tree = lcfs_load_node_from_image((const uint8_t *)outbuf, outsize);
+	assert(tree);
+	lcfs_node_unref(tree);
 	return 0;
 }
 
 int main(int argc, char **argv)
 {
+	if (argc > 1) {
+		char buffer[4096];
+		size_t bytes_read;
+		FILE *src = fopen(argv[1], "r");
+		assert(src);
+		char *buf;
+		size_t len;
+		FILE *dest = open_memstream(&buf, &len);
+		assert(dest);
+		while ((bytes_read = fread(buffer, 1, sizeof(buffer), src)) > 0) {
+			if (fwrite(buffer, 1, bytes_read, dest) != bytes_read) {
+				err(EXIT_FAILURE, "copying input");
+			}
+		}
+		fclose(src);
+		fclose(dest);
+		LLVMFuzzerTestOneInput((void *)buf, len);
+		return 0;
+	}
 	extern void HF_ITER(uint8_t * *buf, size_t * len);
 	for (;;) {
 		size_t len;
@@ -1043,13 +1099,6 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 	free(steal_pointer(&tmppath));
 
 	return 0;
-}
-
-static ssize_t write_cb(void *_file, void *buf, size_t count)
-{
-	FILE *file = _file;
-
-	return fwrite(buf, 1, count, file);
 }
 
 struct work_item {
