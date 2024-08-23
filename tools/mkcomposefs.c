@@ -558,6 +558,13 @@ static char *tree_from_dump_line(dump_info *info, const char *line,
 		lcfs_node_set_fsverity_digest(node, raw);
 	}
 
+	// Because we call lcfs_node_set_xattr() in the loop below
+	// which searches all previous values for duplicates, we
+	// get O(N^2) behavior. Cap the maximum size of the input line.
+	if (line_len > UINT16_MAX) {
+		return make_error("Too many xattrs");
+	}
+
 	/* Handle trailing xattrs */
 	while (line_len > 0) {
 		const char *xattr = line;
