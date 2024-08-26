@@ -75,29 +75,35 @@ pub fn mkcomposefs(
     })
 }
 
-#[test]
-fn test_mkcomposefs() -> Result<()> {
-    use super::dumpfile::Entry;
-    use std::fmt::Write as _;
-    let td = tempfile::tempdir()?;
-    let td = td.path();
-    let outpath = &td.join("out");
-    let o = File::create(outpath)?;
+// Generate a composefs from an input string, which must
+// be a textual composefs dump file.
+#[cfg(test)]
+pub(crate) fn mkcomposefs_from_buf(config: Config, buf: &str, output: File) -> Result<()> {
     let (send, recv) = mpsc::sync_channel(5);
-    const CONTENT: &str = include_str!("../../../tests/assets/special.dump");
     std::thread::scope(|s| {
         let producer = s.spawn(move || {
-            for line in CONTENT.lines() {
-                if send.send(Entry::parse(line)?).is_err() {
+            for line in buf.lines() {
+                if send.send(crate::dumpfile::Entry::parse(line)?).is_err() {
                     break;
                 }
             }
             anyhow::Ok(())
         });
-        mkcomposefs(Config::default(), recv, o)?;
+        mkcomposefs(config, recv, output)?;
         producer.join().unwrap()?;
         anyhow::Ok(())
-    })?;
+    })
+}
+
+#[test]
+fn test_mkcomposefs() -> Result<()> {
+    use std::fmt::Write as _;
+    let td = tempfile::tempdir()?;
+    let td = td.path();
+    let outpath = &td.join("out");
+    let o = File::create(outpath)?;
+    const CONTENT: &str = include_str!("../../../tests/assets/special.dump");
+    mkcomposefs_from_buf(Config::default(), CONTENT, o)?;
     let mut reparsed_content = String::new();
     let o = File::open(outpath)?;
     super::dump(o, |entry| {

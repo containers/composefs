@@ -8,9 +8,12 @@ use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::fmt::Display;
 use std::fmt::Write as WriteFmt;
+use std::fs::File;
+use std::io::BufRead;
 use std::io::Write;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::str::FromStr;
 
 use anyhow::Context;
@@ -478,10 +481,69 @@ impl<'p> Display for Entry<'p> {
     }
 }
 
+/// Configuration for parsing a dumpfile
+#[derive(Debug, Default)]
+pub struct DumpConfig<'a> {
+    /// Only dump these toplevel filenames
+    pub filters: Option<&'a [&'a str]>,
+}
+
+/// Parse the provided composefs into dumpfile entries.
+pub fn dump<F>(input: File, config: DumpConfig, mut handler: F) -> Result<()>
+where
+    F: FnMut(Entry<'_>) -> Result<()> + Send,
+{
+    let mut proc = Command::new("composefs-info");
+    proc.arg("dump");
+    if let Some(filter) = config.filters {
+        proc.args(filter.iter().flat_map(|f| ["--filter", f]));
+    }
+    proc.args(["/dev/stdin"])
+        .stdin(std::process::Stdio::from(input))
+        .stderr(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut proc = proc.spawn().context("Spawning composefs-info")?;
+
+    // SAFETY: we set up these streams
+    let child_stdout = proc.stdout.take().unwrap();
+    let child_stderr = proc.stderr.take().unwrap();
+
+    std::thread::scope(|s| {
+        let stderr_copier = s.spawn(move || {
+            let mut child_stderr = std::io::BufReader::new(child_stderr);
+            let mut buf = Vec::new();
+            std::io::copy(&mut child_stderr, &mut buf)?;
+            anyhow::Ok(buf)
+        });
+
+        let child_stdout = std::io::BufReader::new(child_stdout);
+        for line in child_stdout.lines() {
+            let line = line.context("Reading dump stdout")?;
+            let entry = Entry::parse(&line)?.filter_special();
+            handler(entry)?;
+        }
+
+        let r = proc.wait()?;
+        let stderr = stderr_copier.join().unwrap()?;
+        if !r.success() {
+            let stderr = String::from_utf8_lossy(&stderr);
+            let stderr = stderr.trim();
+            anyhow::bail!("composefs-info dump failed: {r}: {stderr}")
+        }
+
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+
+    use crate::mkcomposefs::{mkcomposefs_from_buf, Config};
+
     use super::*;
 
+    const SPECIAL_DUMP: &str = include_str!("../../../tests/assets/special.dump");
     const SPECIALS: &[&str] = &["", "foo=bar=baz", r"\x01\x02", "-"];
     const UNQUOTED: &[&str] = &["foo!bar", "hello-world", "--"];
 
@@ -620,5 +682,45 @@ mod tests {
                 "Expected case {name} to fail"
             );
         }
+    }
+
+    #[test]
+    fn test_load_cfs() -> Result<()> {
+        let td = tempfile::tempdir()?;
+        let out_cfs = td.path().join("out.cfs");
+        let o = File::create_new(&out_cfs)?;
+        mkcomposefs_from_buf(Config::default(), SPECIAL_DUMP, o).unwrap();
+        let mut entries = String::new();
+        let input = File::open(&out_cfs)?;
+        dump(input, DumpConfig::default(), |e| {
+            writeln!(entries, "{e}")?;
+            Ok(())
+        })
+        .unwrap();
+        similar_asserts::assert_eq!(SPECIAL_DUMP, &entries);
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_cfs_filtered() -> Result<()> {
+        const FILTERED: &str =
+            "/ 4096 40555 2 0 0 0 1633950376.0 - - - trusted.foo1=bar-1 user.foo2=bar-2\n\
+/blockdev 0 60777 1 0 0 107690 1633950376.0 - - - trusted.bar=bar-2\n\
+/inline 15 100777 1 0 0 0 1633950376.0 - FOOBAR\\nINAFILE\\n - user.foo=bar-2\n";
+        let td = tempfile::tempdir()?;
+        let out_cfs = td.path().join("out.cfs");
+        let o = File::create_new(&out_cfs)?;
+        mkcomposefs_from_buf(Config::default(), SPECIAL_DUMP, o).unwrap();
+        let mut entries = String::new();
+        let input = File::open(&out_cfs)?;
+        let mut filter = DumpConfig::default();
+        filter.filters = Some(&["blockdev", "inline"]);
+        dump(input, filter, |e| {
+            writeln!(entries, "{e}")?;
+            Ok(())
+        })
+        .unwrap();
+        similar_asserts::assert_eq!(FILTERED, &entries);
+        Ok(())
     }
 }
