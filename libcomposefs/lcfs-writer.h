@@ -58,6 +58,17 @@ enum lcfs_flags_t {
 #define LCFS_DEFAULT_VERSION_MIN 0
 #define LCFS_DEFAULT_VERSION_MAX 1
 
+// The extra space required for metadata per xattr.
+// Should match sizeof(struct erofs_xattr_entry)
+#define LCFS_INODE_XATTRMETA_SIZE 4
+// Maximum size of key+value data (excluding trailing NUL for key)
+// that can be allocated to an individual inode from external input.
+// The EROFS limits this to basically UINT16_MAX -
+// space for our internal xattrs. Out of conservatism we reserve
+// fully half the xattr storage.
+//
+#define LCFS_INODE_EXTERNAL_XATTR_MAX (UINT16_MAX / 2)
+
 typedef ssize_t (*lcfs_read_cb)(void *file, void *buf, size_t count);
 typedef ssize_t (*lcfs_write_cb)(void *file, void *buf, size_t count);
 

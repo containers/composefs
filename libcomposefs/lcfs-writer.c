@@ -1644,21 +1644,34 @@ int lcfs_node_unset_xattr(struct lcfs_node_s *node, const char *name)
 	ssize_t index = find_xattr(node, name);
 
 	if (index >= 0) {
+		size_t value_len = node->xattrs[index].value_len;
 		if (index != (ssize_t)node->n_xattrs - 1)
 			node->xattrs[index] = node->xattrs[node->n_xattrs - 1];
 		node->n_xattrs--;
+		// Note 2*size - to account for worst case alignment
+		if (node->n_xattrs > 0)
+			node->xattr_size -= (2 * LCFS_INODE_XATTRMETA_SIZE - 1) +
+					    strlen(name) + value_len;
+		else
+			node->xattr_size = 0; // If last xattr, remove the overhead too
+		assert(node->xattr_size >= 0);
 	}
 
 	return -1;
 }
 
-int lcfs_node_set_xattr(struct lcfs_node_s *node, const char *name,
-			const char *value, size_t value_len)
+/* Set an extended attribute; If from_external_input is true then we
+ * are parsing a dumpfile, and need to limit xattrs to a smaller size.
+ */
+int lcfs_node_set_xattr_internal(struct lcfs_node_s *node, const char *name,
+				 const char *value, size_t value_len,
+				 bool from_external_input)
 {
 	struct lcfs_xattr_s *xattrs;
 	char *k, *v;
 
-	if (strlen(name) > XATTR_NAME_MAX) {
+	const size_t namelen = strlen(name);
+	if (namelen > XATTR_NAME_MAX) {
 		errno = ERANGE;
 		return -1;
 	}
@@ -1684,11 +1697,21 @@ int lcfs_node_set_xattr(struct lcfs_node_s *node, const char *name,
 
 		return 0;
 	}
+	// Double the xattr metadata size, subtracting 1 to account for worst case alignment.
+	size_t entry_size = (2 * LCFS_INODE_XATTRMETA_SIZE) - 1 + namelen + value_len;
+	// If this is the first xattr, add size for the header
+	if (node->n_xattrs == 0)
+		entry_size += LCFS_XATTR_HEADER_SIZE;
 
-	if (node->n_xattrs == UINT16_MAX) {
-		errno = EINVAL;
+	const size_t limit =
+		from_external_input ? LCFS_INODE_EXTERNAL_XATTR_MAX : UINT16_MAX;
+	if (node->xattr_size + entry_size > limit) {
+		errno = ERANGE;
 		return -1;
 	}
+	// Limiting total *space* must have limited count since each
+	// element takes > 1 byte in size, but let's verify that here too.
+	assert(node->n_xattrs < UINT16_MAX);
 
 	xattrs = realloc(node->xattrs,
 			 (node->n_xattrs + 1) * sizeof(struct lcfs_xattr_s));
@@ -1711,8 +1734,15 @@ int lcfs_node_set_xattr(struct lcfs_node_s *node, const char *name,
 	xattrs[node->n_xattrs].value = v;
 	xattrs[node->n_xattrs].value_len = value_len;
 	node->n_xattrs++;
+	node->xattr_size += entry_size;
 
 	return 0;
+}
+
+int lcfs_node_set_xattr(struct lcfs_node_s *node, const char *name,
+			const char *value, size_t value_len)
+{
+	return lcfs_node_set_xattr_internal(node, name, value, value_len, true);
 }
 
 /* This is an internal function.

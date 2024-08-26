@@ -72,7 +72,7 @@ static inline size_t erofs_xattr_inode_size(uint16_t xattr_icount)
 	size_t xattr_size = 0;
 	if (xattr_icount > 0)
 		xattr_size = sizeof(struct erofs_xattr_ibody_header) +
-			     (xattr_icount - 1) * 4;
+			     (xattr_icount - 1) * sizeof(struct erofs_xattr_entry);
 	return xattr_size;
 }
 

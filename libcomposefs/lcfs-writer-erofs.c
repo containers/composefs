@@ -1544,6 +1544,11 @@ static int lcfs_build_node_erofs_xattr(struct lcfs_node_s *node, uint8_t name_in
 				       const char *entry_name, uint8_t name_len,
 				       const char *value, uint16_t value_size)
 {
+	static_assert((sizeof(struct erofs_xattr_ibody_header) == LCFS_XATTR_HEADER_SIZE),
+		      "Verifying sizeof xattr header entry");
+	static_assert((sizeof(struct erofs_xattr_entry) == LCFS_INODE_XATTRMETA_SIZE),
+		      "Verifying sizeof xattr entry");
+
 	cleanup_free char *name =
 		erofs_get_xattr_name(name_index, entry_name, name_len);
 	if (name == NULL)
@@ -1598,7 +1603,7 @@ static int lcfs_build_node_erofs_xattr(struct lcfs_node_s *node, uint8_t name_in
 		}
 	}
 
-	if (lcfs_node_set_xattr(node, name, value, value_size) < 0)
+	if (lcfs_node_set_xattr_internal(node, name, value, value_size, false) < 0)
 		return -1;
 
 	return 0;

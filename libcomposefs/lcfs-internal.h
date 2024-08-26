@@ -42,6 +42,9 @@ typedef int errint_t;
  */
 #define LCFS_BUILD_INLINE_FILE_SIZE_LIMIT 64
 
+// Should match sizeof(struct erofs_xattr_ibody_header)
+#define LCFS_XATTR_HEADER_SIZE 12
+
 /* What may be returned by the kernel for digests */
 #define MAX_DIGEST_SIZE 64
 
@@ -162,6 +165,10 @@ struct lcfs_node_s {
 
 	struct lcfs_xattr_s *xattrs;
 	size_t n_xattrs;
+	/* Must not exceeded UINT16_max; the max size here is determined
+	 * by sizeof(erofs_xattr_ibody_header) + n_xattrs * sizeof(erofs_xattr_entry).
+	 */
+	size_t xattr_size;
 
 	bool digest_set;
 	uint8_t digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
@@ -223,6 +230,9 @@ int node_get_dtype(struct lcfs_node_s *node);
 
 int lcfs_node_rename_xattr(struct lcfs_node_s *node, size_t index,
 			   const char *new_name);
+int lcfs_node_set_xattr_internal(struct lcfs_node_s *node, const char *name,
+				 const char *value, size_t value_len,
+				 bool from_external_input);
 
 int lcfs_validate_mode(mode_t mode);
 int lcfs_node_last_ditch_validation(struct lcfs_node_s *node);
