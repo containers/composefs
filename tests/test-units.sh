@@ -2,6 +2,10 @@
 
 BINDIR=$(cd "$1" && pwd)
 
+# Its more likely that fsverity works in /var/tmp than in /tmp (which
+# is typically tmpfs) so use that here.
+export TMPDIR=${TMPDIR:-/var/tmp}
+
 set -e
 
 workdir=$(mktemp --directory --tmpdir lcfs-test.XXXXXX)
@@ -63,7 +67,11 @@ function  test_mount_digest () {
 
         local DIGEST=$(fsverity measure $dir/test.cfs | awk "{ print \$1 }" | sed s/sha256://)
 
-        $BINDIR/mount.composefs -o basedir=$dir/objects,digest=$DIGEST $dir/test.cfs $dir/mnt 2> $dir/stderr || assert_file_has_content $dir/stderr "Permission denied"
+        # We should either successfully mount, or start trying and fail for one of these reasons:
+        #  * Permission denied, if not root
+        #  * No such file or directory, if /dev/loop-control is missing
+        # What should not happen is that it should fail for fs-verity reasons before trying to mount.
+        $BINDIR/mount.composefs -o basedir=$dir/objects,digest=$DIGEST $dir/test.cfs $dir/mnt 2> $dir/stderr || assert_file_has_content $dir/stderr "Permission denied\|No such file or directory"
         umount $dir/mnt 2> $dir/stderr || true
     fi
 }
@@ -79,11 +87,11 @@ function test_composefs_info_measure_files () {
     assert_streq "$(tail -1 out.txt)" "91e7d88cb7bc9cf6d8db3b0ecf89af4abf204bef5b3ade5113d5b62ef374e70b"
 
     if [ $has_fsverity = y ]; then
-        fsverity enable --hash-alg=256 test.txt
+        fsverity enable --hash-alg=sha256 test.txt
         digest=$($BINDIR/composefs-info measure-file test.txt)
         assert_streq "$digest" "37061ef2ac4c21bec68489b56138c5780306a4ad7fe6676236ecdf2c9027cd92"
     fi
-    cd -
+    cd - &> /dev/null
 }
 
 function test_composefs_info_help () {
