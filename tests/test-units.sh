@@ -2,6 +2,10 @@
 
 BINDIR=$(cd "$1" && pwd)
 
+# Its more likely that fsverity works in /var/tmp than in /tmp (which
+# is typically tmpfs) so use that here.
+export TMPDIR=${TMPDIR:-/var/tmp}
+
 set -e
 
 workdir=$(mktemp --directory --tmpdir lcfs-test.XXXXXX)
