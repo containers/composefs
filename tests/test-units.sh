@@ -67,7 +67,11 @@ function  test_mount_digest () {
 
         local DIGEST=$(fsverity measure $dir/test.cfs | awk "{ print \$1 }" | sed s/sha256://)
 
-        $BINDIR/mount.composefs -o basedir=$dir/objects,digest=$DIGEST $dir/test.cfs $dir/mnt 2> $dir/stderr || assert_file_has_content $dir/stderr "Permission denied"
+        # We should either successfully mount, or start trying and fail for one of these reasons:
+        #  * Permission denied, if not root
+        #  * No such file or directory, if /dev/loop-control is missing
+        # What should not happen is that it should fail for fs-verity reasons before trying to mount.
+        $BINDIR/mount.composefs -o basedir=$dir/objects,digest=$DIGEST $dir/test.cfs $dir/mnt 2> $dir/stderr || assert_file_has_content $dir/stderr "Permission denied\|No such file or directory"
         umount $dir/mnt 2> $dir/stderr || true
     fi
 }
