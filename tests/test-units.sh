@@ -83,7 +83,7 @@ function test_composefs_info_measure_files () {
         digest=$($BINDIR/composefs-info measure-file test.txt)
         assert_streq "$digest" "37061ef2ac4c21bec68489b56138c5780306a4ad7fe6676236ecdf2c9027cd92"
     fi
-    cd -
+    cd - &> /dev/null
 }
 
 function test_composefs_info_help () {
