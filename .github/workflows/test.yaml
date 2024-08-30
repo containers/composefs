@@ -45,6 +45,12 @@ jobs:
         with:
           name: composefs.tar
           path: composefs.tar
+      - name: Upload log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: testlog-asan.txt
+          path: build/meson-logs/testlog.txt
   # This build doesn't enable ASAN, which e.g. makes it easier to use with Rust
   build-noasan:
     runs-on: ubuntu-latest
@@ -65,6 +71,12 @@ jobs:
         with:
           name: composefs-noasan.tar
           path: composefs.tar
+      - name: Upload log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: testlog-noasan.txt
+          path: build/meson-logs/testlog.txt
   build-baseline:
     runs-on: ubuntu-latest
     name: "Build on Ubuntu Focal"
