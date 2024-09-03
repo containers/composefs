@@ -6,6 +6,20 @@ permissions:
   actions: read
 
 jobs:
+  clang-format:
+    # To pick up a newer clang
+    runs-on: ubuntu-24.04
+    name: "clang-format"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo ./hacking/installdeps.sh
+      - name: Configure
+        run: meson setup build --prefix=/usr
+      - name: clang-format
+        run: ninja -C build clang-format-check
+  # This build doesn't enable ASAN, which e.g. makes it easier to use with Rust
   build:
     runs-on: ubuntu-latest
     name: "Build with ASAN"
@@ -31,6 +45,12 @@ jobs:
         with:
           name: composefs.tar
           path: composefs.tar
+      - name: Upload log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: testlog-asan.txt
+          path: build/meson-logs/testlog.txt
   # This build doesn't enable ASAN, which e.g. makes it easier to use with Rust
   build-noasan:
     runs-on: ubuntu-latest
@@ -51,6 +71,12 @@ jobs:
         with:
           name: composefs-noasan.tar
           path: composefs.tar
+      - name: Upload log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: testlog-noasan.txt
+          path: build/meson-logs/testlog.txt
   build-baseline:
     runs-on: ubuntu-latest
     name: "Build on Ubuntu Focal"
@@ -148,19 +174,6 @@ jobs:
         run: cargo test
       - name: Rust (all features)
         run: cargo test -F v1_0_4
-  clang-format:
-    runs-on: ubuntu-24.04
-    steps:
-      - name: checkout
-        uses: actions/checkout@v2
-      - name: install dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y make clang-format
-      - name: check formatting
-        run: |
-          sudo docker build -t clang-format hacking/clang-format
-          sudo docker run --rm -w /src -v ${PWD}:/src clang-format
   distcheck:
     runs-on: ubuntu-latest
     steps:
