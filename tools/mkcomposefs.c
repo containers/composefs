@@ -283,7 +283,11 @@ static char *parse_mtime(const char *str, size_t length, struct timespec *mtime)
 static char *parse_xattr(const char *data, size_t data_len, struct lcfs_node_s *node)
 {
 	const char *xattr_name = data;
-	size_t xattr_name_len = split_at(&data, &data_len, '=', NULL);
+	bool is_partial = false;
+	size_t xattr_name_len = split_at(&data, &data_len, '=', &is_partial);
+	if (is_partial) {
+		return make_error("Missing = in xattr");
+	}
 
 	char *err = NULL;
 	cleanup_free char *key =
