@@ -414,6 +414,19 @@ static char *tree_from_dump_line(dump_info *info, const char *line,
 {
 	int ret;
 
+	/* At least honggfuzz very quickly discovered that split_line() sloppily allows
+	 * embedded NUL characters, and its generated dumpfiles contain a lot of them
+	 * and make them unreadable by default.
+	 * We didn't document support for embedded NULs, and it only introduces
+	 * ambiguity in parsing, so let's just reject this early on.
+	 */
+	char *embedded_nul_offset = memchr(line, 0, line_len);
+	if (embedded_nul_offset != NULL) {
+		size_t off = embedded_nul_offset - line;
+		return make_error("Invalid embedded NUL character at position %lld",
+				  (unsigned long long)off);
+	}
+
 	/* Split out all fixed fields */
 	field_info fields[FIELD_XATTRS_START];
 	for (int i = 0; i < FIELD_XATTRS_START; i++) {
