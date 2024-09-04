@@ -157,17 +157,24 @@ fn unescape(s: &str) -> Result<Cow<[u8]>> {
     Ok(r.into())
 }
 
-/// Unescape a string into a Rust `OsStr` which is really just an alias for a byte array.
+/// Unescape a string into a Rust `OsStr` which is really just an alias for a byte array,
+/// but we also impose a constraint that it can not have an embedded NUL byte.
 fn unescape_to_osstr(s: &str) -> Result<Cow<OsStr>> {
-    let r = match unescape(s)? {
+    let v = unescape(s)?;
+    if v.contains(&0u8) {
+        anyhow::bail!("Invalid embedded NUL");
+    }
+    let r = match v {
         Cow::Borrowed(v) => Cow::Borrowed(OsStr::from_bytes(v)),
         Cow::Owned(v) => Cow::Owned(OsString::from_vec(v)),
     };
     Ok(r)
 }
 
-/// Unescape a string into a Rust `Path` which is really just an alias for a byte array,
-/// although there is an implicit assumption that there are no embedded `NUL` bytes.
+/// Unescape a string into a Rust `Path`, which is like a byte array but
+/// with a few constraints:
+/// - Cannot contain an embedded NUL
+/// - Cannot be empty, or longer than PATH_MAX
 fn unescape_to_path(s: &str) -> Result<Cow<Path>> {
     let v = unescape_to_osstr(s).and_then(|v| {
         if v.is_empty() {
@@ -600,7 +607,14 @@ mod tests {
 
     #[test]
     fn test_unescape_path() {
+        // Empty
         assert!(unescape_to_path("").is_err());
+        // Embedded NUL
+        assert!(unescape_to_path("\0").is_err());
+        assert!(unescape_to_path("foo\0bar").is_err());
+        assert!(unescape_to_path("\0foobar").is_err());
+        assert!(unescape_to_path("foobar\0").is_err());
+        assert!(unescape_to_path("foo\\x00bar").is_err());
         let mut p = "a".repeat(libc::PATH_MAX.try_into().unwrap());
         assert!(unescape_to_path(&p).is_ok());
         p.push('a');
@@ -637,6 +651,20 @@ mod tests {
             unescape_to_path_canonical("/.").unwrap().to_str().unwrap(),
             "/"
         );
+    }
+
+    #[test]
+    fn test_xattr() {
+        let v = Xattr::parse("foo=bar").unwrap();
+        assert_eq!(v.key.as_bytes(), b"foo");
+        assert_eq!(&*v.value, b"bar");
+        // Invalid embedded NUL in keys
+        assert!(Xattr::parse("foo\0bar=baz").is_err());
+        assert!(Xattr::parse("foo\x00bar=baz").is_err());
+        // But embedded NUL in values is OK
+        let v = Xattr::parse("security.selinux=bar\x00").unwrap();
+        assert_eq!(v.key.as_bytes(), b"security.selinux");
+        assert_eq!(&*v.value, b"bar\0");
     }
 
     #[test]
