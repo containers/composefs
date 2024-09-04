@@ -1200,7 +1200,7 @@ static int add_overlay_whiteouts(struct lcfs_node_s *root)
 		}
 
 		lcfs_node_set_mode(child, S_IFCHR | 0644);
-		lcfs_node_set_rdev(child, 0);
+		lcfs_node_set_rdev64(child, 0);
 
 		child->inode.st_uid = root->inode.st_uid;
 		child->inode.st_gid = root->inode.st_gid;

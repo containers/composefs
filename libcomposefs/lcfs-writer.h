@@ -135,8 +135,12 @@ LCFS_EXTERN uint32_t lcfs_node_get_uid(struct lcfs_node_s *node);
 LCFS_EXTERN void lcfs_node_set_uid(struct lcfs_node_s *node, uint32_t uid);
 LCFS_EXTERN uint32_t lcfs_node_get_gid(struct lcfs_node_s *node);
 LCFS_EXTERN void lcfs_node_set_gid(struct lcfs_node_s *node, uint32_t gid);
-LCFS_EXTERN uint32_t lcfs_node_get_rdev(struct lcfs_node_s *node);
-LCFS_EXTERN void lcfs_node_set_rdev(struct lcfs_node_s *node, uint32_t rdev);
+LCFS_EXTERN uint32_t lcfs_node_get_rdev(struct lcfs_node_s *node)
+	__attribute__((deprecated));
+LCFS_EXTERN uint64_t lcfs_node_get_rdev64(struct lcfs_node_s *node);
+LCFS_EXTERN void lcfs_node_set_rdev(struct lcfs_node_s *node, uint32_t rdev)
+	__attribute__((deprecated));
+LCFS_EXTERN void lcfs_node_set_rdev64(struct lcfs_node_s *node, uint64_t rdev);
 LCFS_EXTERN uint32_t lcfs_node_get_nlink(struct lcfs_node_s *node);
 LCFS_EXTERN void lcfs_node_set_nlink(struct lcfs_node_s *node, uint32_t nlink);
 LCFS_EXTERN uint64_t lcfs_node_get_size(struct lcfs_node_s *node);

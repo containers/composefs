@@ -219,10 +219,10 @@ static void dump_node(struct lcfs_node_s *node, char *path)
 	uint64_t size = lcfs_node_get_size(target);
 
 	print_escaped(*path == 0 ? "/" : path, -1, ESCAPE_STANDARD);
-	printf(" %" PRIu64 " %s%o %u %u %u %u %" PRIi64 ".%u ", size,
+	printf(" %" PRIu64 " %s%o %u %u %u %" PRIu64 " %" PRIi64 ".%u ", size,
 	       hardlink_path != NULL ? "@" : "", lcfs_node_get_mode(target),
 	       lcfs_node_get_nlink(target), lcfs_node_get_uid(target),
-	       lcfs_node_get_gid(target), lcfs_node_get_rdev(target),
+	       lcfs_node_get_gid(target), lcfs_node_get_rdev64(target),
 	       (int64_t)mtime.tv_sec, (unsigned int)mtime.tv_nsec);
 	print_escaped_optional(hardlink_path ? hardlink_path : payload, -1,
 			       ESCAPE_LONE_DASH);
