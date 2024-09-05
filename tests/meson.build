@@ -3,6 +3,7 @@ test_assets_small = [
   'config-with-hard-link.dump.gz',
   'special.dump',
   'special_v1.dump',
+  'no-newline.dump',
 ]
 
 test_assets_small_extra = [
