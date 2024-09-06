@@ -88,7 +88,7 @@ pub enum Item<'p> {
         /// Number of links
         nlink: u32,
         /// The device number
-        rdev: u32,
+        rdev: u64,
     },
     /// A symbolic link
     Symlink {
@@ -324,7 +324,7 @@ impl<'p> Entry<'p> {
         let nlink = u32::from_str(next("nlink")?)?;
         let uid = u32::from_str(next("uid")?)?;
         let gid = u32::from_str(next("gid")?)?;
-        let rdev = u32::from_str(next("rdev")?)?;
+        let rdev = u64::from_str(next("rdev")?)?;
         let mtime = Mtime::from_str(next("mtime")?)?;
         let payload = optional_str(next("payload")?);
         let content = optional_str(next("content")?);
@@ -410,7 +410,7 @@ impl<'p> Item<'p> {
         }
     }
 
-    pub(crate) fn rdev(&self) -> u32 {
+    pub(crate) fn rdev(&self) -> u64 {
         match self {
             Item::Device { rdev, .. } => *rdev,
             _ => 0,
