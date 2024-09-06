@@ -1139,6 +1139,9 @@ static int add_overlayfs_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node
 	if (type == S_IFCHR && node->inode.st_rdev == makedev(0, 0)) {
 		struct lcfs_node_s *parent = lcfs_node_get_parent(node);
 
+		// The input may have nonsensically been a chardev with nonzero size
+		// but we need to discard that.
+		node->inode.st_size = 0;
 		lcfs_node_set_mode(node,
 				   S_IFREG | (lcfs_node_get_mode(node) & ~S_IFMT));
 		ret = lcfs_node_set_xattr(node, OVERLAY_XATTR_ESCAPED_WHITEOUT,

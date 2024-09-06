@@ -4,6 +4,7 @@ test_assets_small = [
   'special.dump',
   'special_v1.dump',
   'no-newline.dump',
+  'honggfuzz-chardev-nonzero-size.dump',
 ]
 
 test_assets_small_extra = [
