@@ -643,6 +643,15 @@ static struct lcfs_node_s *tree_from_dump(FILE *input, char **out_err)
 			}
 		}
 	}
+	// Handle no trailing newline
+	if (buf.size > 0) {
+		char *err = tree_from_dump_line(&info, buf.buf, buf.size);
+		if (err != NULL) {
+			*out_err = err;
+			buffer_free(&buf);
+			return NULL;
+		}
+	}
 
 	buffer_free(&buf);
 

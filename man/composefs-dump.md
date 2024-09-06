@@ -14,7 +14,8 @@ files in it.
 
 The file format is very simple, with one file per line, first with a
 11 fixed fields, followed by a variable number of extended attributes
-for the file.
+for the file. It is recommended, but not required to include a trailing
+newline for the last file.
 
 Fields are separated by a single space, and lines by a single
 newline. Extended attributes further use '=' to separate key from
