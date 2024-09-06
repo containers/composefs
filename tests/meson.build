@@ -3,6 +3,7 @@ test_assets_small = [
   'config-with-hard-link.dump.gz',
   'special.dump',
   'special_v1.dump',
+  'honggfuzz-long-symlink.dump',
   'no-newline.dump',
   'honggfuzz-chardev-nonzero-size.dump',
 ]

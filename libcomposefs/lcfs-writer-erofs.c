@@ -508,6 +508,8 @@ static void compute_erofs_inode_size(struct lcfs_node_s *node)
 	if (type == S_IFDIR) {
 		compute_erofs_dir_size(node);
 	} else if (type == S_IFLNK) {
+		// Note this may be overridden later if the symlink target + inode + xattrs
+		// overflows a block.
 		node->erofs_n_blocks = 0;
 		assert(node->payload);
 		node->erofs_tailsize = strlen(node->payload);
@@ -587,12 +589,20 @@ static uint64_t compute_erofs_inode_padding_for_tail(struct lcfs_node_s *node,
 	 */
 
 	if (type == S_IFLNK) {
-		/* Due to how erofs_fill_symlink is implemented, we
-		 * need *both* the inode data and the symlink tail
-		 * data in the same block, wheras normally just the
-		 * tail data itself need to be inside a block.
+		/* By default we want both the inode data and the symlink tail
+		 * data in the same block, wheras for a regular file normally just the
+		 * tail data itself need to be inside a block. However
+		 * if that would overflow a block, then the symlink data needs
+		 * to follow.
 		 */
-		if (pos / EROFS_BLKSIZ != (pos + total_size - 1) / EROFS_BLKSIZ) {
+		uint64_t pos_block = pos / EROFS_BLKSIZ;
+		uint64_t end_block = (pos + total_size - 1) / EROFS_BLKSIZ;
+		uint64_t extra_block = total_size / EROFS_BLKSIZ;
+		if (extra_block > 0) {
+			node->erofs_n_blocks++;
+			node->erofs_tailsize = 0;
+		}
+		if (pos_block != end_block) {
 			return round_up(pos, EROFS_BLKSIZ) - pos;
 		}
 		return 0;
@@ -834,7 +844,7 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 	datalayout = (node->erofs_tailsize > 0) ? EROFS_INODE_FLAT_INLINE :
 						  EROFS_INODE_FLAT_PLAIN;
 
-	if (type == S_IFDIR || type == S_IFLNK) {
+	if (type == S_IFDIR) {
 		size = (uint64_t)node->erofs_n_blocks * EROFS_BLKSIZ +
 		       node->erofs_tailsize;
 	} else if (type == S_IFREG) {
@@ -847,6 +857,13 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 			datalayout = EROFS_INODE_CHUNK_BASED;
 			chunk_count = DIV_ROUND_UP(size, chunksize);
 			chunk_format = chunkbits - EROFS_BLKSIZ_BITS;
+		}
+	} else if (type == S_IFLNK) {
+		if (node->erofs_n_blocks == 0) {
+			size = node->erofs_tailsize;
+		} else {
+			assert(node->erofs_n_blocks == 1);
+			size = node->inode.st_size;
 		}
 	} else {
 		size = 0;
@@ -875,7 +892,7 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 			}
 		} else if (type == S_IFCHR || type == S_IFBLK) {
 			i.i_u.rdev = lcfs_u32_to_file(node->inode.st_rdev);
-		} else if (type == S_IFREG) {
+		} else if (type == S_IFREG || type == S_IFLNK) {
 			if (node->erofs_n_blocks > 0) {
 				i.i_u.raw_blkaddr = lcfs_u32_to_file(
 					(uint32_t)(ctx_erofs->current_end /
@@ -914,7 +931,7 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 			}
 		} else if (type == S_IFCHR || type == S_IFBLK) {
 			i.i_u.rdev = lcfs_u32_to_file(node->inode.st_rdev);
-		} else if (type == S_IFREG) {
+		} else if (type == S_IFREG || type == S_IFLNK) {
 			if (node->erofs_n_blocks > 0) {
 				i.i_u.raw_blkaddr = lcfs_u32_to_file(
 					(uint32_t)(ctx_erofs->current_end /
@@ -973,9 +990,11 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 		if (ret < 0)
 			return ret;
 	} else if (type == S_IFLNK) {
-		ret = lcfs_write(ctx, node->payload, strlen(node->payload));
-		if (ret < 0)
-			return ret;
+		if (node->erofs_n_blocks == 0) {
+			ret = lcfs_write(ctx, node->payload, strlen(node->payload));
+			if (ret < 0)
+				return ret;
+		}
 	} else if (type == S_IFREG) {
 		if (node->content != NULL) {
 			if (node->erofs_tailsize) {
@@ -1028,22 +1047,29 @@ static int write_erofs_file_content(struct lcfs_ctx_s *ctx, struct lcfs_node_s *
 	int type = node->inode.st_mode & S_IFMT;
 	off_t size = node->inode.st_size;
 
-	if (type != S_IFREG || node->erofs_n_blocks == 0)
+	uint8_t *target;
+	bool has_blocks = node->erofs_n_blocks > 0;
+	if (type == S_IFREG && has_blocks) {
+		assert(node->content != NULL);
+		target = node->content;
+	} else if (type == S_IFLNK && has_blocks) {
+		assert(node->payload != NULL);
+		target = (uint8_t *)node->payload;
+	} else {
 		return 0;
-
-	assert(node->content != NULL);
+	}
 
 	for (size_t i = 0; i < node->erofs_n_blocks; i++) {
 		off_t offset = i * EROFS_BLKSIZ;
 		off_t len = min(size - offset, EROFS_BLKSIZ);
 		int ret;
 
-		ret = lcfs_write(ctx, node->content + offset, len);
+		ret = lcfs_write(ctx, target + offset, len);
 		if (ret < 0)
 			return ret;
+		return lcfs_write_align(ctx, EROFS_BLKSIZ);
 	}
-
-	return lcfs_write_align(ctx, EROFS_BLKSIZ);
+	return 0;
 }
 
 static int write_erofs_data_blocks(struct lcfs_ctx_s *ctx)
@@ -1750,16 +1776,20 @@ static struct lcfs_node_s *lcfs_build_node_from_image(struct lcfs_image_data *da
 		// Filter only applies to toplevel
 		assert(filter == NULL);
 
-		if (file_size >= PATH_MAX || !tailpacked) {
+		if (file_size >= PATH_MAX) {
 			errno = EINVAL;
 			return NULL;
 		}
 
-		memcpy(name_buf, tail_data, file_size);
+		if (tailpacked) {
+			memcpy(name_buf, tail_data, file_size);
+		} else {
+			memcpy(name_buf, data->erofs_data + raw_blkaddr * EROFS_BLKSIZ,
+			       file_size);
+		}
 		name_buf[file_size] = 0;
 		if (lcfs_node_set_symlink_payload(node, name_buf) < 0)
 			return NULL;
-
 	} else if (type == S_IFREG && file_size != 0 && erofs_inode_is_flat(cino)) {
 		cleanup_free uint8_t *content = NULL;
 		size_t oob_size;
