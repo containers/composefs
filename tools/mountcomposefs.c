@@ -123,6 +123,7 @@ int main(int argc, char **argv)
 	bool opt_verity = false;
 	bool opt_tryverity = false;
 	bool opt_ro = false;
+	bool opt_copy = false;
 	int opt, fd, res, userns_fd;
 
 	while ((opt = getopt(argc, argv, "ht:o:")) != -1) {
@@ -198,6 +199,8 @@ int main(int argc, char **argv)
 			opt_ro = false;
 		} else if (strcmp("ro", key) == 0) {
 			opt_ro = true;
+		} else if (strcmp("copy", key) == 0) {
+			opt_copy = true;
 		} else {
 			errx(EXIT_FAILURE, "Unsupported option %s\n", key);
 		}
@@ -248,6 +251,8 @@ int main(int argc, char **argv)
 		options.flags |= LCFS_MOUNT_FLAGS_TRY_VERITY;
 	if (opt_ro)
 		options.flags |= LCFS_MOUNT_FLAGS_READONLY;
+	if (opt_copy)
+		options.flags |= LCFS_MOUNT_FLAGS_COPY;
 
 	if (opt_idmap != NULL) {
 		userns_fd = open(opt_idmap, O_RDONLY | O_CLOEXEC | O_NOCTTY);

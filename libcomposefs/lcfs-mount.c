@@ -37,6 +37,8 @@
 
 #include <sys/syscall.h>
 #include <sys/mount.h>
+#include <sys/mman.h>
+
 #ifdef HAVE_FSCONFIG_CMD_CREATE_LINUX_MOUNT_H
 #include <linux/mount.h>
 #endif
@@ -666,6 +668,35 @@ static errint_t lcfs_mount(struct lcfs_mount_state_s *state)
 	return -EINVAL;
 }
 
+static int lcfs_mount_copy_and_seal(int fd) {
+	int memfd = memfd_create(CFS_MOUNT_SOURCE, MFD_CLOEXEC | MFD_ALLOW_SEALING);
+	if (memfd < 0)
+		return -errno;
+
+	// in the general case, copy_file_range() to a memfd doesn't work
+	ssize_t n;
+	do {
+		char buffer[1 << 20];  // 1MB
+		n = read(fd, buffer, sizeof buffer);
+		if (n < 0)
+			break;
+		n = write(memfd, buffer, n);
+	} while (n > 0);
+
+	if (n < 0) {
+		close(memfd);
+		return n;
+	}
+
+	if (fcntl(memfd, F_ADD_SEALS, F_SEAL_SEAL | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_WRITE) < 0) {
+		int err = -errno;
+		close(memfd);
+		return err;
+	}
+
+	return memfd;
+}
+
 int lcfs_mount_fd(int fd, const char *mountpoint, struct lcfs_mount_options_s *options)
 {
 	struct lcfs_mount_state_s state = { .mountpoint = mountpoint,
@@ -680,7 +711,21 @@ int lcfs_mount_fd(int fd, const char *mountpoint, struct lcfs_mount_options_s *o
 		return -1;
 	}
 
+	int memfd = -1;
+	if (options->flags & LCFS_MOUNT_FLAGS_COPY) {
+		memfd = lcfs_mount_copy_and_seal(fd);
+		if (memfd < 0) {
+			return memfd;
+		} else {
+			state.fd = memfd;
+		}
+	}
+
 	res = lcfs_mount(&state);
+
+	if (memfd != -1)
+		close(memfd);
+
 	if (res < 0) {
 		errno = -res;
 		return -1;
@@ -708,10 +753,26 @@ int lcfs_mount_image(const char *path, const char *mountpoint,
 	if (fd < 0) {
 		return -1;
 	}
-	state.fd = fd;
+
+	int memfd = -1;
+	if (options->flags & LCFS_MOUNT_FLAGS_COPY) {
+		memfd = lcfs_mount_copy_and_seal(fd);
+		if (memfd < 0) {
+			errno = memfd;
+			return -1;
+		} else {
+			state.fd = memfd;
+		}
+	} else {
+		state.fd = fd;
+	}
 
 	res = lcfs_mount(&state);
+
 	close(fd);
+	if (memfd != -1)
+		close(memfd);
+
 	if (res < 0) {
 		errno = -res;
 		return -1;

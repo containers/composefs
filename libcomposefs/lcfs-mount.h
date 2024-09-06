@@ -37,8 +37,9 @@ enum lcfs_mount_flags_t {
 	LCFS_MOUNT_FLAGS_READONLY = (1 << 1),
 	LCFS_MOUNT_FLAGS_IDMAP = (1 << 3),
 	LCFS_MOUNT_FLAGS_TRY_VERITY = (1 << 4),
+	LCFS_MOUNT_FLAGS_COPY = (1 << 5),
 
-	LCFS_MOUNT_FLAGS_MASK = (1 << 5) - 1,
+	LCFS_MOUNT_FLAGS_MASK = (1 << 6) - 1,
 };
 
 struct lcfs_mount_options_s {
