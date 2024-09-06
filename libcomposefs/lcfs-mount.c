@@ -656,6 +656,8 @@ static errint_t lcfs_mount(struct lcfs_mount_state_s *state)
 	res = pread(state->fd, &header_data, HEADER_SIZE, 0);
 	if (res < 0)
 		return -errno;
+	else if (res != HEADER_SIZE)
+		return -EINVAL;
 
 	erofs_header = (struct lcfs_erofs_header_s *)header_data;
 	if (lcfs_u32_from_file(erofs_header->magic) == LCFS_EROFS_MAGIC)
