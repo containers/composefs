@@ -1009,12 +1009,24 @@ void lcfs_node_set_gid(struct lcfs_node_s *node, uint32_t gid)
 	node->inode.st_gid = gid;
 }
 
+// Deprecated: this truncates rdev to 32 bits
 uint32_t lcfs_node_get_rdev(struct lcfs_node_s *node)
+{
+	return (uint32_t)lcfs_node_get_rdev64(node);
+}
+
+uint64_t lcfs_node_get_rdev64(struct lcfs_node_s *node)
 {
 	return node->inode.st_rdev;
 }
 
+// Deprecated: this truncates rdev to 32 bits
 void lcfs_node_set_rdev(struct lcfs_node_s *node, uint32_t rdev)
+{
+	node->inode.st_rdev = rdev;
+}
+
+void lcfs_node_set_rdev64(struct lcfs_node_s *node, uint64_t rdev)
 {
 	node->inode.st_rdev = rdev;
 }

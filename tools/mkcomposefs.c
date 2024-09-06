@@ -512,7 +512,7 @@ static char *tree_from_dump_line(dump_info *info, const char *line, size_t line_
 	lcfs_node_set_nlink(node, nlink);
 	lcfs_node_set_uid(node, uid);
 	lcfs_node_set_gid(node, gid);
-	lcfs_node_set_rdev(node, rdev);
+	lcfs_node_set_rdev64(node, rdev);
 	lcfs_node_set_mtime(node, &mtime);
 	// Validate that symlinks are non-empty
 	if ((mode & S_IFMT) == S_IFLNK) {
