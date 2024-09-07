@@ -1,7 +1,9 @@
 test_assets_small = [
+  'honggfuzz-write-inode-data.dump',
   'config.dump.gz',
   'config-with-hard-link.dump.gz',
   'special.dump',
+  'bigfile.dump',
   'special_v1.dump',
   'honggfuzz-long-symlink.dump',
   'no-newline.dump',
@@ -18,6 +20,7 @@ test_assets_should_fail = [
   'should-fail-long-xattr-key.dump',
   'should-fail-long-xattr-value.dump',
   'should-fail-honggfuzz-long-xattr.dump',
+  'should-fail-too-big.dump', 
   'should-fail-no-ftype.dump',
   'should-fail-empty-name.dump',
   'should-fail-empty-link-name.dump',

@@ -480,10 +480,8 @@ static void compute_erofs_dir_size(struct lcfs_node_s *node)
 	node->erofs_tailsize = block_size;
 }
 
-static uint32_t compute_erofs_chunk_bitsize(struct lcfs_node_s *node)
+static uint32_t erofs_compute_chunk_bitsize(uint64_t file_size)
 {
-	uint64_t file_size = node->inode.st_size;
-
 	// Compute the chunksize to use for the file size
 	// We want as few chunks as possible, but not an
 	// unnecessary large chunk.
@@ -498,6 +496,18 @@ static uint32_t compute_erofs_chunk_bitsize(struct lcfs_node_s *node)
 		chunkbits = EROFS_CHUNK_FORMAT_BLKBITS_MASK + EROFS_BLKSIZ_BITS;
 
 	return chunkbits;
+}
+
+/* In composefs for non-inline files we just have a "stub" block filled
+ * with a small amount of data, because the real data lives in the underlying
+ * filesystem. The chunks are filled with 0xFF.
+ */
+void erofs_compute_chunking(uint64_t file_size, uint32_t *chunkbits,
+			    uint32_t *chunk_count)
+{
+	*chunkbits = erofs_compute_chunk_bitsize(file_size);
+	uint64_t chunksize = 1ULL << *chunkbits;
+	*chunk_count = DIV_ROUND_UP(file_size, chunksize);
 }
 
 static void compute_erofs_inode_size(struct lcfs_node_s *node)
@@ -522,9 +532,12 @@ static void compute_erofs_inode_size(struct lcfs_node_s *node)
 				node->erofs_tailsize = 0;
 			}
 		} else {
-			uint32_t chunkbits = compute_erofs_chunk_bitsize(node);
-			uint64_t chunksize = 1ULL << chunkbits;
-			uint32_t chunk_count = DIV_ROUND_UP(file_size, chunksize);
+			uint32_t chunkbits;
+			uint32_t chunk_count;
+			erofs_compute_chunking(node->inode.st_size, &chunkbits,
+					       &chunk_count);
+			// Currently only support single blocks.
+			assert(chunk_count <= LCFS_MAX_NONINLINE_CHUNKS);
 
 			node->erofs_n_blocks = 0;
 			node->erofs_tailsize = chunk_count * sizeof(uint32_t);
@@ -851,11 +864,11 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 		size = node->inode.st_size;
 
 		if (size > 0 && node->content == NULL) {
-			uint32_t chunkbits = compute_erofs_chunk_bitsize(node);
-			uint64_t chunksize = 1ULL << chunkbits;
-
+			uint32_t chunkbits;
+			erofs_compute_chunking(node->inode.st_size, &chunkbits,
+					       &chunk_count);
+			assert(chunk_count <= LCFS_MAX_NONINLINE_CHUNKS);
 			datalayout = EROFS_INODE_CHUNK_BASED;
-			chunk_count = DIV_ROUND_UP(size, chunksize);
 			chunk_format = chunkbits - EROFS_BLKSIZ_BITS;
 		}
 	} else if (type == S_IFLNK) {
@@ -1007,6 +1020,10 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 					return ret;
 			}
 		} else {
+			// Currently we assume this fits within a single block
+			assert(chunk_count <= LCFS_MAX_NONINLINE_CHUNKS);
+			assert(node->erofs_n_blocks == 0 ||
+			       node->erofs_n_blocks == 1);
 			for (size_t i = 0; i < chunk_count; i++) {
 				uint32_t empty_chunk = 0xFFFFFFFF;
 				ret = lcfs_write(ctx, &empty_chunk,

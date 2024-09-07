@@ -24,6 +24,7 @@
 #include "lcfs-fsverity.h"
 #include "lcfs-mount.h"
 #include "lcfs-erofs.h"
+#include "lcfs-erofs-internal.h"
 #include "hash.h"
 
 #include <errno.h>
@@ -1203,6 +1204,22 @@ int lcfs_node_last_ditch_validation(struct lcfs_node_s *node)
 	if (node->link_to_invalid) {
 		errno = EINVAL;
 		return -1;
+	}
+	switch (node->inode.st_mode & S_IFMT) {
+	case S_IFREG: {
+		// For now we cap max file size such that our "stub"
+		// fits within a single block.
+		if (node->inode.st_size > 0 && node->content == NULL) {
+			uint32_t chunkbits;
+			uint32_t chunk_count;
+			erofs_compute_chunking(node->inode.st_size, &chunkbits,
+					       &chunk_count);
+			if (chunk_count > LCFS_MAX_NONINLINE_CHUNKS) {
+				errno = EFBIG;
+				return -1;
+			}
+		}
+	}
 	}
 	return 0;
 }
