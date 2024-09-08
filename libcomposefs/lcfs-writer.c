@@ -1676,27 +1676,14 @@ int lcfs_node_set_xattr_internal(struct lcfs_node_s *node, const char *name,
 		return -1;
 	}
 
-	ssize_t index = find_xattr(node, name);
-
 	if (value_len > UINT16_MAX) {
 		errno = EINVAL;
 		return -1;
 	}
 
-	if (index >= 0) {
-		/* Already set, replace */
-		struct lcfs_xattr_s *xattr = &node->xattrs[index];
-		v = memdup(value, value_len);
-		if (v == NULL) {
-			errno = ENOMEM;
-			return -1;
-		}
-		free(xattr->value);
-		xattr->value = v;
-		xattr->value_len = value_len;
+	// Remove any existing value
+	(void)lcfs_node_unset_xattr(node, name);
 
-		return 0;
-	}
 	// Double the xattr metadata size, subtracting 1 to account for worst case alignment.
 	size_t entry_size = (2 * LCFS_INODE_XATTRMETA_SIZE) - 1 + namelen + value_len;
 	// If this is the first xattr, add size for the header
