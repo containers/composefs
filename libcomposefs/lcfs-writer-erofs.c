@@ -546,6 +546,8 @@ static void compute_erofs_inode_size(struct lcfs_node_s *node)
 		node->erofs_n_blocks = 0;
 		node->erofs_tailsize = 0;
 	}
+	// Just double check
+	assert(node->erofs_tailsize <= EROFS_BLKSIZ);
 }
 
 static void compute_erofs_xattr_counts(struct lcfs_node_s *node,
@@ -678,7 +680,9 @@ static int compute_erofs_inodes(struct lcfs_ctx_s *ctx)
 		extra_pad = compute_erofs_inode_padding_for_tail(
 			node, pos, inode_size, xattr_size);
 		node->erofs_ipad += extra_pad;
+		assert(node->erofs_ipad < EROFS_BLKSIZ);
 		pos += extra_pad;
+		assert(pos % EROFS_SLOTSIZE == 0);
 
 		node->erofs_isize = inode_size + xattr_size + node->erofs_tailsize;
 		ctx_erofs->n_data_blocks += node->erofs_n_blocks;
