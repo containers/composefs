@@ -989,6 +989,15 @@ void lcfs_node_set_mode(struct lcfs_node_s *node, uint32_t mode)
 	node->inode.st_mode = mode;
 }
 
+int lcfs_node_try_set_mode(struct lcfs_node_s *node, uint32_t mode)
+{
+	if (lcfs_validate_mode(mode) < 0) {
+		return -1;
+	}
+	node->inode.st_mode = mode;
+	return 0;
+}
+
 uint32_t lcfs_node_get_uid(struct lcfs_node_s *node)
 {
 	return node->inode.st_uid;

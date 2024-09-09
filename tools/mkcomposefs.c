@@ -437,7 +437,9 @@ static char *tree_from_dump_line(dump_info *info, const char *line, size_t line_
 	if (node == NULL) {
 		oom();
 	}
-	lcfs_node_set_mode(node, mode);
+	if (lcfs_node_try_set_mode(node, mode) < 0) {
+		return make_error("Invalid mode %o", (unsigned int)mode);
+	}
 
 	err = tree_add_node(info, path, node);
 	if (err)

@@ -131,6 +131,7 @@ LCFS_EXTERN struct lcfs_node_s *lcfs_node_get_hardlink_target(struct lcfs_node_s
 LCFS_EXTERN bool lcfs_node_dirp(struct lcfs_node_s *node);
 LCFS_EXTERN uint32_t lcfs_node_get_mode(struct lcfs_node_s *node);
 LCFS_EXTERN void lcfs_node_set_mode(struct lcfs_node_s *node, uint32_t mode);
+LCFS_EXTERN int lcfs_node_try_set_mode(struct lcfs_node_s *node, uint32_t mode);
 LCFS_EXTERN uint32_t lcfs_node_get_uid(struct lcfs_node_s *node);
 LCFS_EXTERN void lcfs_node_set_uid(struct lcfs_node_s *node, uint32_t uid);
 LCFS_EXTERN uint32_t lcfs_node_get_gid(struct lcfs_node_s *node);
