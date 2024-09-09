@@ -437,7 +437,10 @@ static char *tree_from_dump_line(dump_info *info, const char *line, size_t line_
 	if (node == NULL) {
 		oom();
 	}
-	lcfs_node_set_mode(node, mode);
+	if (lcfs_node_try_set_mode(node, mode) < 0) {
+		return make_error("Invalid mode %o", (unsigned int)mode);
+	}
+	unsigned int type = mode & S_IFMT;
 
 	err = tree_add_node(info, path, node);
 	if (err)
@@ -507,21 +510,22 @@ static char *tree_from_dump_line(dump_info *info, const char *line, size_t line_
 	if (digest == NULL && err)
 		return err;
 
-	lcfs_node_set_mode(node, mode);
-	lcfs_node_set_size(node, size);
+	if (type != S_IFLNK)
+		lcfs_node_set_size(node, size);
 	lcfs_node_set_nlink(node, nlink);
 	lcfs_node_set_uid(node, uid);
 	lcfs_node_set_gid(node, gid);
 	lcfs_node_set_rdev64(node, rdev);
 	lcfs_node_set_mtime(node, &mtime);
 	// Validate that symlinks are non-empty
-	if ((mode & S_IFMT) == S_IFLNK) {
-		if (payload == NULL) {
-			return make_error("Invalid empty symlink");
+	if (type == S_IFLNK) {
+		if (lcfs_node_set_symlink_payload(node, payload) < 0) {
+			return make_error("Invalid symlink");
 		}
+	} else {
+		if (lcfs_node_set_payload(node, payload) < 0)
+			return make_error("Invalid payload");
 	}
-	if (lcfs_node_set_payload(node, payload) < 0)
-		return make_error("Invalid payload");
 	if (content) {
 		ret = lcfs_node_set_content(node, (uint8_t *)content, size);
 		if (ret < 0)

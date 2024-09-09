@@ -813,7 +813,7 @@ struct lcfs_node_s *lcfs_load_node_from_file(int dirfd, const char *fname,
 			return NULL;
 
 		target[r] = '\0';
-		r = lcfs_node_set_payload(ret, target);
+		r = lcfs_node_set_symlink_payload(ret, target);
 		if (r < 0)
 			return NULL;
 	}
@@ -917,6 +917,33 @@ int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload)
 	return 0;
 }
 
+int lcfs_node_set_symlink_payload(struct lcfs_node_s *node, const char *payload)
+{
+	// Caller must have ensured this
+	assert((node->inode.st_mode & S_IFMT) == S_IFLNK);
+	// Symlink target must be non-empty
+	if (payload == NULL || !*payload) {
+		errno = EINVAL;
+		return -1;
+	}
+	// Call the "raw" API for setting payloads, which also verifies
+	// maximum length.
+	if (lcfs_node_set_payload(node, payload) < 0) {
+		return -1;
+	}
+	// We must have set a payload now
+	assert(node->payload);
+	// Historically we accept any arbitrary data in the dumpfile
+	// for the file size for symlink, and end up ignoring it
+	// ultimately when we write the EROFS. However previously
+	// it was pretty confusing as the in-memory node data
+	// could have a bogus size. If somehow the inode state claimed
+	// something else for size, let's always replace it with the symlink
+	// length which is canonical.
+	node->inode.st_size = strlen(node->payload);
+	return 0;
+}
+
 const char *lcfs_node_get_payload(struct lcfs_node_s *node)
 {
 	return node->payload;
@@ -987,6 +1014,15 @@ uint32_t lcfs_node_get_mode(struct lcfs_node_s *node)
 void lcfs_node_set_mode(struct lcfs_node_s *node, uint32_t mode)
 {
 	node->inode.st_mode = mode;
+}
+
+int lcfs_node_try_set_mode(struct lcfs_node_s *node, uint32_t mode)
+{
+	if (lcfs_validate_mode(mode) < 0) {
+		return -1;
+	}
+	node->inode.st_mode = mode;
+	return 0;
 }
 
 uint32_t lcfs_node_get_uid(struct lcfs_node_s *node)
