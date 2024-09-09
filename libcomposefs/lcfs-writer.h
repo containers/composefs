@@ -108,6 +108,8 @@ LCFS_EXTERN const char *lcfs_node_get_xattr_name(struct lcfs_node_s *node,
 						 size_t index);
 
 LCFS_EXTERN int lcfs_node_set_payload(struct lcfs_node_s *node, const char *payload);
+LCFS_EXTERN int lcfs_node_set_symlink_payload(struct lcfs_node_s *node,
+					      const char *payload);
 LCFS_EXTERN const char *lcfs_node_get_payload(struct lcfs_node_s *node);
 
 LCFS_EXTERN int lcfs_node_set_content(struct lcfs_node_s *node,

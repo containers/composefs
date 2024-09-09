@@ -1746,7 +1746,7 @@ static struct lcfs_node_s *lcfs_build_node_from_image(struct lcfs_image_data *da
 
 		memcpy(name_buf, tail_data, file_size);
 		name_buf[file_size] = 0;
-		if (lcfs_node_set_payload(node, name_buf) < 0)
+		if (lcfs_node_set_symlink_payload(node, name_buf) < 0)
 			return NULL;
 
 	} else if (type == S_IFREG && file_size != 0 && erofs_inode_is_flat(cino)) {
