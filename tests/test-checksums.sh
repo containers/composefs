@@ -43,11 +43,6 @@ for format in erofs ; do
             fsck.erofs $tmpfile
         fi
 
-        if [ $SHA != $EXPECTED_SHA ]; then
-            echo Invalid $format checksum of file generated from $file: $SHA, expected $EXPECTED_SHA
-            exit 1
-        fi
-
         # Ensure dump reproduces the same file
         ${VALGRIND_PREFIX} ${BINDIR}/composefs-dump $tmpfile $tmpfile2
         if ! cmp $tmpfile $tmpfile2; then
@@ -60,5 +55,11 @@ for format in erofs ; do
             echo Dump is not reproducible via composefs-info dump
             exit 1
         fi
+
+        if [ $SHA != $EXPECTED_SHA ]; then
+            echo Invalid $format checksum of file generated from $file: $SHA, expected $EXPECTED_SHA
+            exit 1
+        fi
+        echo "ok $file"
     done
 done
