@@ -507,7 +507,6 @@ static char *tree_from_dump_line(dump_info *info, const char *line, size_t line_
 	if (digest == NULL && err)
 		return err;
 
-	lcfs_node_set_mode(node, mode);
 	lcfs_node_set_size(node, size);
 	lcfs_node_set_nlink(node, nlink);
 	lcfs_node_set_uid(node, uid);
