@@ -5,9 +5,11 @@ test_assets_small = [
   'special.dump',
   'longlink.dump',
   'bigfile.dump',
+  'bigfile-xattr.dump',
   'special_v1.dump',
   'honggfuzz-long-symlink.dump',
   'honggfuzz-longlink-unterminated.dump',
+  'honggfuzz-bigfile-with-acl.dump',
   'no-newline.dump',
   'honggfuzz-chardev-nonzero-size.dump',
 ]

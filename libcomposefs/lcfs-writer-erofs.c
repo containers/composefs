@@ -638,6 +638,7 @@ static uint64_t compute_erofs_inode_padding_for_tail(struct lcfs_node_s *node,
 		/* Didn't fit, don't inline the tail. */
 		node->erofs_n_blocks++;
 		node->erofs_tailsize = 0;
+		return round_up(pos, EROFS_BLKSIZ) - pos;
 	}
 
 	return 0;
@@ -814,6 +815,17 @@ static int write_erofs_dentries(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node
 			return ret;
 	}
 
+	return 0;
+}
+
+static int write_empty_chunks(struct lcfs_ctx_s *ctx, uint32_t chunk_count)
+{
+	for (size_t i = 0; i < chunk_count; i++) {
+		uint32_t empty_chunk = 0xFFFFFFFF;
+		int ret = lcfs_write(ctx, &empty_chunk, sizeof(empty_chunk));
+		if (ret < 0)
+			return ret;
+	}
 	return 0;
 }
 
@@ -1015,28 +1027,21 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 			if (ret < 0)
 				return ret;
 		}
-	} else if (type == S_IFREG) {
+	} else if (type == S_IFREG && node->erofs_tailsize > 0) {
 		if (node->content != NULL) {
-			if (node->erofs_tailsize) {
-				uint64_t file_size = node->inode.st_size;
-				ret = lcfs_write(ctx,
-						 node->content + file_size -
-							 node->erofs_tailsize,
-						 node->erofs_tailsize);
-				if (ret < 0)
-					return ret;
-			}
+			uint64_t file_size = node->inode.st_size;
+			ret = lcfs_write(ctx, node->content + file_size - node->erofs_tailsize,
+					 node->erofs_tailsize);
+			if (ret < 0)
+				return ret;
 		} else {
 			// Currently we assume this fits within a single block
 			assert(chunk_count <= LCFS_MAX_NONINLINE_CHUNKS);
 			assert(node->erofs_n_blocks == 0 ||
 			       node->erofs_n_blocks == 1);
-			for (size_t i = 0; i < chunk_count; i++) {
-				uint32_t empty_chunk = 0xFFFFFFFF;
-				ret = lcfs_write(ctx, &empty_chunk,
-						 sizeof(empty_chunk));
-				if (ret < 0)
-					return ret;
+			ret = write_empty_chunks(ctx, chunk_count);
+			if (ret < 0) {
+				return ret;
 			}
 		}
 	}
@@ -1074,7 +1079,16 @@ static int write_erofs_file_content(struct lcfs_ctx_s *ctx, struct lcfs_node_s *
 	uint8_t *target;
 	bool has_blocks = node->erofs_n_blocks > 0;
 	if (type == S_IFREG && has_blocks) {
-		assert(node->content != NULL);
+		// If this is a non-inline file, then we need to write at most
+		// a single block-sized chunk.
+		if (node->content == NULL) {
+			assert(node->erofs_tailsize == 0);
+			// Currently we assume this fits within a single block
+			assert(node->erofs_n_blocks == 1);
+			// Note early return here
+			return write_empty_chunks(ctx, 1024);
+		}
+		// If it's an inline file, provide the content to write
 		target = node->content;
 	} else if (type == S_IFLNK && has_blocks) {
 		assert(node->payload != NULL);
