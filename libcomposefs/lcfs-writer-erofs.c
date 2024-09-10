@@ -305,7 +305,7 @@ static size_t xattr_erofs_inode_size(size_t n_shared_xattrs, size_t unshared_xat
 	}
 
 	return round_up(sizeof(struct erofs_xattr_ibody_header) +
-				n_shared_xattrs * sizeof(uint32_t) +
+				n_shared_xattrs * sizeof(struct erofs_xattr_entry) +
 				unshared_xattrs_size,
 			sizeof(uint32_t));
 }
