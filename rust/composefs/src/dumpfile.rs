@@ -588,9 +588,7 @@ mod tests {
     #[test]
     fn test_unescape_path() {
         assert!(unescape_to_path("").is_err());
-        let mut p = std::iter::repeat('a')
-            .take(libc::PATH_MAX.try_into().unwrap())
-            .collect::<String>();
+        let mut p = "a".repeat(libc::PATH_MAX.try_into().unwrap());
         assert!(unescape_to_path(&p).is_ok());
         p.push('a');
         assert!(unescape_to_path(&p).is_err());
