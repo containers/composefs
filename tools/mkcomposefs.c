@@ -401,7 +401,8 @@ static char *tree_resolve_hardlinks(dump_info *info)
 	return NULL;
 }
 
-static char *tree_from_dump_line(dump_info *info, const char *line, size_t line_len)
+static char *tree_from_dump_line(dump_info *info, const char *line,
+				 size_t line_len, bool strict_mode)
 {
 	int ret;
 
@@ -515,12 +516,27 @@ static char *tree_from_dump_line(dump_info *info, const char *line, size_t line_
 	lcfs_node_set_nlink(node, nlink);
 	lcfs_node_set_uid(node, uid);
 	lcfs_node_set_gid(node, gid);
-	lcfs_node_set_rdev64(node, rdev);
+	if (type == S_IFCHR || type == S_IFBLK) {
+		lcfs_node_set_rdev64(node, rdev);
+	} else if (strict_mode && rdev != 0) {
+		return make_error("Non-zero devnum on non-device");
+	}
 	lcfs_node_set_mtime(node, &mtime);
 	// Validate that symlinks are non-empty
 	if (type == S_IFLNK) {
 		if (lcfs_node_set_symlink_payload(node, payload) < 0) {
 			return make_error("Invalid symlink");
+		}
+		if (strict_mode) {
+			size_t payload_len = strlen(payload);
+			if (size != payload_len) {
+				return make_error(
+					"Invalid symlink size %lld, must match size %lld",
+					(long long)payload_len, (long long)size);
+			}
+			if (content && *content) {
+				return make_error("Symlink cannot have content");
+			}
 		}
 	} else {
 		if (lcfs_node_set_payload(node, payload) < 0)
@@ -617,6 +633,10 @@ static struct lcfs_node_s *tree_from_dump(FILE *input, char **out_err)
 
 	struct buffer buf = { NULL };
 
+	// For now a hidden environment variable, may be promoted to a stable CLI
+	// option once we're happy with semantics.
+	bool strict_mode = getenv("CFS_PARSE_STRICT") != NULL;
+
 	while (!feof(input)) {
 		size_t bytes_read = buffer_fill(&buf, input);
 		bool short_read = bytes_read == 0;
@@ -632,7 +652,8 @@ static struct lcfs_node_s *tree_from_dump(FILE *input, char **out_err)
 				split_at(&data, &remaining_data, '\n', &partial);
 
 			if (!partial || short_read) {
-				char *err = tree_from_dump_line(&info, line, line_len);
+				char *err = tree_from_dump_line(
+					&info, line, line_len, strict_mode);
 				if (err != NULL) {
 					*out_err = err;
 					buffer_free(&buf);
@@ -648,13 +669,16 @@ static struct lcfs_node_s *tree_from_dump(FILE *input, char **out_err)
 		}
 	}
 	// Handle no trailing newline
-	if (buf.size > 0) {
-		char *err = tree_from_dump_line(&info, buf.buf, buf.size);
+	if (buf.size > 0 && !strict_mode) {
+		char *err = tree_from_dump_line(&info, buf.buf, buf.size, strict_mode);
 		if (err != NULL) {
 			*out_err = err;
 			buffer_free(&buf);
 			return NULL;
 		}
+	} else if (buf.size > 0) {
+		*out_err = make_error("Missing trailing newline");
+		return NULL;
 	}
 
 	buffer_free(&buf);

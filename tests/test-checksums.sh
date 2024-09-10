@@ -14,6 +14,12 @@ tmpfile=$(mktemp --tmpdir lcfs-test.XXXXXX)
 tmpfile2=$(mktemp --tmpdir lcfs-test.XXXXXX)
 trap 'rm -rf -- "$tmpfile" "$tmpfile2"' EXIT
 
+# Ensure our builtin dumpfiles are strict, minus some exceptions
+declare -A nonstrict
+nonstrict=(
+    ["no-newline.dump"]="1"
+)
+
 for format in erofs ; do
     for file in ${TEST_ASSETS} ; do
         if [ ! -f $ASSET_DIR/$file ] ; then
@@ -33,6 +39,12 @@ for format in erofs ; do
             CAT=zcat
         else
             CAT=cat
+        fi
+
+        if test -v "nonstrict[$file]"; then
+            unset CFS_PARSE_STRICT
+        else
+            export CFS_PARSE_STRICT=1
         fi
 
         $CAT $ASSET_DIR/$file | ${VALGRIND_PREFIX} ${BINDIR}/mkcomposefs $VERSION_ARG --from-file - $tmpfile
@@ -60,6 +72,6 @@ for format in erofs ; do
             echo Invalid $format checksum of file generated from $file: $SHA, expected $EXPECTED_SHA
             exit 1
         fi
-        echo "ok $file"
+        echo "ok $file (CFS_PARSE_STRICT=${CFS_PARSE_STRICT:-0})"
     done
 done
