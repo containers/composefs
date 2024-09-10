@@ -1818,6 +1818,12 @@ static struct lcfs_node_s *lcfs_build_node_from_image(struct lcfs_image_data *da
 		// Filter only applies to toplevel
 		assert(filter == NULL);
 
+		// Reject obviously bogus file sizes
+		if (file_size > data->erofs_data_size) {
+			errno = EINVAL;
+			return NULL;
+		}
+
 		content = malloc(file_size);
 		if (content == NULL) {
 			errno = ENOMEM;
