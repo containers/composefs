@@ -1835,8 +1835,10 @@ static struct lcfs_node_s *lcfs_build_node_from_image(struct lcfs_image_data *da
 		// Filter only applies to toplevel
 		assert(filter == NULL);
 
-		// Reject obviously bogus file sizes
-		if (file_size > data->erofs_data_size) {
+		// Strictly limit to our max size, and for good measure
+		// the size of the file (which should always be larger than 4k
+		// in reality).
+		if (file_size > min(LCFS_INLINE_CONTENT_MAX, data->erofs_data_size)) {
 			errno = EINVAL;
 			return NULL;
 		}

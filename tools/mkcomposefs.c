@@ -523,9 +523,11 @@ static char *tree_from_dump_line(dump_info *info, const char *line,
 					 &content_len, &err);
 	if (content == NULL && err)
 		return err;
+#ifndef FUZZER // Bypass this data-dependency when fuzzing to increase coverage
 	if (content && content_len != size)
 		return make_error("Invalid content size %lld, must match size %lld",
 				  (long long)content_len, (long long)size);
+#endif
 
 	cleanup_free char *digest = unescape_optional_string(
 		fields[FIELD_DIGEST].data, fields[FIELD_DIGEST].len, NULL, &err);
@@ -563,7 +565,14 @@ static char *tree_from_dump_line(dump_info *info, const char *line,
 		if (lcfs_node_set_payload(node, payload) < 0)
 			return make_error("Invalid payload");
 		if (content) {
-			ret = lcfs_node_set_content(node, (uint8_t *)content, size);
+			if (content_len > LCFS_INLINE_CONTENT_MAX) {
+				return make_error(
+					"Inline content size %lld exceeds maximum %lld",
+					(long long)content_len,
+					(long long)LCFS_INLINE_CONTENT_MAX);
+			}
+			ret = lcfs_node_set_content(node, (uint8_t *)content,
+						    content_len);
 			if (ret < 0)
 				oom();
 		}

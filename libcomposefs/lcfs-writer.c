@@ -733,7 +733,7 @@ int lcfs_node_set_from_content(struct lcfs_node_s *node, int dirfd,
 	bool is_zerosized = node->inode.st_size == 0;
 	bool do_digest = !is_zerosized && (compute_digest || by_digest);
 	bool do_inline = !is_zerosized && !no_inline &&
-			 node->inode.st_size <= LCFS_BUILD_INLINE_FILE_SIZE_LIMIT;
+			 node->inode.st_size <= LCFS_RECOMMENDED_INLINE_CONTENT_MAX;
 	int r;
 
 	if (do_digest || do_inline) {
@@ -763,7 +763,7 @@ int lcfs_node_set_from_content(struct lcfs_node_s *node, int dirfd,
 			lseek(fd, 0, SEEK_SET);
 		}
 		if (do_inline) {
-			uint8_t buf[LCFS_BUILD_INLINE_FILE_SIZE_LIMIT];
+			uint8_t buf[LCFS_RECOMMENDED_INLINE_CONTENT_MAX];
 
 			r = read_content(fd, node->inode.st_size, buf);
 			if (r < 0)
@@ -982,6 +982,10 @@ int lcfs_node_set_content(struct lcfs_node_s *node, const uint8_t *data,
 	uint8_t *dup = NULL;
 
 	if (data && data_size != 0) {
+		if (data_size > LCFS_INLINE_CONTENT_MAX) {
+			errno = EINVAL;
+			return -1;
+		}
 		dup = malloc(data_size);
 		if (dup == NULL) {
 			errno = ENOMEM;
