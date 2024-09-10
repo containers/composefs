@@ -180,8 +180,10 @@ struct lcfs_node_s {
 	bool in_tree;
 	uint32_t inode_num;
 
+	/* These fields are set by compute_erofs_inodes */
 	bool erofs_compact;
 	uint32_t erofs_ipad; /* padding before inode data */
+	uint32_t erofs_xattr_size;
 	uint32_t erofs_isize;
 	uint64_t erofs_nid;
 	uint32_t erofs_n_blocks;

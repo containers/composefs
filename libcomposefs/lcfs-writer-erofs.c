@@ -668,8 +668,8 @@ static int compute_erofs_inodes(struct lcfs_ctx_s *ctx)
 
 		compute_erofs_xattr_counts(node, &n_shared_xattrs,
 					   &unshared_xattrs_size);
-		xattr_size = xattr_erofs_inode_size(n_shared_xattrs,
-						    unshared_xattrs_size);
+		node->erofs_xattr_size = xattr_size =
+			xattr_erofs_inode_size(n_shared_xattrs, unshared_xattrs_size);
 
 		/* Align inode start to next slot */
 		ppos = pos;
@@ -968,6 +968,7 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 
 	/* write xattrs */
 	if (xattr_size) {
+		const size_t pre_xattr_bytes_written = ctx->bytes_written;
 		struct erofs_xattr_ibody_header xattr_header = { 0 };
 		xattr_header.h_shared_count = n_shared_xattrs;
 		xattr_header.h_name_filter =
@@ -1000,6 +1001,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 					return ret;
 			}
 		}
+		assert(ctx->bytes_written - pre_xattr_bytes_written ==
+		       node->erofs_xattr_size);
 	}
 
 	if (type == S_IFDIR) {
