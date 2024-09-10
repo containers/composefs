@@ -7,6 +7,7 @@ test_assets_small = [
   'bigfile.dump',
   'special_v1.dump',
   'honggfuzz-long-symlink.dump',
+  'honggfuzz-longlink-unterminated.dump',
   'no-newline.dump',
   'honggfuzz-chardev-nonzero-size.dump',
 ]

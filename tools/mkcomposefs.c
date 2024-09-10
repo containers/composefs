@@ -555,18 +555,18 @@ static char *tree_from_dump_line(dump_info *info, const char *line,
 					"Invalid symlink size %lld, must match size %lld",
 					(long long)payload_len, (long long)size);
 			}
-			if (content && *content) {
+			if (content && content_len > 0) {
 				return make_error("Symlink cannot have content");
 			}
 		}
 	} else {
 		if (lcfs_node_set_payload(node, payload) < 0)
 			return make_error("Invalid payload");
-	}
-	if (content) {
-		ret = lcfs_node_set_content(node, (uint8_t *)content, size);
-		if (ret < 0)
-			oom();
+		if (content) {
+			ret = lcfs_node_set_content(node, (uint8_t *)content, size);
+			if (ret < 0)
+				oom();
+		}
 	}
 
 	if (digest) {
