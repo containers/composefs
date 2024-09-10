@@ -41,7 +41,7 @@ jobs:
       - name: Capture build
         run: DESTDIR=$(pwd)/instroot meson install -C build && tar -C instroot -czf composefs.tar .
       - name: Upload binary
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: composefs.tar
           path: composefs.tar
@@ -67,7 +67,7 @@ jobs:
       - name: Capture build
         run: DESTDIR=$(pwd)/instroot meson install -C build && tar -C instroot -czf composefs.tar .
       - name: Upload binary
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: composefs-noasan.tar
           path: composefs.tar
@@ -148,7 +148,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
       - name: Download
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: composefs.tar
       - run: sudo tar -C / -xvf composefs.tar
@@ -162,7 +162,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
       - name: Download
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: composefs-noasan.tar
       - run: sudo tar -C / -xvf composefs.tar
