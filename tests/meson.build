@@ -63,6 +63,8 @@ foreach case : test_assets_should_fail
 endforeach
 test('check-should-fail', find_program('test-should-fail.sh'), args : should_fail_args)
 
+test('test-lcfs', executable('test-lcfs', 'test-lcfs.c', include_directories: '../libcomposefs', link_with: libcomposefs))
+
 # support running the tests under valgrind using 'meson test -C build --setup=valgrind'
 valgrind = find_program('valgrind', required : false)
 if valgrind.found()

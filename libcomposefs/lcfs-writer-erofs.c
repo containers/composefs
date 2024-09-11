@@ -1233,6 +1233,12 @@ static int rewrite_tree_node_for_erofs(struct lcfs_ctx_s *ctx,
 {
 	int ret;
 
+	// This is one of the first walks of the tree we do, so validate
+	// everything here.
+	ret = lcfs_node_validate(node);
+	if (ret < 0)
+		return ret;
+
 	ret = add_overlayfs_xattrs(ctx, node);
 	if (ret < 0)
 		return ret;
