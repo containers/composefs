@@ -15,11 +15,14 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
+use std::usize;
 
 use anyhow::Context;
 use anyhow::{anyhow, Result};
 use libc::S_IFDIR;
 
+/// Maximum size accepted for inline content.
+const MAX_INLINE_CONTENT: u16 = 5000;
 /// https://github.com/torvalds/linux/blob/47ac09b91befbb6a235ab620c32af719f8208399/include/uapi/linux/limits.h#L15
 /// This isn't exposed in libc/rustix, and in any case we should be conservative...if this ever
 /// gets bumped it'd be a hazard.
@@ -118,15 +121,25 @@ pub enum Item<'p> {
     },
 }
 
-/// Unescape a byte array according to the composefs dump file escaping format.
-fn unescape(s: &str) -> Result<Cow<[u8]>> {
-    // If there are no escapes, just return the input unchanged
-    if !s.contains('\\') {
+/// Unescape a byte array according to the composefs dump file escaping format,
+/// limiting the maximum possible size.
+fn unescape_limited(s: &str, max: usize) -> Result<Cow<[u8]>> {
+    // If there are no escapes, just return the input unchanged. However,
+    // it must also be ASCII to maintain a 1-1 correspondence between byte
+    // and character.
+    if !s.contains('\\') && s.chars().all(|c| c.is_ascii()) {
+        let len = s.len();
+        if len > max {
+            anyhow::bail!("Input {len} exceeded maximum length {max}");
+        }
         return Ok(Cow::Borrowed(s.as_bytes()));
     }
     let mut it = s.chars();
     let mut r = Vec::new();
     while let Some(c) = it.next() {
+        if r.len() == max {
+            anyhow::bail!("Input exceeded maximum length {max}");
+        }
         if c != '\\' {
             write!(r, "{c}").unwrap();
             continue;
@@ -155,6 +168,11 @@ fn unescape(s: &str) -> Result<Cow<[u8]>> {
         r.push(c);
     }
     Ok(r.into())
+}
+
+/// Unescape a byte array according to the composefs dump file escaping format.
+fn unescape(s: &str) -> Result<Cow<[u8]>> {
+    return unescape_limited(s, usize::MAX);
 }
 
 /// Unescape a string into a Rust `OsStr` which is really just an alias for a byte array,
@@ -364,7 +382,9 @@ impl<'p> Entry<'p> {
                 libc::S_IFREG => Item::Regular {
                     size,
                     nlink,
-                    inline_content: content.map(unescape).transpose()?,
+                    inline_content: content
+                        .map(|c| unescape_limited(c, MAX_INLINE_CONTENT.into()))
+                        .transpose()?,
                     fsverity_digest: fsverity_digest.map(ToOwned::to_owned),
                 },
                 libc::S_IFLNK => {
@@ -603,6 +623,21 @@ mod tests {
             escape(&mut buf, src.as_bytes(), EscapeMode::XattrKey).unwrap();
             assert_eq!(expected, &buf);
         }
+    }
+
+    #[test]
+    fn test_unescape() {
+        assert_eq!(unescape("").unwrap().len(), 0);
+        assert_eq!(unescape_limited("", 0).unwrap().len(), 0);
+        assert!(unescape_limited("foobar", 3).is_err());
+        // This is borrowed input
+        assert!(matches!(
+            unescape_limited("foobar", 6).unwrap(),
+            Cow::Borrowed(_)
+        ));
+        // But non-ASCII is currently owned out of conservatism
+        assert!(matches!(unescape_limited("→", 6).unwrap(), Cow::Owned(_)));
+        assert!(unescape_limited("foo→bar", 3).is_err());
     }
 
     #[test]
