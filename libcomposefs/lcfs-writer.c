@@ -1665,7 +1665,10 @@ int lcfs_node_unset_xattr(struct lcfs_node_s *node, const char *name)
 	ssize_t index = find_xattr(node, name);
 
 	if (index >= 0) {
-		size_t value_len = node->xattrs[index].value_len;
+		struct lcfs_xattr_s *xattr = &node->xattrs[index];
+		size_t value_len = xattr->value_len;
+		free(xattr->key);
+		free(xattr->value);
 		if (index != (ssize_t)node->n_xattrs - 1)
 			node->xattrs[index] = node->xattrs[node->n_xattrs - 1];
 		node->n_xattrs--;
