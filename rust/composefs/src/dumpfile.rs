@@ -388,6 +388,9 @@ impl<'p> Entry<'p> {
                     fsverity_digest: fsverity_digest.map(ToOwned::to_owned),
                 },
                 libc::S_IFLNK => {
+                    if content.is_some() {
+                        anyhow::bail!("symlinks cannot have content");
+                    }
                     // Note that the target of *symlinks* is not required to be in canonical form,
                     // as we don't actually traverse those links on our own, and we need to support
                     // symlinks that e.g. contain `//` or other things.
@@ -399,9 +402,24 @@ impl<'p> Entry<'p> {
                     }
                     Item::Symlink { nlink, target }
                 }
-                libc::S_IFIFO => Item::Fifo { nlink },
-                libc::S_IFCHR | libc::S_IFBLK => Item::Device { nlink, rdev },
-                libc::S_IFDIR => Item::Directory { size, nlink },
+                libc::S_IFIFO => {
+                    if content.is_some() {
+                        anyhow::bail!("entry cannot have content");
+                    }
+                    Item::Fifo { nlink }
+                }
+                libc::S_IFCHR | libc::S_IFBLK => {
+                    if content.is_some() {
+                        anyhow::bail!("entry cannot have content");
+                    }
+                    Item::Device { nlink, rdev }
+                }
+                libc::S_IFDIR => {
+                    if content.is_some() {
+                        anyhow::bail!("entry cannot have content");
+                    }
+                    Item::Directory { size, nlink }
+                }
                 o => {
                     anyhow::bail!("Unhandled mode {o:o}")
                 }
@@ -772,6 +790,10 @@ mod tests {
             (
                 "dir hardlink",
                 include_str!("../../../tests/assets/should-fail-dir-hardlink.dump"),
+            ),
+            (
+                "content in fifo",
+                "/ 4096 40755 2 0 0 0 0.0 - - -\n/fifo 0 10777 1 0 0 0 0.0 - foobar -",
             ),
         ];
         for (name, case) in CASES.iter().copied() {
