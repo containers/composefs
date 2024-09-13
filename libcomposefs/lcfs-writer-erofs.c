@@ -498,10 +498,9 @@ static uint32_t erofs_compute_chunk_bitsize(uint64_t file_size)
 	return chunkbits;
 }
 
-/* In composefs for non-inline files we just have a "stub" block filled
- * with a small amount of data, because the real data lives in the underlying
- * filesystem. The chunks are filled with 0xFF.
- */
+// Determine how many "chunks" we'd need to represent a file of this
+// size using EROFS_INODE_CHUNK_BASED.
+// See https://erofs.docs.kernel.org/en/latest/core_ondisk.html
 void erofs_compute_chunking(uint64_t file_size, uint32_t *chunkbits,
 			    uint32_t *chunk_count)
 {
@@ -818,10 +817,12 @@ static int write_erofs_dentries(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node
 	return 0;
 }
 
-static int write_empty_chunks(struct lcfs_ctx_s *ctx, uint32_t chunk_count)
+// Each chunk pointer appears as if it's filled with zeros using the dedicated
+// EROFS_NULL_ADDR.
+static int write_nullptr_chunks(struct lcfs_ctx_s *ctx, uint32_t chunk_count)
 {
 	for (size_t i = 0; i < chunk_count; i++) {
-		uint32_t empty_chunk = 0xFFFFFFFF;
+		uint32_t empty_chunk = EROFS_NULL_ADDR;
 		int ret = lcfs_write(ctx, &empty_chunk, sizeof(empty_chunk));
 		if (ret < 0)
 			return ret;
@@ -1039,7 +1040,7 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 			assert(chunk_count <= LCFS_MAX_NONINLINE_CHUNKS);
 			assert(node->erofs_n_blocks == 0 ||
 			       node->erofs_n_blocks == 1);
-			ret = write_empty_chunks(ctx, chunk_count);
+			ret = write_nullptr_chunks(ctx, chunk_count);
 			if (ret < 0) {
 				return ret;
 			}
@@ -1086,7 +1087,7 @@ static int write_erofs_file_content(struct lcfs_ctx_s *ctx, struct lcfs_node_s *
 			// Currently we assume this fits within a single block
 			assert(node->erofs_n_blocks == 1);
 			// Note early return here
-			return write_empty_chunks(ctx, 1024);
+			return write_nullptr_chunks(ctx, 1024);
 		}
 		// If it's an inline file, provide the content to write
 		target = node->content;
@@ -1859,6 +1860,15 @@ static struct lcfs_node_s *lcfs_build_node_from_image(struct lcfs_image_data *da
 		if (ret < 0) {
 			return NULL;
 		}
+	} else if (type == S_IFREG && file_size != 0) {
+		// If it's not an inline file, then it must be chunk based.
+		uint16_t layout = erofs_inode_datalayout(cino);
+		if (layout != EROFS_INODE_CHUNK_BASED) {
+			errno = EINVAL;
+			return NULL;
+		}
+		// In an extended "fsck" mode we could verify that we have
+		// EROFS_NULL_ADDR blocks here.
 	}
 
 	if (xattr_icount > 0) {
