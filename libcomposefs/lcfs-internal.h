@@ -36,11 +36,8 @@
 /* This is used for (internal) functions that return zero or -errno, functions that set errno return int */
 typedef int errint_t;
 
-/* When using LCFS_BUILD_INLINE_SMALL in lcfs_load_node_from_file() inline files below this size
- * We pick 64 which is the size of a sha256 digest that would otherwise be used as a redirect
- * xattr, so the inlined file is smaller.
- */
-#define LCFS_BUILD_INLINE_FILE_SIZE_LIMIT 64
+// Should match sizeof(struct erofs_xattr_ibody_header)
+#define LCFS_XATTR_HEADER_SIZE 12
 
 /* What may be returned by the kernel for digests */
 #define MAX_DIGEST_SIZE 64
@@ -153,6 +150,7 @@ struct lcfs_node_s {
 
 	/* Used to create hard links.  */
 	struct lcfs_node_s *link_to; /* Owns refs */
+	bool link_to_invalid; /* We detected a cycle */
 
 	char *name;
 	char *payload; /* backing file or symlink target */
@@ -161,6 +159,10 @@ struct lcfs_node_s {
 
 	struct lcfs_xattr_s *xattrs;
 	size_t n_xattrs;
+	/* Must not exceeded UINT16_max; the max size here is determined
+	 * by sizeof(erofs_xattr_ibody_header) + n_xattrs * sizeof(erofs_xattr_entry).
+	 */
+	size_t xattr_size;
 
 	bool digest_set;
 	uint8_t digest[LCFS_DIGEST_SIZE]; /* sha256 fs-verity digest */
@@ -172,8 +174,10 @@ struct lcfs_node_s {
 	bool in_tree;
 	uint32_t inode_num;
 
+	/* These fields are set by compute_erofs_inodes */
 	bool erofs_compact;
 	uint32_t erofs_ipad; /* padding before inode data */
+	uint32_t erofs_xattr_size;
 	uint32_t erofs_isize;
 	uint64_t erofs_nid;
 	uint32_t erofs_n_blocks;
@@ -217,11 +221,14 @@ int lcfs_write_pad(struct lcfs_ctx_s *ctx, size_t data_len);
 int lcfs_compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root);
 int lcfs_clone_root(struct lcfs_ctx_s *ctx);
 char *maybe_join_path(const char *a, const char *b);
-struct lcfs_node_s *follow_links(struct lcfs_node_s *node);
+int follow_links(struct lcfs_node_s *node, struct lcfs_node_s **out_node);
 int node_get_dtype(struct lcfs_node_s *node);
 
 int lcfs_node_rename_xattr(struct lcfs_node_s *node, size_t index,
 			   const char *new_name);
+int lcfs_node_set_xattr_internal(struct lcfs_node_s *node, const char *name,
+				 const char *value, size_t value_len,
+				 bool from_external_input);
 
 int lcfs_validate_mode(mode_t mode);
 int lcfs_node_last_ditch_validation(struct lcfs_node_s *node);

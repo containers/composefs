@@ -23,6 +23,10 @@
 #include "lcfs-erofs.h"
 #include "erofs_fs_wrapper.h"
 
+// For now we only support a single block for non-inline files.
+// This restriction could be lifted in the future.
+#define LCFS_MAX_NONINLINE_CHUNKS 1024
+
 typedef union {
 	__le16 i_format;
 	struct erofs_inode_compact compact;
@@ -72,7 +76,7 @@ static inline size_t erofs_xattr_inode_size(uint16_t xattr_icount)
 	size_t xattr_size = 0;
 	if (xattr_icount > 0)
 		xattr_size = sizeof(struct erofs_xattr_ibody_header) +
-			     (xattr_icount - 1) * 4;
+			     (xattr_icount - 1) * sizeof(struct erofs_xattr_entry);
 	return xattr_size;
 }
 
@@ -130,5 +134,8 @@ static inline char *erofs_get_xattr_name(uint8_t index, const char *name,
 
 	return res;
 }
+
+void erofs_compute_chunking(uint64_t file_size, uint32_t *chunkbits,
+			    uint32_t *chunk_count);
 
 #endif

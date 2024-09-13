@@ -1,0 +1,2 @@
+/ 4096 40755 2 0 0 0 0.0 - - -
+/something-with-acls-and-overlay 8960932074941261 100777 1 0 0 0 0.0 - - - system.posix_acl_default=x user.foo=xxxxxx

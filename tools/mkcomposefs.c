@@ -283,7 +283,11 @@ static char *parse_mtime(const char *str, size_t length, struct timespec *mtime)
 static char *parse_xattr(const char *data, size_t data_len, struct lcfs_node_s *node)
 {
 	const char *xattr_name = data;
-	size_t xattr_name_len = split_at(&data, &data_len, '=', NULL);
+	bool is_partial = false;
+	size_t xattr_name_len = split_at(&data, &data_len, '=', &is_partial);
+	if (is_partial) {
+		return make_error("Missing = in xattr");
+	}
 
 	char *err = NULL;
 	cleanup_free char *key =
@@ -389,6 +393,10 @@ static char *tree_resolve_hardlinks(dump_info *info)
 		/* Don't override existing value from image for target nlink */
 		uint32_t old_nlink = lcfs_node_get_nlink(target);
 
+		if (fixup->node == target) {
+			return make_error("Self-referential hardlink %s",
+					  fixup->target_path);
+		}
 		lcfs_node_make_hardlink(fixup->node, target);
 
 		lcfs_node_set_nlink(target, old_nlink);
@@ -405,6 +413,19 @@ static char *tree_from_dump_line(dump_info *info, const char *line,
 				 size_t line_len, bool strict_mode)
 {
 	int ret;
+
+	/* At least honggfuzz very quickly discovered that split_line() sloppily allows
+	 * embedded NUL characters, and its generated dumpfiles contain a lot of them
+	 * and make them unreadable by default.
+	 * We didn't document support for embedded NULs, and it only introduces
+	 * ambiguity in parsing, so let's just reject this early on.
+	 */
+	char *embedded_nul_offset = memchr(line, 0, line_len);
+	if (embedded_nul_offset != NULL) {
+		size_t off = embedded_nul_offset - line;
+		return make_error("Invalid embedded NUL character at position %lld",
+				  (unsigned long long)off);
+	}
 
 	/* Split out all fixed fields */
 	field_info fields[FIELD_XATTRS_START];
@@ -502,9 +523,11 @@ static char *tree_from_dump_line(dump_info *info, const char *line,
 					 &content_len, &err);
 	if (content == NULL && err)
 		return err;
+#ifndef FUZZER // Bypass this data-dependency when fuzzing to increase coverage
 	if (content && content_len != size)
 		return make_error("Invalid content size %lld, must match size %lld",
 				  (long long)content_len, (long long)size);
+#endif
 
 	cleanup_free char *digest = unescape_optional_string(
 		fields[FIELD_DIGEST].data, fields[FIELD_DIGEST].len, NULL, &err);
@@ -534,24 +557,38 @@ static char *tree_from_dump_line(dump_info *info, const char *line,
 					"Invalid symlink size %lld, must match size %lld",
 					(long long)payload_len, (long long)size);
 			}
-			if (content && *content) {
+			if (content && content_len > 0) {
 				return make_error("Symlink cannot have content");
 			}
 		}
 	} else {
 		if (lcfs_node_set_payload(node, payload) < 0)
 			return make_error("Invalid payload");
-	}
-	if (content) {
-		ret = lcfs_node_set_content(node, (uint8_t *)content, size);
-		if (ret < 0)
-			oom();
+		if (content) {
+			if (content_len > LCFS_INLINE_CONTENT_MAX) {
+				return make_error(
+					"Inline content size %lld exceeds maximum %lld",
+					(long long)content_len,
+					(long long)LCFS_INLINE_CONTENT_MAX);
+			}
+			ret = lcfs_node_set_content(node, (uint8_t *)content,
+						    content_len);
+			if (ret < 0)
+				oom();
+		}
 	}
 
 	if (digest) {
 		uint8_t raw[LCFS_DIGEST_SIZE];
 		digest_to_raw(digest, raw, LCFS_DIGEST_SIZE);
 		lcfs_node_set_fsverity_digest(node, raw);
+	}
+
+	// Because we call lcfs_node_set_xattr() in the loop below
+	// which searches all previous values for duplicates, we
+	// get O(N^2) behavior. Cap the maximum size of the input line.
+	if (line_len > UINT16_MAX) {
+		return make_error("Too many xattrs");
 	}
 
 	/* Handle trailing xattrs */
@@ -693,22 +730,78 @@ static struct lcfs_node_s *tree_from_dump(FILE *input, char **out_err)
 	return info.root;
 }
 
+static ssize_t write_cb(void *_file, void *buf, size_t count)
+{
+	FILE *file = _file;
+
+	return fwrite(buf, 1, count, file);
+}
+
 #ifdef FUZZER
 static int LLVMFuzzerTestOneInput(uint8_t *buf, size_t len)
 {
+	assert(buf);
 	struct lcfs_node_s *tree;
 	char *err = NULL;
 	FILE *f = fmemopen(buf, len, "r");
+	assert(f);
 	tree = tree_from_dump(f, &err);
+	bool is_err = err != NULL;
 	free(err);
-	if (tree)
-		lcfs_node_unref(tree);
 	fclose(f);
+	if (!tree) {
+		return 1;
+	}
+	if (is_err) {
+		lcfs_node_unref(tree);
+		return 1;
+	}
+	struct lcfs_write_options_s options = { 0 };
+	char *outbuf = NULL;
+	size_t outsize = 0;
+	f = open_memstream(&outbuf, &outsize);
+	assert(f);
+	options.format = LCFS_FORMAT_EROFS;
+	options.version = LCFS_DEFAULT_VERSION_MAX;
+	options.file = f;
+	options.file_write_cb = write_cb;
+	if (lcfs_write_to(tree, &options) < 0) {
+		lcfs_node_unref(tree);
+		fclose(f);
+		return 1;
+	}
+	lcfs_node_unref(tree);
+	fclose(f);
+	assert(outbuf);
+	assert(outsize > 0);
+	// And verify we can re-parse it
+	tree = lcfs_load_node_from_image((const uint8_t *)outbuf, outsize);
+	assert(tree);
+	lcfs_node_unref(tree);
 	return 0;
 }
 
 int main(int argc, char **argv)
 {
+	if (argc > 1) {
+		char buffer[4096];
+		size_t bytes_read;
+		FILE *src = fopen(argv[1], "r");
+		assert(src);
+		char *buf;
+		size_t len;
+		FILE *dest = open_memstream(&buf, &len);
+		assert(dest);
+		while ((bytes_read = fread(buffer, 1, sizeof(buffer), src)) > 0) {
+			if (fwrite(buffer, 1, bytes_read, dest) != bytes_read) {
+				err(EXIT_FAILURE, "copying input");
+			}
+		}
+		fclose(src);
+		fclose(dest);
+		LLVMFuzzerTestOneInput((void *)buf, len);
+		return 0;
+	}
 	extern void HF_ITER(uint8_t * *buf, size_t * len);
 	for (;;) {
 		size_t len;
@@ -1028,13 +1121,6 @@ static int copy_file_with_dirs_if_needed(const char *src, const char *dst_base,
 	free(steal_pointer(&tmppath));
 
 	return 0;
-}
-
-static ssize_t write_cb(void *_file, void *buf, size_t count)
-{
-	FILE *file = _file;
-
-	return fwrite(buf, 1, count, file);
 }
 
 struct work_item {

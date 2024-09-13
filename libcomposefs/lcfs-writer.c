@@ -24,6 +24,7 @@
 #include "lcfs-fsverity.h"
 #include "lcfs-mount.h"
 #include "lcfs-erofs.h"
+#include "lcfs-erofs-internal.h"
 #include "hash.h"
 
 #include <errno.h>
@@ -268,7 +269,10 @@ int lcfs_compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 	for (node = root; node != NULL; node = node->next) {
 		for (size_t i = 0; i < node->children_size; i++) {
 			struct lcfs_node_s *child = node->children[i];
-			struct lcfs_node_s *link_to = follow_links(child);
+			struct lcfs_node_s *link_to;
+			if (follow_links(child, &link_to) < 0) {
+				return -1;
+			}
 			if (child->link_to != NULL && !link_to->in_tree) {
 				/* Link to inode outside tree */
 				errno = EINVAL;
@@ -287,11 +291,19 @@ int lcfs_compute_tree(struct lcfs_ctx_s *ctx, struct lcfs_node_s *root)
 	return 0;
 }
 
-struct lcfs_node_s *follow_links(struct lcfs_node_s *node)
+// Recursively follow hardlinks; a cycle is detected as an error.
+int follow_links(struct lcfs_node_s *node, struct lcfs_node_s **out_node)
 {
-	if (node->link_to)
-		return follow_links(node->link_to);
-	return node;
+	struct lcfs_node_s *start = node;
+	while (node->link_to) {
+		node = node->link_to;
+		if (node == start) {
+			errno = ELOOP;
+			return -1;
+		}
+	}
+	*out_node = node;
+	return 0;
 }
 
 int lcfs_write(struct lcfs_ctx_s *ctx, void *_data, size_t data_len)
@@ -721,7 +733,7 @@ int lcfs_node_set_from_content(struct lcfs_node_s *node, int dirfd,
 	bool is_zerosized = node->inode.st_size == 0;
 	bool do_digest = !is_zerosized && (compute_digest || by_digest);
 	bool do_inline = !is_zerosized && !no_inline &&
-			 node->inode.st_size <= LCFS_BUILD_INLINE_FILE_SIZE_LIMIT;
+			 node->inode.st_size <= LCFS_RECOMMENDED_INLINE_CONTENT_MAX;
 	int r;
 
 	if (do_digest || do_inline) {
@@ -751,7 +763,7 @@ int lcfs_node_set_from_content(struct lcfs_node_s *node, int dirfd,
 			lseek(fd, 0, SEEK_SET);
 		}
 		if (do_inline) {
-			uint8_t buf[LCFS_BUILD_INLINE_FILE_SIZE_LIMIT];
+			uint8_t buf[LCFS_RECOMMENDED_INLINE_CONTENT_MAX];
 
 			r = read_content(fd, node->inode.st_size, buf);
 			if (r < 0)
@@ -970,6 +982,10 @@ int lcfs_node_set_content(struct lcfs_node_s *node, const uint8_t *data,
 	uint8_t *dup = NULL;
 
 	if (data && data_size != 0) {
+		if (data_size > LCFS_INLINE_CONTENT_MAX) {
+			errno = EINVAL;
+			return -1;
+		}
 		dup = malloc(data_size);
 		if (dup == NULL) {
 			errno = ENOMEM;
@@ -1160,9 +1176,17 @@ struct lcfs_node_s *lcfs_node_get_parent(struct lcfs_node_s *node)
 
 void lcfs_node_make_hardlink(struct lcfs_node_s *node, struct lcfs_node_s *target)
 {
-	target = follow_links(target);
-	node->link_to = lcfs_node_ref(target);
-	target->inode.st_nlink++;
+	// Disallow self-referential hardlinks
+	assert(node != target);
+	struct lcfs_node_s *real_target;
+	// Unfortunately this function doesn't return an error, so we do so lazily.
+	if (follow_links(target, &real_target) < 0) {
+		node->link_to_invalid = true;
+	} else {
+		node->link_to = lcfs_node_ref(target);
+		node->link_to_invalid = false;
+		target->inode.st_nlink++;
+	}
 }
 
 struct lcfs_node_s *lcfs_node_get_hardlink_target(struct lcfs_node_s *node)
@@ -1180,6 +1204,26 @@ int lcfs_node_last_ditch_validation(struct lcfs_node_s *node)
 	if (node->link_to == NULL) {
 		if (lcfs_validate_mode(node->inode.st_mode) < 0)
 			return -1;
+	}
+	if (node->link_to_invalid) {
+		errno = EINVAL;
+		return -1;
+	}
+	switch (node->inode.st_mode & S_IFMT) {
+	case S_IFREG: {
+		// For now we cap max file size such that our "stub"
+		// fits within a single block.
+		if (node->inode.st_size > 0 && node->content == NULL) {
+			uint32_t chunkbits;
+			uint32_t chunk_count;
+			erofs_compute_chunking(node->inode.st_size, &chunkbits,
+					       &chunk_count);
+			if (chunk_count > LCFS_MAX_NONINLINE_CHUNKS) {
+				errno = EFBIG;
+				return -1;
+			}
+		}
+	}
 	}
 	return 0;
 }
@@ -1621,51 +1665,64 @@ int lcfs_node_unset_xattr(struct lcfs_node_s *node, const char *name)
 	ssize_t index = find_xattr(node, name);
 
 	if (index >= 0) {
+		struct lcfs_xattr_s *xattr = &node->xattrs[index];
+		size_t value_len = xattr->value_len;
+		free(xattr->key);
+		free(xattr->value);
 		if (index != (ssize_t)node->n_xattrs - 1)
 			node->xattrs[index] = node->xattrs[node->n_xattrs - 1];
 		node->n_xattrs--;
+		// Note 2*size - to account for worst case alignment
+		if (node->n_xattrs > 0)
+			node->xattr_size -= (2 * LCFS_INODE_XATTRMETA_SIZE - 1) +
+					    strlen(name) + value_len;
+		else
+			node->xattr_size = 0; // If last xattr, remove the overhead too
+		assert(node->xattr_size >= 0);
 	}
 
 	return -1;
 }
 
-int lcfs_node_set_xattr(struct lcfs_node_s *node, const char *name,
-			const char *value, size_t value_len)
+/* Set an extended attribute; If from_external_input is true then we
+ * are parsing a dumpfile, and need to limit xattrs to a smaller size.
+ */
+int lcfs_node_set_xattr_internal(struct lcfs_node_s *node, const char *name,
+				 const char *value, size_t value_len,
+				 bool from_external_input)
 {
 	struct lcfs_xattr_s *xattrs;
 	char *k, *v;
 
-	if (strlen(name) > XATTR_NAME_MAX) {
+	const size_t namelen = strlen(name);
+	if (namelen > XATTR_NAME_MAX) {
 		errno = ERANGE;
 		return -1;
 	}
-
-	ssize_t index = find_xattr(node, name);
 
 	if (value_len > UINT16_MAX) {
 		errno = EINVAL;
 		return -1;
 	}
 
-	if (index >= 0) {
-		/* Already set, replace */
-		struct lcfs_xattr_s *xattr = &node->xattrs[index];
-		v = memdup(value, value_len);
-		if (v == NULL) {
-			errno = ENOMEM;
-			return -1;
-		}
-		free(xattr->value);
-		xattr->value = v;
-		xattr->value_len = value_len;
+	// Remove any existing value
+	(void)lcfs_node_unset_xattr(node, name);
 
-		return 0;
-	}
+	// Double the xattr metadata size, subtracting 1 to account for worst case alignment.
+	size_t entry_size = (2 * LCFS_INODE_XATTRMETA_SIZE) - 1 + namelen + value_len;
+	// If this is the first xattr, add size for the header
+	if (node->n_xattrs == 0)
+		entry_size += LCFS_XATTR_HEADER_SIZE;
 
-	if (node->n_xattrs == UINT16_MAX) {
-		errno = EINVAL;
+	const size_t limit =
+		from_external_input ? LCFS_INODE_EXTERNAL_XATTR_MAX : UINT16_MAX;
+	if (node->xattr_size + entry_size > limit) {
+		errno = ERANGE;
 		return -1;
 	}
+	// Limiting total *space* must have limited count since each
+	// element takes > 1 byte in size, but let's verify that here too.
+	assert(node->n_xattrs < UINT16_MAX);
 
 	xattrs = realloc(node->xattrs,
 			 (node->n_xattrs + 1) * sizeof(struct lcfs_xattr_s));
@@ -1688,8 +1745,15 @@ int lcfs_node_set_xattr(struct lcfs_node_s *node, const char *name,
 	xattrs[node->n_xattrs].value = v;
 	xattrs[node->n_xattrs].value_len = value_len;
 	node->n_xattrs++;
+	node->xattr_size += entry_size;
 
 	return 0;
+}
+
+int lcfs_node_set_xattr(struct lcfs_node_s *node, const char *name,
+			const char *value, size_t value_len)
+{
+	return lcfs_node_set_xattr_internal(node, name, value, value_len, true);
 }
 
 /* This is an internal function.

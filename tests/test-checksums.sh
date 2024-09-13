@@ -18,6 +18,8 @@ trap 'rm -rf -- "$tmpfile" "$tmpfile2"' EXIT
 declare -A nonstrict
 nonstrict=(
     ["no-newline.dump"]="1"
+    ["longlink.dump"]="1"
+    ["honggfuzz-longlink-unterminated.dump"]="1"
 )
 
 for format in erofs ; do
