@@ -231,7 +231,7 @@ int lcfs_node_set_xattr_internal(struct lcfs_node_s *node, const char *name,
 				 bool from_external_input);
 
 int lcfs_validate_mode(mode_t mode);
-int lcfs_node_last_ditch_validation(struct lcfs_node_s *node);
+int lcfs_node_validate(struct lcfs_node_s *node);
 
 /* lcfs-writer-erofs.c */
 

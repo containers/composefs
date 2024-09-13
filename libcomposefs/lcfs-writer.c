@@ -402,12 +402,6 @@ int lcfs_write_to(struct lcfs_node_s *root, struct lcfs_write_options_s *options
 	struct lcfs_ctx_s *ctx;
 	int res;
 
-	// Verify the root; because lcfs_node_add_child also verifies children,
-	// we should have sanity checked all nodes.
-	if (lcfs_node_last_ditch_validation(root) < 0) {
-		return -1;
-	}
-
 	/* Check for unknown flags */
 	if ((options->flags & ~LCFS_FLAGS_MASK) != 0) {
 		errno = EINVAL;
@@ -1198,7 +1192,7 @@ struct lcfs_node_s *lcfs_node_get_hardlink_target(struct lcfs_node_s *node)
 // invalid states, but don't return errors; this will try
 // to perform validation when the node is passed to a function
 // that does return an error.
-int lcfs_node_last_ditch_validation(struct lcfs_node_s *node)
+int lcfs_node_validate(struct lcfs_node_s *node)
 {
 	// Hardlinks should have mode 0
 	if (node->link_to == NULL) {
@@ -1233,10 +1227,6 @@ int lcfs_node_add_child(struct lcfs_node_s *parent, struct lcfs_node_s *child,
 {
 	struct lcfs_node_s **new_children;
 	size_t new_capacity;
-
-	if (lcfs_node_last_ditch_validation(child) < 0) {
-		return -1;
-	}
 
 	if ((parent->inode.st_mode & S_IFMT) != S_IFDIR) {
 		errno = ENOTDIR;
