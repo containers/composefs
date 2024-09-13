@@ -1,7 +1,7 @@
 project(
   'composefs',
   'c',
-  version : '1.0.5',
+  version : '1.0.6',
   default_options : [
     'c_std=c99',
     'warning_level=1',
@@ -11,7 +11,7 @@ project(
 pkg = import('pkgconfig')
 
 libcomposefs_version_major = 1
-libcomposefs_version_minor = 3
+libcomposefs_version_minor = 4
 libcomposefs_version_micro = 0
 libversion = '@0@.@1@.@2@'.format(libcomposefs_version_major, libcomposefs_version_minor, libcomposefs_version_micro)
 soversion = libcomposefs_version_major
