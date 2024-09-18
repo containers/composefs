@@ -1,0 +1,10 @@
+FROM quay.io/centos/centos:stream9 as build
+RUN dnf -y install dnf-utils zstd && dnf config-manager --enable crb && dnf builddep -y composefs && \
+    dnf -y install meson
+COPY . /build
+WORKDIR /build
+RUN set -x; ls -al; meson setup target --prefix=/usr && meson compile -C target && \
+    env DESTDIR=$(pwd)/target/instroot meson install -C target
+
+FROM quay.io/centos-bootc/centos-bootc-dev:stream9
+COPY --from=build /build/target/instroot/usr/ /usr/
