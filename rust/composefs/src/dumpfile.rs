@@ -336,6 +336,23 @@ impl<'k> Xattr<'k> {
 }
 
 impl<'p> Entry<'p> {
+    fn check_nonregfile(content: Option<&str>, fsverity_digest: Option<&str>) -> Result<()> {
+        if content.is_some() {
+            anyhow::bail!("entry cannot have content");
+        }
+        if fsverity_digest.is_some() {
+            anyhow::bail!("entry cannot have fsverity digest");
+        }
+        Ok(())
+    }
+
+    fn check_rdev(rdev: u64) -> Result<()> {
+        if rdev != 0 {
+            anyhow::bail!("entry cannot have device (rdev) {rdev}");
+        }
+        Ok(())
+    }
+
     /// Parse an entry from a composefs dump file line.
     pub fn parse(s: &'p str) -> Result<Entry<'p>> {
         let mut components = s.split(' ');
@@ -376,21 +393,25 @@ impl<'p> Entry<'p> {
             }
             let target =
                 unescape_to_path_canonical(payload.ok_or_else(|| anyhow!("Missing payload"))?)?;
+            // TODO: the dumpfile format suggests to retain all the metadata on hardlink lines
             Item::Hardlink { target }
         } else {
             match ty {
-                libc::S_IFREG => Item::Regular {
-                    size,
-                    nlink,
-                    inline_content: content
-                        .map(|c| unescape_limited(c, MAX_INLINE_CONTENT.into()))
-                        .transpose()?,
-                    fsverity_digest: fsverity_digest.map(ToOwned::to_owned),
-                },
-                libc::S_IFLNK => {
-                    if content.is_some() {
-                        anyhow::bail!("symlinks cannot have content");
+                libc::S_IFREG => {
+                    Self::check_rdev(rdev)?;
+                    Item::Regular {
+                        size,
+                        nlink,
+                        inline_content: content
+                            .map(|c| unescape_limited(c, MAX_INLINE_CONTENT.into()))
+                            .transpose()?,
+                        fsverity_digest: fsverity_digest.map(ToOwned::to_owned),
                     }
+                }
+                libc::S_IFLNK => {
+                    Self::check_nonregfile(content, fsverity_digest)?;
+                    Self::check_rdev(rdev)?;
+
                     // Note that the target of *symlinks* is not required to be in canonical form,
                     // as we don't actually traverse those links on our own, and we need to support
                     // symlinks that e.g. contain `//` or other things.
@@ -403,21 +424,19 @@ impl<'p> Entry<'p> {
                     Item::Symlink { nlink, target }
                 }
                 libc::S_IFIFO => {
-                    if content.is_some() {
-                        anyhow::bail!("entry cannot have content");
-                    }
+                    Self::check_nonregfile(content, fsverity_digest)?;
+                    Self::check_rdev(rdev)?;
+
                     Item::Fifo { nlink }
                 }
                 libc::S_IFCHR | libc::S_IFBLK => {
-                    if content.is_some() {
-                        anyhow::bail!("entry cannot have content");
-                    }
+                    Self::check_nonregfile(content, fsverity_digest)?;
                     Item::Device { nlink, rdev }
                 }
                 libc::S_IFDIR => {
-                    if content.is_some() {
-                        anyhow::bail!("entry cannot have content");
-                    }
+                    Self::check_nonregfile(content, fsverity_digest)?;
+                    Self::check_rdev(rdev)?;
+
                     Item::Directory { size, nlink }
                 }
                 o => {
@@ -795,6 +814,8 @@ mod tests {
                 "content in fifo",
                 "/ 4096 40755 2 0 0 0 0.0 - - -\n/fifo 0 10777 1 0 0 0 0.0 - foobar -",
             ),
+            ("root with rdev", "/ 4096 40755 2 0 0 42 0.0 - - -"),
+            ("root with fsverity", "/ 4096 40755 2 0 0 0 0.0 - - 35d02f81325122d77ec1d11baba655bc9bf8a891ab26119a41c50fa03ddfb408"),
         ];
         for (name, case) in CASES.iter().copied() {
             assert!(
