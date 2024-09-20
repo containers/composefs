@@ -38,6 +38,7 @@
 #include <linux/fsverity.h>
 #include <linux/fs.h>
 #include <pthread.h>
+#include <sched.h>
 #include <sys/sysinfo.h>
 
 static void oom(void)
@@ -1442,6 +1443,11 @@ static void digest_to_string(const uint8_t *csum, char *buf)
 
 static int get_cpu_count(void)
 {
+	cpu_set_t set;
+
+	if (sched_getaffinity(0, sizeof(set), &set) == 0)
+		return CPU_COUNT(&set);
+
 	return get_nprocs();
 }
 
