@@ -1,5 +1,5 @@
 fn main() {
-    #[cfg(not(feature = "dox"))]
+    #[cfg(not(docsrs))]
     if let Err(s) = system_deps::Config::new().probe() {
         println!("cargo:warning={s}");
         std::process::exit(1);

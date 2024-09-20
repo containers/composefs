@@ -9,12 +9,16 @@ repository = "https://github.com/containers/composefs"
 rust-version = "1.70.0"
 readme = "README.md"
 
+[package.metadata.docs.rs]
+all-features = true
+rustc-args = ["--cfg", "docsrs"]
+rustdoc-args = ["--cfg", "docsrs", "--generate-link-to-definition"]
+
 [lib]
 name = "composefs"
 path = "src/lib.rs"
 
 [features]
-dox = ["composefs-sys/dox"]
 # Depend on 1.0.4 APIs
 v1_0_4 = ["composefs-sys/v1_0_4"]
 

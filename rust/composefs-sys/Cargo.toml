@@ -10,14 +10,15 @@ license = "MIT OR Apache-2.0"
 readme = "README.md"
 
 [package.metadata.docs.rs]
-features = ["dox"]
+all-features = true
+rustc-args = ["--cfg", "docsrs"]
+rustdoc-args = ["--cfg", "docsrs", "--generate-link-to-definition"]
 
 [package.metadata.system-deps.composefs]
 name = "composefs"
 version = "1"
 
 [features]
-dox = []
 # Depend on 1.0.4 APIs
 v1_0_4 = []
 
