@@ -23,10 +23,11 @@ impl Digest {
 }
 
 /// Compute the composefs fsverity digest from the provided file descriptor.
+/// If fsverity is already enabled, this will return the digest computed by the kernel.
 #[allow(unsafe_code)]
 pub fn fsverity_digest_from_fd(fd: BorrowedFd, digest: &mut Digest) -> std::io::Result<()> {
     unsafe {
-        map_result(composefs_sys::lcfs_compute_fsverity_from_fd(
+        map_result(composefs_sys::lcfs_fd_get_fsverity(
             digest.0.as_mut_ptr(),
             fd.as_raw_fd(),
         ))
