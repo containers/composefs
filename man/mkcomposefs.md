@@ -74,6 +74,11 @@ will be a mountable composefs image.
 :   Number of threads to be used to calculate the file digests and copy.
     Default thread count is the number of processors when *--threads* is not specified.
 
+**\-\-sandbox**
+    It runs the current process in a sandboxed environment using different Linux kernel
+    features.  It is a best effort attempt to limit what the process can access while it
+    is processing an untrusted input.
+
 # FORMAT VERSIONING
 
 Composefs images are binary reproduceable, meaning that for a given

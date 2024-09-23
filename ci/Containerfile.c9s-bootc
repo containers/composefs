@@ -1,6 +1,6 @@
 FROM quay.io/centos/centos:stream9 as build
 RUN dnf -y install dnf-utils zstd && dnf config-manager --enable crb && dnf builddep -y composefs && \
-    dnf -y install meson
+    dnf -y install meson libseccomp-devel libcap-devel
 COPY . /build
 WORKDIR /build
 RUN set -x; ls -al; meson setup target --prefix=/usr && meson compile -C target && \

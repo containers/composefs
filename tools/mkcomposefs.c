@@ -23,6 +23,8 @@
 #include "libcomposefs/lcfs-utils.h"
 #include "libcomposefs/lcfs-internal.h"
 
+#include "mkcomposefs-sandbox.h"
+
 #include <stdio.h>
 #include <linux/limits.h>
 #include <string.h>
@@ -70,6 +72,7 @@ static __attribute__((format(printf, 1, 2))) char *make_error(const char *fmt, .
 #define OPT_MIN_VERSION 114
 #define OPT_THREADS 115
 #define OPT_MAX_VERSION 116
+#define OPT_SANDBOX 117
 
 static size_t split_at(const char **start, size_t *length, char split_char,
 		       bool *partial)
@@ -1467,7 +1470,8 @@ static void usage(const char *argv0)
 		"  --from-file           The source is a dump file, not a directory\n"
 		"  --min-version=N       Use this minimal format version (default=%d)\n"
 		"  --max-version=N       Use this maxium format version (default=%d)\n"
-		"  --threads=N           Use this to override the default number of threads used to calculate digest and copy files (default=%d)\n",
+		"  --threads=N           Use this to override the default number of threads used to calculate digest and copy files (default=%d)\n"
+		"  --sandbox             Sandbox the process before processing the input file\n",
 		bin, LCFS_DEFAULT_VERSION_MIN, LCFS_DEFAULT_VERSION_MAX,
 		get_cpu_count());
 }
@@ -1541,6 +1545,12 @@ int main(int argc, char **argv)
 			flag: NULL,
 			val: OPT_THREADS
 		},
+		{
+			name: "sandbox",
+			has_arg: no_argument,
+			flag: NULL,
+			val: OPT_SANDBOX
+		},
 		{},
 	};
 	struct lcfs_write_options_s options = { 0 };
@@ -1559,6 +1569,7 @@ int main(int argc, char **argv)
 	FILE *out_file;
 	char *failed_path;
 	bool version_set = false;
+	bool use_sandbox = false;
 	long min_version = 0;
 	long max_version = 0;
 	char *end;
@@ -1623,6 +1634,9 @@ int main(int argc, char **argv)
 				fprintf(stderr, "Invalid threads count %d\n", threads);
 				exit(EXIT_FAILURE);
 			}
+			break;
+		case OPT_SANDBOX:
+			use_sandbox = true;
 			break;
 		case ':':
 			fprintf(stderr, "option needs a value\n");
@@ -1698,6 +1712,9 @@ int main(int argc, char **argv)
 			close_input = true;
 		}
 
+		if (use_sandbox)
+			create_sandbox();
+
 		char *err = NULL;
 		root = tree_from_dump(input, &err);
 		if (root == NULL) {
@@ -1715,6 +1732,10 @@ int main(int argc, char **argv)
 		buildflag_copy &= ~LCFS_BUILD_COMPUTE_DIGEST;
 		buildflag_copy &= ~LCFS_BUILD_BY_DIGEST;
 		buildflag_copy |= LCFS_BUILD_NO_INLINE;
+
+		if (use_sandbox)
+			err(EXIT_FAILURE,
+			    "the sandbox option is supported only with --from-file");
 
 		root = lcfs_build(AT_FDCWD, src_path, buildflag_copy, &failed_path);
 		if (root == NULL)

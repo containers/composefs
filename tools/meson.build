@@ -1,10 +1,14 @@
 libcomposefs_dep = declare_dependency(link_with : libcomposefs, include_directories : config_inc)
 
+seccomp_dep = dependency('libseccomp', required : true)
+
+cap_dep = dependency('libcap', required : true)
+
 thread_dep = dependency('threads')
 
 executable('mkcomposefs',
-    'mkcomposefs.c',
-    dependencies : [libcomposefs_dep, thread_dep],
+    ['mkcomposefs.c', 'mkcomposefs-sandbox.c'],
+    dependencies : [libcomposefs_dep, thread_dep, seccomp_dep, cap_dep],
     install : true,
 )
 

@@ -17,6 +17,8 @@ PACKAGES=" \
     python3 \
     libcap2-bin \
     meson \
+    libseccomp-dev \
+    libcap-dev \
 "
 
 # Split required and optional packages based on input variable ALLOW_MISSING:
