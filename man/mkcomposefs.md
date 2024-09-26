@@ -104,6 +104,27 @@ Format version history:
 The default if no version arguments are specified is version 0 and max
 version 1.
 
+# SANDBOXING RECOMMENDATIONS
+
+This tool essentially just processes an input directory or
+text file and writes a file. It does not require any privileges
+at all. If you are invoking this as part of an otherwise privileged
+process (such as a container runtime) we recommend dropping privileges
+before invoking `mkcomposefs`.
+
+Especially if you are using `--from-file`, you can run this
+as an unprivileged uid that has no writable filesystem access at
+all except to a passed file descriptor. For example, you can pass
+a writable file descriptor for the desired target file as fd 3,
+and run `mkcomposefs --from-file - /proc/self/fd/3`
+to effectively use `mkcomposefs` as part of a pipeline.
+
+An example simple sandboxing starting from root is `setpriv --nnp --reuid nobody -- mkcomposefs ...`.
+Another is to use `systemd-run -P DynamicUser=yes -P ProtectSystem=strict`.
+Yet another (especially if your code is already part of a container runtime)
+is to use that runtime's existing functionality (seccomp, unsharing user namespace,
+mounting a restricted subset of the rootfs, etc.
+
 # SEE ALSO
 **composefs-info(1)**, **mount.composefs(1)**, **composefs-dump(5)**
 
