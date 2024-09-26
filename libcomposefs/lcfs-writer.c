@@ -30,6 +30,7 @@
 #include <errno.h>
 #include <string.h>
 #include <linux/fsverity.h>
+#include <linux/limits.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
