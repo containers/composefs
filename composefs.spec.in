@@ -15,6 +15,7 @@ BuildRequires:  gcc meson openssl-devel fuse3-devel
 %if %{with man}
 BuildRequires:  go-md2man
 %endif
+
 Requires:       %{name}-libs = %{version}-%{release}
 
 %description
@@ -28,6 +29,7 @@ Please see https://github.com/containers/composefs for more information.
 %package        devel
 Summary:        Devel files for %{name}
 Requires:       %{name}%{?_isa} = %{version}-%{release}
+Requires:       %{name}-libs%{?_isa} = %{version}-%{release}
 
 %description    devel
 Devel files for %{name}.
@@ -40,21 +42,15 @@ License:        LGPL-2.1-or-later AND (GPL-2.0-only OR Apache-2.0)
 Library files for %{name}.
 
 %prep
-%autosetup
+%autosetup -p1
 
 %build
-%meson
+%meson --default-library=shared -Dfuse=enabled -Dman=enabled 
 %meson_build
-%configure \
-           --disable-static \
-%if %{with man}
-           --enable-man \
-%endif
-           --with-fuse
-%make_build
 
 %install
 %meson_install
+rm -v $RPM_BUILD_ROOT/%{_libdir}/libcomposefs*.a
 
 %files devel
 %{_includedir}/libcomposefs
@@ -76,13 +72,4 @@ Library files for %{name}.
 %endif
 
 %changelog
-* Mon Oct 16 2023 Stephen Smoogen <ssmoogen@redhat.com>
-- Take in fixes from reviwers to fix man page compression types
-- Take in fixes from reviwers to move licenses to lib subpackage
-
-* Fri Oct 13 2023 Stephen Smoogen <ssmoogen@redhat.com>
-- Update to 1.0.1
-- Confirm license is in SPDX format
-
-* Fri Apr 21 2023 Alexander Larsson <alexl@redhat.com>
-- Initial version
+%autochangelog
