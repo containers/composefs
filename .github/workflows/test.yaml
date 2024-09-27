@@ -172,8 +172,8 @@ jobs:
           key: "rust-main"
       - name: Rust (default features)
         run: cargo test
-      - name: Rust (all features)
-        run: cargo test -F v1_0_4
+      - name: Rust (no features)
+        run: cargo test --no-default-features
   distcheck:
     runs-on: ubuntu-latest
     steps:
