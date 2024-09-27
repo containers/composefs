@@ -1,3 +1,15 @@
+internal_source_files = files([
+  'lcfs-utils.h',
+  'lcfs-utils.c',
+])
+
+libcomposefs_internal = static_library('composefs-internal',
+  internal_source_files,
+  c_args : composefs_hash_cflags + hidden_visibility_cflags,
+  include_directories : config_inc,
+  install : false,
+)
+
 source_files = files([
   'bitrotate.h',
   'erofs_fs.h',
@@ -12,7 +24,6 @@ source_files = files([
   'lcfs-writer-erofs.c',
   'lcfs-writer.c',
   'lcfs-writer.h',
-  'lcfs-utils.h',
   'lcfs-mount.c',
   'lcfs-mount.h',
   'xalloc-oversized.h',
@@ -22,6 +33,7 @@ libcomposefs = both_libraries('composefs',
   source_files,
   c_args : composefs_hash_cflags + hidden_visibility_cflags,
   dependencies : libcrypto_dep,
+  link_with: libcomposefs_internal,
   version : libversion,
   soversion : soversion,
   include_directories : config_inc,

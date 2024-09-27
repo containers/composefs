@@ -19,6 +19,8 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
@@ -94,6 +96,8 @@ static inline int digest_to_raw(const char *digest, uint8_t *raw, int max_size)
 
 	return size;
 }
+
+void digest_to_string(const uint8_t *csum, char *buf);
 
 static inline char *str_join(const char *a, const char *b)
 {
