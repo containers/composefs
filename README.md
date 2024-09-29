@@ -79,7 +79,8 @@ reliably share memory.
 
 Composefs also supports [fs-verity](https://www.kernel.org/doc/html/latest/filesystems/fsverity.html)
 validation of the content files.  When using this, the digest of the
-content files is stored in the image, and composefs will validate that
+content files is stored in the image in the `trusted.overlay.metacopy`
+extended attributes which tell overlayfs to validate that
 the content file it uses has a matching enabled fs-verity digest. This
 means that the backing content cannot be changed in any way (by
 mistake or by malice) without this being detected when the file is
@@ -89,8 +90,9 @@ You can also use fs-verity on the image file itself, and pass the
 expected fs-verity digest as a mount option, which composefs will
 validate. In this case we have full trust of both data and metadata of
 the mounted file. This solves a weakness that fs-verity has when used
-on its own, in that it can only verify file data, not
-metadata.
+on its own, in that it can only verify file data, not metadata (e.g.
+inode bits like permissions and ownership, but also directory
+structures).
 
 ## Usecase: container images
 
@@ -166,7 +168,7 @@ Mount options:
 - `noverity`: Don't verfy fs-verity digests (useful for example if fs-verity is not supported on basedir).
 - `digest`: A fs-verity sha256 digest that the image file must match. If set, `verity_check` defaults to 2.
 - `upperdir`: Specify an upperdir for the overlayfs filesystem.
-- `workdir`: Specify an upperdir for the overlayfs filesystem.
+- `workdir`: Specify a workdir for the overlayfs filesystem.
 - `idmap`: Specify a path to a user namespace that is used as an idmap.
 
 ## Language bindings
