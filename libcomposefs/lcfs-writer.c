@@ -580,15 +580,13 @@ int lcfs_compute_fsverity_from_fd(uint8_t *digest, int fd)
 // position will always be reset to zero if needed.
 int lcfs_fd_get_fsverity(uint8_t *digest, int fd)
 {
-	struct {
-		struct fsverity_digest fsv;
-		char buf[MAX_DIGEST_SIZE];
-	} buf;
+	char buf[sizeof(struct fsverity_digest) + MAX_DIGEST_SIZE];
+	struct fsverity_digest *fsv = (struct fsverity_digest *)&buf;
 
 	// First, ask the kernel if the file already has fsverity; if so we just return
 	// that.
-	buf.fsv.digest_size = MAX_DIGEST_SIZE;
-	int res = ioctl(fd, FS_IOC_MEASURE_VERITY, &buf.fsv);
+	fsv->digest_size = MAX_DIGEST_SIZE;
+	int res = ioctl(fd, FS_IOC_MEASURE_VERITY, fsv);
 	if (res == -1) {
 		// Under this condition, the file didn't have fsverity enabled or the
 		// kernel doesn't support it at all.  We need to compute it in the current process.
@@ -604,11 +602,11 @@ int lcfs_fd_get_fsverity(uint8_t *digest, int fd)
 	}
 	// The file has fsverity enabled, but with an unexpected different algorithm (e.g. sha512).
 	// This is going to be a weird corner case.  For now, we error out.
-	if (buf.fsv.digest_size != LCFS_DIGEST_SIZE) {
+	if (fsv->digest_size != LCFS_DIGEST_SIZE) {
 		return -EWRONGVERITY;
 	}
 
-	memcpy(digest, buf.buf, LCFS_DIGEST_SIZE);
+	memcpy(digest, buf + sizeof(struct fsverity_digest), LCFS_DIGEST_SIZE);
 
 	return 0;
 }

@@ -93,6 +93,19 @@ jobs:
       - name: Build
         # focal's meson is too old for 'meson compile'
         run: ninja -C build
+  build-latest-clang:
+    runs-on: ubuntu-24.04
+    name: "Build (24.04, clang)"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo ./hacking/installdeps.sh
+      - name: Configure
+        run: env CC=clang meson setup build --werror
+      - name: Build
+        # focal's meson is too old for 'meson compile'
+        run: meson compile -C build
   build-unit-cross:
     runs-on: ubuntu-latest
     name: Build on ${{ matrix.arch }}

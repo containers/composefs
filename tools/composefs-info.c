@@ -413,18 +413,14 @@ int main(int argc, char **argv)
 	const char *bin = argv[0];
 	int opt;
 	const struct option longopts[] = {
-		{
-			name: "basedir",
-			has_arg: required_argument,
-			flag: NULL,
-			val: OPT_BASEDIR
-		},
-		{
-			name: "filter",
-			has_arg: required_argument,
-			flag: NULL,
-			val: OPT_FILTER
-		},
+		{ .name = "basedir",
+		  .has_arg = required_argument,
+		  .flag = NULL,
+		  .val = OPT_BASEDIR },
+		{ .name = "filter",
+		  .has_arg = required_argument,
+		  .flag = NULL,
+		  .val = OPT_FILTER },
 		{},
 	};
 

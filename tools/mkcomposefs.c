@@ -1475,72 +1475,44 @@ static void usage(const char *argv0)
 int main(int argc, char **argv)
 {
 	const struct option longopts[] = {
-		{
-			name: "skip-xattrs",
-			has_arg: no_argument,
-			flag: NULL,
-			val: OPT_SKIP_XATTRS
-		},
-		{
-			name: "user-xattrs",
-			has_arg: no_argument,
-			flag: NULL,
-			val: OPT_USER_XATTRS
-		},
-		{
-			name: "skip-devices",
-			has_arg: no_argument,
-			flag: NULL,
-			val: OPT_SKIP_DEVICES
-		},
-		{
-			name: "use-epoch",
-			has_arg: no_argument,
-			flag: NULL,
-			val: OPT_USE_EPOCH
-		},
-		{
-			name: "digest-store",
-			has_arg: required_argument,
-			flag: NULL,
-			val: OPT_DIGEST_STORE
-		},
-		{
-			name: "print-digest",
-			has_arg: no_argument,
-			flag: NULL,
-			val: OPT_PRINT_DIGEST
-		},
-		{
-			name: "print-digest-only",
-			has_arg: no_argument,
-			flag: NULL,
-			val: OPT_PRINT_DIGEST_ONLY
-		},
-		{
-			name: "from-file",
-			has_arg: no_argument,
-			flag: NULL,
-			val: OPT_FROM_FILE
-		},
-		{
-			name: "max-version",
-			has_arg: required_argument,
-			flag: NULL,
-			val: OPT_MAX_VERSION
-		},
-		{
-			name: "min-version",
-			has_arg: required_argument,
-			flag: NULL,
-			val: OPT_MIN_VERSION
-		},
-		{
-			name: "threads",
-			has_arg: required_argument,
-			flag: NULL,
-			val: OPT_THREADS
-		},
+		{ .name = "skip-xattrs",
+		  .has_arg = no_argument,
+		  .flag = NULL,
+		  .val = OPT_SKIP_XATTRS },
+		{ .name = "user-xattrs",
+		  .has_arg = no_argument,
+		  .flag = NULL,
+		  .val = OPT_USER_XATTRS },
+		{ .name = "skip-devices",
+		  .has_arg = no_argument,
+		  .flag = NULL,
+		  .val = OPT_SKIP_DEVICES },
+		{ .name = "use-epoch", .has_arg = no_argument, .flag = NULL, .val = OPT_USE_EPOCH },
+		{ .name = "digest-store",
+		  .has_arg = required_argument,
+		  .flag = NULL,
+		  .val = OPT_DIGEST_STORE },
+		{ .name = "print-digest",
+		  .has_arg = no_argument,
+		  .flag = NULL,
+		  .val = OPT_PRINT_DIGEST },
+		{ .name = "print-digest-only",
+		  .has_arg = no_argument,
+		  .flag = NULL,
+		  .val = OPT_PRINT_DIGEST_ONLY },
+		{ .name = "from-file", .has_arg = no_argument, .flag = NULL, .val = OPT_FROM_FILE },
+		{ .name = "max-version",
+		  .has_arg = required_argument,
+		  .flag = NULL,
+		  .val = OPT_MAX_VERSION },
+		{ .name = "min-version",
+		  .has_arg = required_argument,
+		  .flag = NULL,
+		  .val = OPT_MIN_VERSION },
+		{ .name = "threads",
+		  .has_arg = required_argument,
+		  .flag = NULL,
+		  .val = OPT_THREADS },
 		{},
 	};
 	struct lcfs_write_options_s options = { 0 };
