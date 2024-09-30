@@ -5,12 +5,14 @@ thread_dep = dependency('threads')
 executable('mkcomposefs',
     'mkcomposefs.c',
     dependencies : [libcomposefs_dep, thread_dep],
+    link_with: [libcomposefs_internal],
     install : true,
 )
 
 executable('mount.composefs',
     'mountcomposefs.c',
     dependencies : [libcomposefs_dep],
+    link_with: [libcomposefs_internal],
     install : true,
     install_dir : get_option('sbindir'),
 )
@@ -18,12 +20,14 @@ executable('mount.composefs',
 executable('composefs-info',
     ['composefs-info.c', '../libcomposefs/hash.c'],
     c_args : composefs_hash_cflags,
+    link_with: [libcomposefs_internal],
     dependencies : [libcomposefs_dep],
     install : true,
 )
 
 executable('composefs-dump',
     'composefs-dump.c',
+    link_with: [libcomposefs_internal],
     dependencies : [libcomposefs_dep],
     install : false,
 )

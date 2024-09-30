@@ -1428,19 +1428,6 @@ static int fill_store(const int thread_count, struct lcfs_node_s *node,
 	return ret;
 }
 
-static void digest_to_string(const uint8_t *csum, char *buf)
-{
-	static const char hexchars[] = "0123456789abcdef";
-	uint32_t i, j;
-
-	for (i = 0, j = 0; i < LCFS_DIGEST_SIZE; i++, j += 2) {
-		uint8_t byte = csum[i];
-		buf[j] = hexchars[byte >> 4];
-		buf[j + 1] = hexchars[byte & 0xF];
-	}
-	buf[j] = '\0';
-}
-
 static int get_cpu_count(void)
 {
 	cpu_set_t set;
