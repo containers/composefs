@@ -948,7 +948,7 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 		i.i_ino = lcfs_u32_to_file(node->inode_num);
 		i.i_uid = lcfs_u32_to_file(node->inode.st_uid);
 		i.i_gid = lcfs_u32_to_file(node->inode.st_gid);
-		i.i_mtime = lcfs_u64_to_file(node->inode.st_mtim_sec);
+		i.i_mtime = lcfs_u64_to_file((uint64_t)node->inode.st_mtim_sec);
 		i.i_mtime_nsec = lcfs_u32_to_file(node->inode.st_mtim_nsec);
 
 		if (type == S_IFDIR) {
@@ -1398,13 +1398,13 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 	struct lcfs_ctx_erofs_s *ctx_erofs = (struct lcfs_ctx_erofs_s *)ctx;
 	struct lcfs_node_s *root;
 	struct lcfs_erofs_header_s header = {
-		.magic = lcfs_u32_to_file(LCFS_EROFS_MAGIC),
-		.version = lcfs_u32_to_file(LCFS_EROFS_VERSION),
+		.magic = lcfs_u32_to_file(((uint32_t)LCFS_EROFS_MAGIC)),
+		.version = lcfs_u32_to_file(((uint32_t)LCFS_EROFS_VERSION)),
 		.composefs_version = lcfs_u32_to_file(ctx->options->version),
 	};
 	uint32_t header_flags;
 	struct erofs_super_block superblock = {
-		.magic = lcfs_u32_to_file(EROFS_SUPER_MAGIC_V1),
+		.magic = lcfs_u32_to_file(((uint32_t)EROFS_SUPER_MAGIC_V1)),
 		.blkszbits = EROFS_BLKSIZ_BITS,
 	};
 	int ret = 0;
@@ -1447,11 +1447,12 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 	if (ret < 0)
 		return ret;
 
-	superblock.feature_compat = lcfs_u32_to_file(
-		EROFS_FEATURE_COMPAT_MTIME | EROFS_FEATURE_COMPAT_XATTR_FILTER);
+	superblock.feature_compat =
+		lcfs_u32_to_file((uint32_t)(EROFS_FEATURE_COMPAT_MTIME |
+					    EROFS_FEATURE_COMPAT_XATTR_FILTER));
 	superblock.inos = lcfs_u64_to_file(ctx->num_inodes);
 
-	superblock.build_time = lcfs_u64_to_file(ctx->min_mtim_sec);
+	superblock.build_time = lcfs_u64_to_file((uint64_t)ctx->min_mtim_sec);
 	superblock.build_time_nsec = lcfs_u32_to_file(ctx->min_mtim_nsec);
 
 	/* metadata is stored directly after superblock */
