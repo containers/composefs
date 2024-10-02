@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later OR Apache-2.0 */
 #define _GNU_SOURCE
 
 #define FUSE_USE_VERSION 34

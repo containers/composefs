@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-or-later OR Apache-2.0
 manuals = {
     '1': [
         'mount.composefs',
