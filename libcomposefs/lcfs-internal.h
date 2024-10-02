@@ -75,47 +75,13 @@ typedef int errint_t;
 
 #define LCFS_MAX_NAME_LENGTH 255 /* max len of file name excluding NULL */
 
-#define lcfs_u16_to_file(v)                                                    \
-	({                                                                     \
-		_Static_assert(sizeof(v) == sizeof(uint16_t),                  \
-			       "Size of v is not equal to size of uint16_t");  \
-		htole16(v);                                                    \
-	})
-
-#define lcfs_u32_to_file(v)                                                    \
-	({                                                                     \
-		_Static_assert(sizeof(v) == sizeof(uint32_t),                  \
-			       "Size of v is not equal to size of uint32_t");  \
-		htole32(v);                                                    \
-	})
-
-#define lcfs_u64_to_file(v)                                                    \
-	({                                                                     \
-		_Static_assert(sizeof(v) == sizeof(uint64_t),                  \
-			       "Size of v is not equal to size of uint64_t");  \
-		htole64(v);                                                    \
-	})
-
-#define lcfs_u16_from_file(v)                                                  \
-	({                                                                     \
-		_Static_assert(sizeof(v) == sizeof(uint16_t),                  \
-			       "Size of v is not equal to size of uint16_t");  \
-		le16toh(v);                                                    \
-	})
-
-#define lcfs_u32_from_file(v)                                                  \
-	({                                                                     \
-		_Static_assert(sizeof(v) == sizeof(uint32_t),                  \
-			       "Size of v is not equal to size of uint32_t");  \
-		le32toh(v);                                                    \
-	})
-
-#define lcfs_u64_from_file(v)                                                  \
-	({                                                                     \
-		_Static_assert(sizeof(v) == sizeof(uint64_t),                  \
-			       "Size of v is not equal to size of uint64_t");  \
-		le64toh(v);                                                    \
-	})
+/* Alias macros for the generic conversions; we can drop these at some point */
+#define lcfs_u16_to_file(v) (htole16(v))
+#define lcfs_u32_to_file(v) (htole32(v))
+#define lcfs_u64_to_file(v) (htole64(v))
+#define lcfs_u16_from_file(v) (le16toh(v))
+#define lcfs_u32_from_file(v) (le32toh(v))
+#define lcfs_u64_from_file(v) (le64toh(v))
 
 /* In memory representation used to build the file.  */
 
