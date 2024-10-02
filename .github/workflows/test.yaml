@@ -156,8 +156,8 @@ jobs:
       - run: sudo apt-get update -y
       - name: Install erofs kmod
         run: sudo apt install linux-modules-extra-$(uname -r)
-      - name: Install sanitizer dependencies
-        run: sudo apt install libasan6 libubsan1
+      - name: Install dependencies
+        run: sudo apt install libasan6 libubsan1 fsverity
       - name: Checkout repository
         uses: actions/checkout@v3
       - name: Download
@@ -167,6 +167,8 @@ jobs:
       - run: sudo tar -C / -xvf composefs.tar
       - name: Integration tests
         run: sudo ./tests/integration.sh
+      - name: Integration tests (fsverity required)
+        run: sudo env WITH_TEMP_VERITY=1 unshare -m ./tests/integration.sh
   rust:
     needs: build-noasan
     runs-on: ubuntu-latest
