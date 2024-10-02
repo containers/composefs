@@ -1,5 +1,7 @@
 /* hash - hashing table processing.
 
+   SPDX-License-Identifier: LGPL-2.1-or-later
+
    Copyright (C) 1998-2004, 2006-2007, 2009-2023 Free Software Foundation, Inc.
 
    Written by Jim Meyering, 1992.

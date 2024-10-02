@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-or-later OR Apache-2.0
 internal_source_files = files([
   'lcfs-utils.h',
   'lcfs-utils.c',

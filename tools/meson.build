@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later OR Apache-2.0
+
 libcomposefs_dep = declare_dependency(link_with : libcomposefs, include_directories : config_inc)
 
 thread_dep = dependency('threads')
