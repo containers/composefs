@@ -44,6 +44,22 @@ run_test() {
 
 run_test /usr/bin "--no-nlink"
 
+check_fsverity () {
+    fsverity --version >/dev/null 2>&1 || return 1
+    tmpfile=$(mktemp --tmpdir lcfs-fsverity.XXXXXX)
+    echo foo > $tmpfile
+    fsverity enable $tmpfile >/dev/null 2>&1  || return 1
+    return 0
+}
+
+echo "fsverity test" > ${cfsroot}/test-fsverity
+if fsverity enable ${cfsroot}/test-fsverity; then
+    echo "fsverity is supported"
+else
+    echo "fsverity unsupported"
+fi
+rm -f ${cfsroot}/test-fsverity
+
 # Don't create whiteouts, as they depend on a very recent kernel to work at all
 $orig/tests/gendir --privileged --nowhiteout ${cfsroot}/tmp/rootfs
 # nlink doesn't work for the toplevel dir in composefs, because that is from overlayfs, not erofs
