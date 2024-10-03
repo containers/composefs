@@ -4,6 +4,18 @@
 # the output of ls -lR (without hardlink counts).
 set -xeuo pipefail
 
+# Set to setup an explicit temporary ext4 loopback mounted fs with fsverity
+WITH_TEMP_VERITY=${WITH_TEMP_VERITY:-}
+if test -n "${WITH_TEMP_VERITY}"; then
+    tmpdisk=$(mktemp -p /var/tmp)
+    truncate -s 100G ${tmpdisk}
+    mkfs.ext4 -O verity ${tmpdisk}
+    tmp_mnt=$(mktemp -d)
+    mount -o loop ${tmpdisk} ${tmp_mnt}
+    rm -f ${tmpdisk}
+    cfsroot=${tmp_mnt}
+fi
+
 orig=$(pwd)
 cfsroot=${cfsroot:-/composefs}
 rm ${cfsroot}/tmp -rf
@@ -43,6 +55,26 @@ run_test() {
 }
 
 run_test /usr/bin "--no-nlink"
+
+check_fsverity () {
+    fsverity --version >/dev/null 2>&1 || return 1
+    tmpfile=$(mktemp --tmpdir lcfs-fsverity.XXXXXX)
+    echo foo > $tmpfile
+    fsverity enable $tmpfile >/dev/null 2>&1  || return 1
+    return 0
+}
+
+echo "fsverity test" > ${cfsroot}/test-fsverity
+if fsverity enable ${cfsroot}/test-fsverity; then
+    echo "fsverity is supported"
+else
+    if test -n "${WITH_TEMP_VERITY}"; then
+        echo "fsverity unsupported, but is required" 1>&2
+        exit 1
+    fi
+    echo "fsverity unsupported"
+fi
+rm -f ${cfsroot}/test-fsverity
 
 # Don't create whiteouts, as they depend on a very recent kernel to work at all
 $orig/tests/gendir --privileged --nowhiteout ${cfsroot}/tmp/rootfs
