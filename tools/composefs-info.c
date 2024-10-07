@@ -219,6 +219,22 @@ static void dump_node(struct lcfs_node_s *node, char *path)
 		size_t value_len;
 		const char *value = lcfs_node_get_xattr(target, name, &value_len);
 
+		// Skip the special xattrs injected by lcfs-writer-erofs.c to
+		// denote a directory containing whiteouts.
+		bool is_opaque_flag =
+			(strcmp(name, OVERLAY_XATTR_OPAQUE) == 0) ||
+			(strcmp(name, OVERLAY_XATTR_USERXATTR_OPAQUE) == 0);
+		bool is_special_x = value_len == 1 && *value == 'x';
+		if (is_opaque_flag && is_special_x) {
+			continue;
+		}
+
+		// Undo the effect of the escaping in add_overlayfs_xattrs
+		if (str_has_prefix(name, OVERLAY_XATTR_ESCAPE_PREFIX)) {
+			name += strlen(OVERLAY_XATTR_ESCAPE_PREFIX);
+		} else if (str_has_prefix(name, OVERLAY_XATTR_USERXATTR_ESCAPE_PREFIX)) {
+			name += strlen(OVERLAY_XATTR_USERXATTR_ESCAPE_PREFIX);
+		}
 		printf(" ");
 		print_escaped(name, -1, ESCAPE_EQUAL);
 		printf("=");
