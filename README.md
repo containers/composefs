@@ -184,3 +184,8 @@ There are two Rust crates whose source code is included in this repository:
 
 The containers/storage Go library has [code wrapping mkcomposefs](https://github.com/containers/storage/blob/5fe400b7aedc7385e07a938d393d50600ca06299/drivers/overlay/composefs.go#L41)
 that could in theory be extracted to a helper package.
+
+## Community forums
+
+- Live chat: [Matrix channel](https://matrix.to/#/#composefs:matrix.org)
+- Async forums: [Github discussions](https://github.com/containers/composefs/discussions)
