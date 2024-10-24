@@ -114,20 +114,20 @@ jobs:
       matrix:
         include:
           - arch: armv7
-            distro: ubuntu_latest
+            distro: bullseye
           - arch: aarch64
-            distro: ubuntu_latest
+            distro: bullseye
           - arch: s390x
-            distro: ubuntu_latest
+            distro: bullseye
           - arch: ppc64le
-            distro: ubuntu_latest
+            distro: bullseye
     steps:
       - uses: actions/checkout@v3.0.2
         with:
           submodules: true
           set-safe-directory: true
 
-      - uses: uraimo/run-on-arch-action@v2.2.0
+      - uses: uraimo/run-on-arch-action@v2.8.1
         name: Build
         id: build
         with:
