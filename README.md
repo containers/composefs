@@ -189,3 +189,8 @@ that could in theory be extracted to a helper package.
 
 - Live chat: [Matrix channel](https://matrix.to/#/#composefs:matrix.org)
 - Async forums: [Github discussions](https://github.com/containers/composefs/discussions)
+
+## Contributing
+
+We have a dedicated [CONTRIBUTING](CONTRIBUTING.md) document.
+
