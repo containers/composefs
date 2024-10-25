@@ -1508,7 +1508,8 @@ struct lcfs_node_s *lcfs_build(int dirfd, const char *fname, int buildflags,
 		return node;
 	}
 
-	dfd = openat(dirfd, fname, O_RDONLY | O_NOFOLLOW | O_CLOEXEC, 0);
+	dfd = openat(dirfd, fname,
+		     O_DIRECTORY | O_RDONLY | O_NOFOLLOW | O_CLOEXEC, 0);
 	if (dfd < 0) {
 		errsv = errno;
 		goto fail;
