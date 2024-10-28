@@ -30,6 +30,8 @@ typedef int errint_t;
 
 /* What may be returned by the kernel for digests */
 #define MAX_DIGEST_SIZE 64
+/* We picked this default block size */
+#define FSVERITY_BLOCK_SIZE 4096
 
 #define OVERLAY_XATTR_USER_PREFIX "user."
 #define OVERLAY_XATTR_TRUSTED_PREFIX "trusted."
