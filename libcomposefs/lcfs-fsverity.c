@@ -304,7 +304,6 @@ struct fsverity_descriptor {
 	uint8_t reserved2[144];
 };
 
-#define FSVERITY_BLOCK_SIZE 4096
 #define FSVERITY_MAX_LEVELS 8 /* enough for 64bit file size */
 
 struct FsVerityContext {

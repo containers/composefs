@@ -674,7 +674,7 @@ int lcfs_fd_enable_fsverity(int fd)
 
 	arg.version = 1;
 	arg.hash_algorithm = FS_VERITY_HASH_ALG_SHA256;
-	arg.block_size = 4096;
+	arg.block_size = FSVERITY_BLOCK_SIZE;
 	arg.salt_size = 0;
 	arg.salt_ptr = 0;
 	arg.sig_size = 0;
