@@ -15,7 +15,7 @@ The manner in which these technologies are combined is important.
 First, to emphasize: composefs does not store any persistent data itself.
 The underlying metadata and data files must be stored in a valid
 "lower" Linux filesystem.  Usually on most systems, this will be a
-traditional writable persistent Linux filesystem such as `ext4`, `xfs,`, `btrfs` etc.
+traditional writable persistent Linux filesystem such as `ext4`, `xfs`, `btrfs` etc.
 
 The "tagline" for this project is "The reliability of disk images, the flexibility of files",
 and is worth explaining a bit more. Disk images have a lot of desirable
@@ -27,9 +27,9 @@ images have well known drawbacks such as commonly duplicating storage
 space on disk, can be difficult to incrementally update, and are
 generally inflexible.
 
-composefs aims to provide a similarly high level of reliablility,
+composefs aims to provide a similarly high level of reliability,
 security, and Linux kernel integration; but with the *flexibility* of files
-for content - avoiding doubling disk usage, worring about partition
+for content - avoiding doubling disk usage, worrying about partition
 tables, etc.
 
 ## Separation between metadata and data
@@ -165,7 +165,7 @@ Mount options:
 
 - `basedir`: is the directory to use as a base when resolving relative content paths.
 - `verity`: All image files must specify a fs-verity image.
-- `noverity`: Don't verfy fs-verity digests (useful for example if fs-verity is not supported on basedir).
+- `noverity`: Don't verify fs-verity digests (useful for example if fs-verity is not supported on basedir).
 - `digest`: A fs-verity sha256 digest that the image file must match. If set, `verity_check` defaults to 2.
 - `upperdir`: Specify an upperdir for the overlayfs filesystem.
 - `workdir`: Specify a workdir for the overlayfs filesystem.
