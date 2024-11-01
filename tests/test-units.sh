@@ -23,6 +23,22 @@ function countobjects () {
     find $dir/objects -type f | wc -l
 }
 
+# Test a full cycle of roundtrips through mkcomposefs --from-file, composefs-info dump, etc.
+function test_dump_roundtrip () {
+    testsrcdir=$(cd $(dirname $0) && pwd)
+    pushd $1
+    local src=$testsrcdir/assets/special.dump
+    set -x
+    $BINDIR/mkcomposefs --from-file "${src}" out.cfs
+    $BINDIR/composefs-info dump out.cfs > dump.txt
+    diff -u "${src}" dump.txt || exit 1
+    $BINDIR/mkcomposefs --from-file dump.txt out2.cfs
+    diff -u out.cfs out2.cfs || exit 1
+    echo "ok dump roundtrip"
+    popd
+}
+
+
 # Ensure small files are inlined
 function  test_inline () {
     local dir=$1
@@ -98,7 +114,7 @@ function test_composefs_info_help () {
     $BINDIR/composefs_info --help
 }
 
-TESTS="test_inline test_objects test_mount_digest test_composefs_info_measure_files"
+TESTS="test_dump_roundtrip test_inline test_objects test_mount_digest test_composefs_info_measure_files"
 res=0
 for i in $TESTS; do
     testdir=$(mktemp -d $workdir/$i.XXXXXX)

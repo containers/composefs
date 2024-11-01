@@ -1217,14 +1217,17 @@ static int add_overlayfs_xattrs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node
 		if (ret < 0)
 			return ret;
 
-		/* Mark dir containing whiteouts with new format as of version 1 */
+		/* Mark dir containing whiteouts with new format as of version 1;
+		 * note the code in composefs-info.c which explicitly skips these.
+		 */
 		if (ctx->options->version >= 1) {
 			ret = lcfs_node_set_xattr(
 				parent, OVERLAY_XATTR_ESCAPED_OPAQUE, "x", 1);
 			if (ret < 0)
 				return ret;
 			ret = lcfs_node_set_xattr(
-				parent, OVERLAY_XATTR_USERXATTR_OPAQUE, "x", 1);
+				parent, OVERLAY_XATTR_USERXATTR_ESCAPED_OPAQUE,
+				"x", 1);
 			if (ret < 0)
 				return ret;
 		}
@@ -1601,6 +1604,7 @@ static int erofs_readdir_block(struct lcfs_image_data *data,
 	return 0;
 }
 
+// Convert an EROFS entry back into a composefs node.
 static int lcfs_build_node_erofs_xattr(struct lcfs_node_s *node, uint8_t name_index,
 				       const char *entry_name, uint8_t name_len,
 				       const char *value, uint16_t value_size)
@@ -1658,6 +1662,17 @@ static int lcfs_build_node_erofs_xattr(struct lcfs_node_s *node, uint8_t name_in
 			memmove(name + strlen(OVERLAY_XATTR_TRUSTED_PREFIX),
 				name + strlen(OVERLAY_XATTR_PREFIX),
 				strlen(name) - strlen(OVERLAY_XATTR_PREFIX) + 1);
+		} else {
+			/* skip */
+			return 0;
+		}
+	}
+	if (str_has_prefix(name, OVERLAY_XATTR_USERXATTR_PREFIX)) {
+		if (str_has_prefix(name, OVERLAY_XATTR_USERXATTR_ESCAPE_PREFIX)) {
+			/* Unescape */
+			memmove(name + strlen(OVERLAY_XATTR_USER_PREFIX),
+				name + strlen(OVERLAY_XATTR_USERXATTR_PREFIX),
+				strlen(name) - strlen(OVERLAY_XATTR_USER_PREFIX) + 1);
 		} else {
 			/* skip */
 			return 0;
