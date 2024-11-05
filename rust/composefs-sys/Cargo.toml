@@ -2,7 +2,7 @@
 name = "composefs-sys"
 description = "Rust library wrapping the libcomposefs C library"
 keywords = ["composefs"]
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 links = "composefs"
 build = "build.rs"
