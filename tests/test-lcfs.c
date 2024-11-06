@@ -2,6 +2,7 @@
 #define _GNU_SOURCE
 
 #include "lcfs-writer.h"
+#include "lcfs-mount.h"
 #include <assert.h>
 #include <unistd.h>
 #include <errno.h>
@@ -84,8 +85,10 @@ static void test_no_verity(void)
 	assert(tmpfd > 0);
 
 	uint8_t digest[LCFS_DIGEST_SIZE];
-	int r = lcfs_fd_require_fsverity(digest, tmpfd);
+	int r = lcfs_fd_measure_fsverity(digest, tmpfd);
+	int errsv = errno;
 	assert(r != 0);
+	assert(errsv == ENOVERITY);
 	close(tmpfd);
 }
 

@@ -576,6 +576,10 @@ int lcfs_fd_measure_fsverity(uint8_t *digest, int fd)
 	fsv->digest_size = MAX_DIGEST_SIZE;
 	int res = ioctl(fd, FS_IOC_MEASURE_VERITY, fsv);
 	if (res == -1) {
+		if (errno == ENODATA || errno == EOPNOTSUPP || errno == ENOTTY) {
+			// Canonicalize errno
+			errno = ENOVERITY;
+		}
 		return -errno;
 	}
 	// The file has fsverity enabled, but with an unexpected different algorithm (e.g. sha512).
