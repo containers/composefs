@@ -88,7 +88,9 @@ static void test_no_verity(void)
 	int r = lcfs_fd_measure_fsverity(digest, tmpfd);
 	int errsv = errno;
 	assert(r != 0);
-	assert(errsv == ENOVERITY);
+	// We may get ENOSYS from qemu userspace emulation not implementing the ioctl
+	if (getenv("CFS_TEST_ARCH_EMULATION") == NULL)
+		assert(errsv == ENOVERITY);
 	close(tmpfd);
 }
 

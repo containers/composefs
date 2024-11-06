@@ -141,7 +141,7 @@ jobs:
             ./hacking/installdeps.sh
             meson setup build --werror
             meson compile -C build
-            meson test -C build --timeout-multiplier 10
+            env CFS_TEST_ARCH_EMULATION=${{ matrix.arch }} meson test -C build --timeout-multiplier 10
       - name: Upload log
         uses: actions/upload-artifact@v4
         if: always()
