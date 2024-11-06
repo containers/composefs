@@ -210,20 +210,15 @@ static errint_t lcfs_validate_mount_options(struct lcfs_mount_state_s *state)
 
 static errint_t lcfs_validate_verity_fd(struct lcfs_mount_state_s *state)
 {
-	char buf[sizeof(struct fsverity_digest) + MAX_DIGEST_SIZE];
-	struct fsverity_digest *fsv = (struct fsverity_digest *)&buf;
 	int res;
 
 	if (state->expected_digest_len != 0) {
-		fsv->digest_size = MAX_DIGEST_SIZE;
-		res = ioctl(state->fd, FS_IOC_MEASURE_VERITY, fsv);
-		if (res == -1) {
-			if (errno == ENODATA || errno == EOPNOTSUPP || errno == ENOTTY)
-				return -ENOVERITY;
-			return -errno;
+		uint8_t found_digest[LCFS_DIGEST_SIZE];
+		res = lcfs_fd_measure_fsverity(found_digest, state->fd);
+		if (res < 0) {
+			return res;
 		}
-		if (fsv->digest_size != state->expected_digest_len ||
-		    memcmp(state->expected_digest, fsv->digest, fsv->digest_size) != 0)
+		if (memcmp(state->expected_digest, found_digest, LCFS_DIGEST_SIZE) != 0)
 			return -EWRONGVERITY;
 	}
 
