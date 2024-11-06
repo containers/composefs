@@ -1,7 +1,11 @@
 //! # Bindings for libcomposefs
 //!
 //! This crate contains a few manually maintained system bindings for libcomposefs.
+
+/// Size of a SHA-256 digest in bytes.
 pub const LCFS_SHA256_DIGEST_LEN: usize = 32;
+/// Recommended inline content size.
+pub const LCFS_RECOMMENDED_INLINE_CONTENT_MAX: u16 = 64;
 
 extern "C" {
     pub fn lcfs_compute_fsverity_from_fd(

@@ -23,6 +23,9 @@ use libc::S_IFDIR;
 
 /// Maximum size accepted for inline content.
 const MAX_INLINE_CONTENT: u16 = 5000;
+/// The canonical default size to use for inline files.
+pub const RECOMMENDED_MAX_INLINE_CONTENT: u16 = composefs_sys::LCFS_RECOMMENDED_INLINE_CONTENT_MAX;
+
 /// https://github.com/torvalds/linux/blob/47ac09b91befbb6a235ab620c32af719f8208399/include/uapi/linux/limits.h#L15
 /// This isn't exposed in libc/rustix, and in any case we should be conservative...if this ever
 /// gets bumped it'd be a hazard.
