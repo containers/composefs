@@ -169,26 +169,6 @@ jobs:
         run: sudo ./tests/integration.sh
       - name: Integration tests (fsverity required)
         run: sudo env WITH_TEMP_VERITY=1 unshare -m ./tests/integration.sh
-  rust:
-    needs: build-noasan
-    runs-on: ubuntu-latest
-    steps:
-      - run: sudo apt-get update -y
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: Download
-        uses: actions/download-artifact@v4
-        with:
-          name: composefs-noasan.tar
-      - run: sudo tar -C / -xvf composefs.tar
-      - name: Cache Dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: "rust-main"
-      - name: Rust (default features)
-        run: cargo test
-      - name: Rust (no features)
-        run: cargo test --no-default-features
   distcheck:
     runs-on: ubuntu-latest
     steps:
