@@ -564,10 +564,9 @@ int lcfs_compute_fsverity_from_fd(uint8_t *digest, int fd)
 	return lcfs_compute_fsverity_from_content(digest, &_fd, fsverity_read_cb);
 }
 
-// Given a file descriptor, first query the kernel for its fsverity digest.  If
-// it is not available in the kernel, perform an in-memory computation.  The file
-// position will always be reset to zero if needed.
-int lcfs_fd_get_fsverity(uint8_t *digest, int fd)
+// Given a file descriptor, query the kernel for its fsverity digest. It
+// is an error if fsverity is not enabled.
+int lcfs_fd_measure_fsverity(uint8_t *digest, int fd)
 {
 	char buf[sizeof(struct fsverity_digest) + MAX_DIGEST_SIZE];
 	struct fsverity_digest *fsv = (struct fsverity_digest *)&buf;
@@ -577,16 +576,6 @@ int lcfs_fd_get_fsverity(uint8_t *digest, int fd)
 	fsv->digest_size = MAX_DIGEST_SIZE;
 	int res = ioctl(fd, FS_IOC_MEASURE_VERITY, fsv);
 	if (res == -1) {
-		// Under this condition, the file didn't have fsverity enabled or the
-		// kernel doesn't support it at all.  We need to compute it in the current process.
-		if (errno == ENODATA || errno == EOPNOTSUPP || errno == ENOTTY) {
-			// For consistency ensure we start from the beginning.  We could
-			// avoid this by using pread() in the future.
-			if (lseek(fd, 0, SEEK_SET) < 0)
-				return -errno;
-			return lcfs_compute_fsverity_from_fd(digest, fd);
-		}
-		// In this case, we found an unexpected error
 		return -errno;
 	}
 	// The file has fsverity enabled, but with an unexpected different algorithm (e.g. sha512).
@@ -598,6 +587,28 @@ int lcfs_fd_get_fsverity(uint8_t *digest, int fd)
 	memcpy(digest, buf + sizeof(struct fsverity_digest), LCFS_DIGEST_SIZE);
 
 	return 0;
+}
+
+// Given a file descriptor, first query the kernel for its fsverity digest.  If
+// it is not available in the kernel, perform an in-memory computation.  The file
+// position will always be reset to zero if needed.
+int lcfs_fd_get_fsverity(uint8_t *digest, int fd)
+{
+	int res = lcfs_fd_measure_fsverity(digest, fd);
+	if (res == 0) {
+		return 0;
+	}
+	// Under this condition, the file didn't have fsverity enabled or the
+	// kernel doesn't support it at all.  We need to compute it in the current process.
+	if (errno == ENODATA || errno == EOPNOTSUPP || errno == ENOTTY) {
+		// For consistency ensure we start from the beginning.  We could
+		// avoid this by using pread() in the future.
+		if (lseek(fd, 0, SEEK_SET) < 0)
+			return -errno;
+		return lcfs_compute_fsverity_from_fd(digest, fd);
+	}
+	// In this case, we found an unexpected error
+	return -errno;
 }
 
 int lcfs_compute_fsverity_from_data(uint8_t *digest, uint8_t *data, size_t data_len)

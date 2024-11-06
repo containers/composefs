@@ -3,6 +3,7 @@
 
 #include "lcfs-writer.h"
 #include <assert.h>
+#include <unistd.h>
 #include <errno.h>
 
 static inline void lcfs_node_unrefp(struct lcfs_node_s **nodep)
@@ -75,8 +76,22 @@ static void test_add_uninitialized_child(void)
 	assert(errno == EINVAL);
 }
 
+// Verifies that lcfs_fd_measure_fsverity fails on a fd without fsverity
+static void test_no_verity(void)
+{
+	char buf[] = "/tmp/test-verity.XXXXXX";
+	int tmpfd = mkstemp(buf);
+	assert(tmpfd > 0);
+
+	uint8_t digest[LCFS_DIGEST_SIZE];
+	int r = lcfs_fd_require_fsverity(digest, tmpfd);
+	assert(r != 0);
+	close(tmpfd);
+}
+
 int main(int argc, char **argv)
 {
 	test_basic();
+	test_no_verity();
 	test_add_uninitialized_child();
 }
