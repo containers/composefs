@@ -44,7 +44,11 @@ Library files for %{name}.
 %autosetup -p1
 
 %build
-%meson --default-library=shared -Dfuse=enabled -Dman=enabled 
+%if %{with man}
+%meson --default-library=shared -Dfuse=enabled -Dman=enabled
+%else
+%meson --default-library=shared -Dfuse=enabled -Dman=disabled
+%endif
 %meson_build
 
 %install
