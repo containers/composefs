@@ -1660,24 +1660,26 @@ int lcfs_node_unset_xattr(struct lcfs_node_s *node, const char *name)
 {
 	ssize_t index = find_xattr(node, name);
 
-	if (index >= 0) {
-		struct lcfs_xattr_s *xattr = &node->xattrs[index];
-		size_t value_len = xattr->value_len;
-		free(xattr->key);
-		free(xattr->value);
-		if (index != (ssize_t)node->n_xattrs - 1)
-			node->xattrs[index] = node->xattrs[node->n_xattrs - 1];
-		node->n_xattrs--;
-		// Note 2*size - to account for worst case alignment
-		if (node->n_xattrs > 0)
-			node->xattr_size -= (2 * LCFS_INODE_XATTRMETA_SIZE - 1) +
-					    strlen(name) + value_len;
-		else
-			node->xattr_size = 0; // If last xattr, remove the overhead too
-		assert(node->xattr_size >= 0);
+	if (index < 0) {
+		errno = ENODATA;
+		return -1;
 	}
 
-	return -1;
+	struct lcfs_xattr_s *xattr = &node->xattrs[index];
+	size_t value_len = xattr->value_len;
+	free(xattr->key);
+	free(xattr->value);
+	if (index != (ssize_t)node->n_xattrs - 1)
+		node->xattrs[index] = node->xattrs[node->n_xattrs - 1];
+	node->n_xattrs--;
+	// Note 2*size - to account for worst case alignment
+	if (node->n_xattrs > 0)
+		node->xattr_size -= (2 * LCFS_INODE_XATTRMETA_SIZE - 1) +
+				    strlen(name) + value_len;
+	else
+		node->xattr_size = 0; // If last xattr, remove the overhead too
+	assert(node->xattr_size >= 0);
+	return 0;
 }
 
 /* Set an extended attribute; If from_external_input is true then we
@@ -1702,7 +1704,8 @@ int lcfs_node_set_xattr_internal(struct lcfs_node_s *node, const char *name,
 	}
 
 	// Remove any existing value
-	(void)lcfs_node_unset_xattr(node, name);
+	if (lcfs_node_unset_xattr(node, name) < 0 && errno != ENODATA)
+		return -1;
 
 	// Double the xattr metadata size, subtracting 1 to account for worst case alignment.
 	size_t entry_size = (2 * LCFS_INODE_XATTRMETA_SIZE) - 1 + namelen + value_len;
