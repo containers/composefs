@@ -3,6 +3,7 @@
 
 #include "lcfs-writer.h"
 #include "lcfs-mount.h"
+#include <string.h>
 #include <assert.h>
 #include <unistd.h>
 #include <errno.h>
@@ -58,6 +59,49 @@ static void test_basic(void)
 	assert(r == 0);
 }
 
+static void test_xattr_addremove(void)
+{
+	cleanup_node struct lcfs_node_s *node = lcfs_node_new();
+	lcfs_node_set_mode(node, S_IFDIR | 0755);
+	cleanup_node struct lcfs_node_s *child = lcfs_node_new();
+	lcfs_node_set_mode(child, S_IFDIR | 0700);
+	int r = lcfs_node_unset_xattr(child, "user.foo");
+	int errsv = errno;
+	assert(r == -1);
+	assert(errsv == ENODATA);
+	r = lcfs_node_set_xattr(child, "user.foo", "bar", 3);
+	assert(r == 0);
+	r = lcfs_node_unset_xattr(child, "user.foo");
+	assert(r == 0);
+	r = lcfs_node_add_child(node, child, "somechild");
+	assert(r == 0);
+	child = NULL;
+}
+
+// Test that calling lcfs_node_set_xattr multiple times
+// with the same key has last-one-wins semantics.
+static void test_xattr_doubleadd(void)
+{
+	cleanup_node struct lcfs_node_s *node = lcfs_node_new();
+	lcfs_node_set_mode(node, S_IFDIR | 0755);
+	cleanup_node struct lcfs_node_s *child = lcfs_node_new();
+	lcfs_node_set_mode(child, S_IFDIR | 0700);
+	int r = lcfs_node_set_xattr(child, "user.foo", "bar", 3);
+	assert(r == 0);
+	// Should successfully silently overwrite.
+	r = lcfs_node_set_xattr(child, "user.foo", "baz", 3);
+	assert(r == 0);
+
+	size_t found_len;
+	const char *found_value = lcfs_node_get_xattr(child, "user.foo", &found_len);
+	assert(found_value);
+	assert(found_len == 3);
+	assert(memcmp(found_value, "baz", found_len) == 0);
+	r = lcfs_node_add_child(node, child, "somechild");
+	assert(r == 0);
+	child = NULL;
+}
+
 static void test_add_uninitialized_child(void)
 {
 	cleanup_node struct lcfs_node_s *node = lcfs_node_new();
@@ -99,4 +143,6 @@ int main(int argc, char **argv)
 	test_basic();
 	test_no_verity();
 	test_add_uninitialized_child();
+	test_xattr_addremove();
+	test_xattr_doubleadd();
 }
