@@ -1691,7 +1691,7 @@ int lcfs_node_set_xattr_internal(struct lcfs_node_s *node, const char *name,
 	char *k, *v;
 
 	const size_t namelen = strlen(name);
-	if (namelen > XATTR_NAME_MAX) {
+	if (namelen == 0 || namelen > XATTR_NAME_MAX) {
 		errno = ERANGE;
 		return -1;
 	}
