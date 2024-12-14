@@ -1,0 +1,55 @@
+name: Build binaries
+
+on: push
+
+permissions:
+  actions: read
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - baseimage: docker.io/library/ubuntu:24.04
+            basename: ubuntu-24.04
+          - baseimage: docker.io/library/ubuntu:22.04
+            basename: ubuntu-22.04
+          - baseimage: quay.io/fedora/fedora:41
+            basename: fedora-41
+          - baseimage: quay.io/centos/centos:stream9
+            basename: centos-stream9
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.baseimage }}
+    steps:
+      - name: Bootstrap git
+        run: if test -x /usr/bin/apt; then apt -y update && apt -y install git; else dnf -y install git; fi
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Fix git perms
+        run: git config --global --add safe.directory $(pwd)
+      - name: Install dependencies
+        run: ./hacking/installdeps.sh
+      - name: Set environment
+        run: set -e
+             echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> $GITHUB_ENV
+      - name: Configure
+        run: meson setup build --prefix=/usr -Dfuse=disabled
+      - name: Build
+        run: meson compile -C build
+      - name: Capture build
+        run: set -e; DESTDIR=$(pwd)/instroot meson install -C build &&
+             tar -C instroot --sort=name --owner=0 --group=0 --numeric-owner
+               --mtime="${SOURCE_DATE_EPOCH}"
+               --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime
+               -czf composefs.tar.gz .
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: composefs-${{ matrix.basename }}.tar
+          path: composefs.tar.gz
+      - name: Upload log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: testlog-asan.txt
+          path: build/meson-logs/testlog.txt
