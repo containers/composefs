@@ -1,5 +1,19 @@
 #!/bin/bash
 set -xeuo pipefail
+
+# Handle Fedora derivatives or others that have composefs
+# shipped already.
+
+if test -x /usr/bin/dnf; then
+    . /etc/os-release
+    case "${ID_LIKE:-}" in
+        *rhel*) dnf config-manager --set-enabled crb ;; 
+    esac
+    dnf -y install dnf-utils tar git meson;
+    dnf -y builddep composefs
+    exit 0
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 
 PACKAGES=" \
@@ -9,6 +23,7 @@ PACKAGES=" \
     autotools-dev \
     git \
     make \
+    tar \
     gcc \
     libssl-dev \
     libfsverity-dev \
@@ -33,9 +48,11 @@ done
 
 # Install packages:
 if [ -n "${PACKAGES_REQUIRED}" ]; then
+    apt -y update
     apt-get install -y $PACKAGES_REQUIRED
 fi
 
 if [ -n "${PACKAGES_OPTIONAL}" ]; then
+    apt -y update
     apt-get install -y --ignore-missing $PACKAGES_OPTIONAL || true
 fi
