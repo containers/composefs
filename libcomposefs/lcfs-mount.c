@@ -243,7 +243,7 @@ static errint_t setup_loopback(int fd, const char *image_path, char *loopname)
 		return -errsv;
 	}
 
-	sprintf(loopname, "/dev/loop%ld", devnr);
+	snprintf(loopname, PATH_MAX, "/dev/loop%ld", devnr);
 	loopfd = open(loopname, O_RDWR | O_CLOEXEC);
 	if (loopfd < 0)
 		return -errno;
@@ -578,16 +578,12 @@ static errint_t lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
 	char imagemountbuf[] = "/tmp/.composefs.XXXXXX";
 	char *imagemount;
 	bool created_tmpdir = false;
-	char loopname[PATH_MAX];
+	char source[PATH_MAX];
 	int errsv;
 	errint_t err;
 	int loopfd;
 
 	image_flags = lcfs_u32_from_file(header->flags);
-
-	loopfd = setup_loopback(state->fd, state->image_path, loopname);
-	if (loopfd < 0)
-		return loopfd;
 
 	if (options->image_mountdir) {
 		imagemount = (char *)options->image_mountdir;
@@ -595,17 +591,30 @@ static errint_t lcfs_mount_erofs_ovl(struct lcfs_mount_state_s *state,
 		imagemount = mkdtemp(imagemountbuf);
 		if (imagemount == NULL) {
 			errsv = errno;
-			close(loopfd);
 			return -errsv;
 		}
 		created_tmpdir = true;
 	}
 
-	err = lcfs_mount_erofs(loopname, imagemount, image_flags, state);
-	close(loopfd);
+	snprintf(source, PATH_MAX, "/proc/self/fd/%d", state->fd);
+	err = lcfs_mount_erofs(source, imagemount, image_flags, state);
+
 	if (err < 0) {
-		rmdir(imagemount);
-		return err;
+		if (errno == ENOTBLK) {
+			/* Fallback to use loop device */
+			loopfd = setup_loopback(state->fd, state->image_path, source);
+			if (loopfd < 0)
+				return loopfd;
+
+			err = lcfs_mount_erofs(source, imagemount, image_flags, state);
+
+			close(loopfd);
+		}
+
+		if (err < 0) {
+			rmdir(imagemount);
+			return err;
+		}
 	}
 
 	/* We use the legacy API to mount overlayfs, because the new API doesn't allow use
