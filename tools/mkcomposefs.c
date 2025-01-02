@@ -1669,7 +1669,7 @@ int main(int argc, char **argv)
 			err(EXIT_FAILURE, "error accessing %s", failed_path);
 
 		if (compute_digest(threads, root, src_path, buildflags) < 0)
-			err(EXIT_FAILURE, "error computing digest %s", failed_path);
+			err(EXIT_FAILURE, "error computing digest");
 
 		if (digest_store_path &&
 		    fill_store(threads, root, src_path, digest_store_path) < 0)
