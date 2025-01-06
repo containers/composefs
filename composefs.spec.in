@@ -36,6 +36,7 @@ Devel files for %{name}.
 
 %package        libs
 Summary:        Libraries for %{name}
+License:        LGPL-2.1-or-later AND (GPL-2.0-only OR Apache-2.0)
 
 %description    libs
 Library files for %{name}.
@@ -61,11 +62,11 @@ rm -v $RPM_BUILD_ROOT/%{_libdir}/libcomposefs*.a
 %{_libdir}/pkgconfig/%{name}.pc
 
 %files libs
-%license COPYING COPYING.LIB COPYING.LESSERv3 COPYINGv3 LICENSE.Apache-2.0 BSD-2-Clause.txt
+%license COPYING* LICENSE.Apache-2.0 BSD-2-Clause.txt
 %{_libdir}/libcomposefs.so.*
 
 %files
-%license COPYING COPYING.LIB COPYING.LESSERv3 COPYINGv3 LICENSE.Apache-2.0 BSD-2-Clause.txt
+%license COPYING* LICENSE.Apache-2.0 BSD-2-Clause.txt
 %doc README.md
 %{_bindir}/mkcomposefs
 %{_bindir}/composefs-info
