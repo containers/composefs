@@ -896,6 +896,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 
 	format = datalayout << EROFS_I_DATALAYOUT_BIT | version << EROFS_I_VERSION_BIT;
 
+	uint32_t ino = ctx->options->version < 2 ? node->inode_num : node->erofs_nid;
+
 	if (node->erofs_compact) {
 		struct erofs_inode_compact i = { 0 };
 		i.i_format = lcfs_u16_to_file(format);
@@ -903,7 +905,7 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 		i.i_mode = lcfs_u16_to_file((uint16_t)node->inode.st_mode);
 		i.i_nlink = lcfs_u16_to_file((uint16_t)node->inode.st_nlink);
 		i.i_size = lcfs_u32_to_file((uint32_t)size);
-		i.i_ino = lcfs_u32_to_file(node->inode_num);
+		i.i_ino = lcfs_u32_to_file(ino);
 		i.i_uid = lcfs_u16_to_file((uint16_t)node->inode.st_uid);
 		i.i_gid = lcfs_u16_to_file((uint16_t)node->inode.st_gid);
 
@@ -940,7 +942,7 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 		i.i_mode = lcfs_u16_to_file((uint16_t)node->inode.st_mode);
 		i.i_nlink = lcfs_u32_to_file(node->inode.st_nlink);
 		i.i_size = lcfs_u64_to_file(size);
-		i.i_ino = lcfs_u32_to_file(node->inode_num);
+		i.i_ino = lcfs_u32_to_file(ino);
 		i.i_uid = lcfs_u32_to_file(node->inode.st_uid);
 		i.i_gid = lcfs_u32_to_file(node->inode.st_gid);
 		i.i_mtime = lcfs_u64_to_file((uint64_t)node->inode.st_mtim_sec);
