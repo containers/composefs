@@ -1451,8 +1451,10 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 					    EROFS_FEATURE_COMPAT_XATTR_FILTER));
 	superblock.inos = lcfs_u64_to_file(ctx->num_inodes);
 
-	superblock.build_time = lcfs_u64_to_file((uint64_t)ctx->min_mtim_sec);
-	superblock.build_time_nsec = lcfs_u32_to_file(ctx->min_mtim_nsec);
+	if (ctx->options->version < 2) {
+		superblock.build_time = lcfs_u64_to_file((uint64_t)ctx->min_mtim_sec);
+		superblock.build_time_nsec = lcfs_u32_to_file(ctx->min_mtim_nsec);
+	}
 
 	/* metadata is stored directly after superblock */
 	superblock.meta_blkaddr = lcfs_u32_to_file(
