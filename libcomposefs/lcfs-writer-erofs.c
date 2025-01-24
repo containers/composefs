@@ -490,15 +490,20 @@ static uint32_t erofs_compute_chunk_bitsize(uint64_t file_size)
 // Determine how many "chunks" we'd need to represent a file of this
 // size using EROFS_INODE_CHUNK_BASED.
 // See https://erofs.docs.kernel.org/en/latest/core_ondisk.html
-static void erofs_compute_chunking(uint64_t file_size, uint32_t *chunkbits,
+static void erofs_compute_chunking(struct lcfs_ctx_s *ctx,
+				   uint64_t file_size, uint32_t *chunkbits,
 				   uint32_t *chunk_count)
 {
-	*chunkbits = erofs_compute_chunk_bitsize(file_size);
+	if (ctx->options->version < 2) {
+		*chunkbits = erofs_compute_chunk_bitsize(file_size);
+	} else {
+		*chunkbits = EROFS_CHUNK_FORMAT_BLKBITS_MASK + EROFS_BLKSIZ_BITS;
+	}
 	uint64_t chunksize = 1ULL << *chunkbits;
 	*chunk_count = DIV_ROUND_UP(file_size, chunksize);
 }
 
-static void compute_erofs_inode_size(struct lcfs_node_s *node)
+static void compute_erofs_inode_size(struct lcfs_ctx_s *ctx, struct lcfs_node_s *node)
 {
 	int type = node->inode.st_mode & S_IFMT;
 	uint64_t file_size = node->inode.st_size;
@@ -522,7 +527,7 @@ static void compute_erofs_inode_size(struct lcfs_node_s *node)
 		} else {
 			uint32_t chunkbits;
 			uint32_t chunk_count;
-			erofs_compute_chunking(node->inode.st_size, &chunkbits,
+			erofs_compute_chunking(ctx, node->inode.st_size, &chunkbits,
 					       &chunk_count);
 			// Currently only support single blocks.
 			assert(chunk_count <= LCFS_MAX_NONINLINE_CHUNKS);
@@ -649,7 +654,7 @@ static int compute_erofs_inodes(struct lcfs_ctx_s *ctx)
 		size_t n_shared_xattrs, unshared_xattrs_size;
 		size_t inode_size, xattr_size;
 
-		compute_erofs_inode_size(node);
+		compute_erofs_inode_size(ctx, node);
 		node->erofs_compact = lcfs_fits_in_erofs_compact(ctx, node);
 		inode_size = node->erofs_compact ?
 				     sizeof(struct erofs_inode_compact) :
@@ -871,8 +876,8 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 
 		if (size > 0 && node->content == NULL) {
 			uint32_t chunkbits;
-			erofs_compute_chunking(node->inode.st_size, &chunkbits,
-					       &chunk_count);
+			erofs_compute_chunking(ctx, node->inode.st_size, &chunkbits,
+						       &chunk_count);
 			assert(chunk_count <= LCFS_MAX_NONINLINE_CHUNKS);
 			datalayout = EROFS_INODE_CHUNK_BASED;
 			chunk_format = chunkbits - EROFS_BLKSIZ_BITS;
