@@ -992,9 +992,10 @@ static int write_erofs_inode_data(struct lcfs_ctx_s *ctx, struct lcfs_node_s *no
 		for (size_t i = 0; i < node->n_xattrs; i++) {
 			struct lcfs_xattr_s *xattr = &node->xattrs[i];
 			if (xattr->erofs_shared_xattr_offset >= 0) {
-				uint64_t offset =
-					ctx_erofs->inodes_end % EROFS_BLKSIZ +
-					xattr->erofs_shared_xattr_offset;
+				uint64_t offset = ctx_erofs->inodes_end;
+				if (ctx->options->version < 2)
+					offset %= EROFS_BLKSIZ;
+				offset += xattr->erofs_shared_xattr_offset;
 				uint32_t v = lcfs_u32_to_file(
 					(uint32_t)(offset / sizeof(uint32_t)));
 				ret = lcfs_write(ctx, &v, sizeof(v));
@@ -1454,17 +1455,17 @@ int lcfs_write_erofs_to(struct lcfs_ctx_s *ctx)
 	if (ctx->options->version < 2) {
 		superblock.build_time = lcfs_u64_to_file((uint64_t)ctx->min_mtim_sec);
 		superblock.build_time_nsec = lcfs_u32_to_file(ctx->min_mtim_nsec);
+
+		/* metadata is stored directly after superblock */
+		superblock.meta_blkaddr = lcfs_u32_to_file(
+			(uint32_t)((EROFS_SUPER_OFFSET + sizeof(superblock)) / EROFS_BLKSIZ));
+
+		/* shared xattrs is directly after metadata */
+		superblock.xattr_blkaddr = lcfs_u32_to_file((uint32_t)(ctx_erofs->inodes_end / EROFS_BLKSIZ));
 	}
 
-	/* metadata is stored directly after superblock */
-	superblock.meta_blkaddr = lcfs_u32_to_file(
-		(uint32_t)((EROFS_SUPER_OFFSET + sizeof(superblock)) / EROFS_BLKSIZ));
 	assert(root->erofs_nid < UINT16_MAX);
 	superblock.root_nid = lcfs_u16_to_file((uint16_t)root->erofs_nid);
-
-	/* shared xattrs is directly after metadata */
-	superblock.xattr_blkaddr =
-		lcfs_u32_to_file((uint32_t)(ctx_erofs->inodes_end / EROFS_BLKSIZ));
 
 	data_block_start =
 		round_up(ctx_erofs->inodes_end + ctx_erofs->shared_xattr_size,
