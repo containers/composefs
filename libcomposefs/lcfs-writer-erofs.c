@@ -490,8 +490,8 @@ static uint32_t erofs_compute_chunk_bitsize(uint64_t file_size)
 // Determine how many "chunks" we'd need to represent a file of this
 // size using EROFS_INODE_CHUNK_BASED.
 // See https://erofs.docs.kernel.org/en/latest/core_ondisk.html
-void erofs_compute_chunking(uint64_t file_size, uint32_t *chunkbits,
-			    uint32_t *chunk_count)
+static void erofs_compute_chunking(uint64_t file_size, uint32_t *chunkbits,
+				   uint32_t *chunk_count)
 {
 	*chunkbits = erofs_compute_chunk_bitsize(file_size);
 	uint64_t chunksize = 1ULL << *chunkbits;
