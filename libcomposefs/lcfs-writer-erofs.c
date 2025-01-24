@@ -655,7 +655,8 @@ static int compute_erofs_inodes(struct lcfs_ctx_s *ctx)
 		size_t inode_size, xattr_size;
 
 		compute_erofs_inode_size(ctx, node);
-		node->erofs_compact = lcfs_fits_in_erofs_compact(ctx, node);
+		node->erofs_compact = ctx->options->version < 2 &&
+			lcfs_fits_in_erofs_compact(ctx, node);
 		inode_size = node->erofs_compact ?
 				     sizeof(struct erofs_inode_compact) :
 				     sizeof(struct erofs_inode_extended);
