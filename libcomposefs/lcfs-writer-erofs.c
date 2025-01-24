@@ -1379,13 +1379,15 @@ static int rewrite_tree_for_erofs(struct lcfs_ctx_s *ctx, struct lcfs_node_s *ro
 	if (res < 0)
 		return res;
 
-	res = set_overlay_opaque(root);
-	if (res < 0)
-		return res;
+        if (ctx->options->version < 2) {
+		res = set_overlay_opaque(root);
+		if (res < 0)
+			return res;
 
-	res = add_overlay_whiteouts(root);
-	if (res < 0)
-		return res;
+		res = add_overlay_whiteouts(root);
+		if (res < 0)
+			return res;
+	}
 
 	return 0;
 }
