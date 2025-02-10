@@ -26,7 +26,7 @@ escape mechanism.
 
 Escapes are of the form \xXY which escapes a single byte using two hex
 digits. For example \x00 is the zero byte and \xff is the 255 byte.
-Optionally, these custom escapes are suppored:
+Optionally, these custom escapes are supported:
 
  **\\\\**
  :    backslash.
