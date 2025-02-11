@@ -1442,7 +1442,7 @@ static void usage(const char *argv0)
 		"  --print-digest-only   Print the digest of the image, don't write image\n"
 		"  --from-file           The source is a dump file, not a directory\n"
 		"  --min-version=N       Use this minimal format version (default=%d)\n"
-		"  --max-version=N       Use this maxium format version (default=%d)\n"
+		"  --max-version=N       Use this maximum format version (default=%d)\n"
 		"  --threads=N           Use this to override the default number of threads used to calculate digest and copy files (default=%d)\n",
 		bin, LCFS_DEFAULT_VERSION_MIN, LCFS_DEFAULT_VERSION_MAX,
 		get_cpu_count());
