@@ -6,6 +6,7 @@ import shlex
 import hashlib
 import stat
 import argparse
+import errno
 
 def log_error(error):
     print("Readdir error: " + error)
@@ -19,6 +20,15 @@ def has_whiteout_child(path):
         if should_convert_whiteout(s):
             return True
     return False
+
+def list_xattrs(file):
+    try:
+        return sorted(os.listxattr(file, follow_symlinks=False))
+    except OSError as e:
+        # Not much we can do if the backing fs doesn't allow xattrs
+        if e.errno not in (errno.EPERM, errno.ENOTSUP):
+            raise
+        return []
 
 def dumpfile(file, root):
     rel = os.path.relpath(file, root)
@@ -53,7 +63,7 @@ def dumpfile(file, root):
         link = os.readlink(file)
         print(f" ->{shlex.quote(link)}",end="")
 
-    for attr in sorted(os.listxattr(file, follow_symlinks=False)):
+    for attr in list_xattrs(file):
         v = os.getxattr(file, attr, follow_symlinks=False)
         xattrs[attr] = v
 
